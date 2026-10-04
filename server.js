@@ -155,7 +155,6 @@ async function nodeToRequest(req) {
 const server = http.createServer(async (req, res) => {
   console.log("→ " + req.method + " " + req.url);
 
-  // Handle CORS preflight requests instantly
   if (req.method === "OPTIONS") {
     res.writeHead(204, {
       "Access-Control-Allow-Origin": "*",
@@ -187,7 +186,6 @@ const server = http.createServer(async (req, res) => {
     for (const [k, v] of response.headers) {
       res.setHeader(k, v);
     }
-    // Ensure CORS is explicitly enabled on all worker responses
     res.setHeader("Access-Control-Allow-Origin", "*");
 
     const buf = await response.arrayBuffer();
