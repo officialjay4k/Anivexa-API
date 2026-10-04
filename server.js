@@ -10,10 +10,10 @@ const BASE  = process.env.BASE_PATH ?? "";
 const __dir = dirname(fileURLToPath(import.meta.url));
 
 const STATIC = {
-  "/":           { file: "docs/landing.html", mime: "text/html" },
-  "/docs":       { file: "docs/index.html",   mime: "text/html" },
-  "/style.css":  { file: "docs/style.css",    mime: "text/css"  },
-  "/logo.svg":   { file: "docs/logo.svg",     mime: "image/svg+xml" },
+  "/":          { file: "docs/landing.html", mime: "text/html" },
+  "/docs":      { file: "docs/index.html",   mime: "text/html" },
+  "/style.css": { file: "docs/style.css",    mime: "text/css"  },
+  "/logo.svg":  { file: "docs/logo.svg",     mime: "image/svg+xml" },
 };
 
 const flixImageSegmentXorKey = Uint8Array.from([
@@ -36,9 +36,65 @@ function serveStatic(res, entry) {
   }
 }
 
+function decodeIfEncrypted(raw, key) {
+  if (!key) return raw;
+  if (raw.startsWith("#EXTM3U")) return raw;
+  try {
+    const decKey  = Buffer.from(key, "base64");
+    const payload = Buffer.from(raw, "base64");
+    const out     = Buffer.alloc(payload.length);
+    for (let i = 0; i < payload.length; i++) {
+      out[i] = payload[i] ^ decKey[i % decKey.length];
+    }
+    return out.toString("utf8");
+  } catch {
+    return raw;
+  }
+}
+
+async function fetchUpstream(url) {
+  return await fetch(url, {
+    headers: {
+      "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
+      "Referer": "https://flixcloud.cc/",
+      "Origin":  "https://flixcloud.cc"
+    }
+  });
+}
+
+function transformSegmentBuffer(bodyBuffer) {
+  let offset = 0;
+  let needsXor = false;
+
+  const isWebp = bodyBuffer.length > 12 &&
+    bodyBuffer[0] === 0x52 && bodyBuffer[1] === 0x49 &&
+    bodyBuffer[2] === 0x46 && bodyBuffer[3] === 0x46 &&
+    bodyBuffer[8] === 0x57 && bodyBuffer[9] === 0x45 &&
+    bodyBuffer[10] === 0x42 && bodyBuffer[11] === 0x50;
+
+  const isPng = bodyBuffer.length > 8 &&
+    bodyBuffer[0] === 0x89 && bodyBuffer[1] === 0x50 &&
+    bodyBuffer[2] === 0x4e && bodyBuffer[3] === 0x47 &&
+    bodyBuffer[4] === 0x0d && bodyBuffer[5] === 0x0a &&
+    bodyBuffer[6] === 0x1a && bodyBuffer[7] === 0x0a;
+
+  if (isWebp)      { offset = 12; needsXor = bodyBuffer[offset] !== 0x47; }
+  else if (isPng)  { offset = 8;  needsXor = bodyBuffer[offset] !== 0x47; }
+
+  if (offset === 0) return bodyBuffer;
+
+  const out = Buffer.from(bodyBuffer.subarray(offset));
+  if (needsXor) {
+    for (let i = 0; i < out.length; i++) {
+      out[i] ^= flixImageSegmentXorKey[i % flixImageSegmentXorKey.length];
+    }
+  }
+  return out;
+}
+
 async function handleFlixProxy(req, res, parsedUrl) {
-  let targetUrl = parsedUrl.searchParams.get("url");
-  const key = parsedUrl.searchParams.get("key");
+  const targetUrl = parsedUrl.searchParams.get("url");
+  const key       = parsedUrl.searchParams.get("key");
   const isSegment = parsedUrl.searchParams.get("type") === "segment";
 
   if (!targetUrl) {
@@ -47,17 +103,7 @@ async function handleFlixProxy(req, res, parsedUrl) {
   }
 
   try {
-    const fetchUpstream = async (url) => {
-      return await fetch(url, {
-        headers: {
-          "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
-          "Referer": "https://flixcloud.cc/",
-          "Origin": "https://flixcloud.cc"
-        }
-      });
-    };
-
-    let response = await fetchUpstream(targetUrl);
+    const response = await fetchUpstream(targetUrl);
 
     if (!response.ok) {
       res.writeHead(response.status, { "Content-Type": "text/plain", "Access-Control-Allow-Origin": "*" });
@@ -66,118 +112,65 @@ async function handleFlixProxy(req, res, parsedUrl) {
 
     const bodyBuffer = Buffer.from(await response.arrayBuffer());
 
+    // Binary payloads (segments, keys, init maps)
     if (isSegment) {
-      let body = bodyBuffer;
-      let offset = 0;
-      let needsXor = false;
-
-      const isWebp = body.length > 12 && body[0] === 0x52 && body[1] === 0x49 && body[2] === 0x46 && body[3] === 0x46 && body[8] === 0x57 && body[9] === 0x45 && body[10] === 0x42 && body[11] === 0x50;
-      const isPng = body.length > 8 && body[0] === 0x89 && body[1] === 0x50 && body[2] === 0x4e && body[3] === 0x47 && body[4] === 0x0d && body[5] === 0x0a && body[6] === 0x1a && body[7] === 0x0a;
-
-      if (isWebp) {
-        offset = 12;
-        needsXor = body[offset] !== 0x47;
-      } else if (isPng) {
-        offset = 8;
-        needsXor = body[offset] !== 0x47;
-      }
-
-      if (offset > 0) {
-        const out = Buffer.from(body.subarray(offset));
-        if (needsXor) {
-          for (let i = 0; i < out.length; i++) {
-            out[i] ^= flixImageSegmentXorKey[i % flixImageSegmentXorKey.length];
-          }
-        }
-        res.writeHead(200, {
-          "Access-Control-Allow-Origin": "*",
-          "Content-Type": "video/mp2t"
-        });
-        return res.end(out);
-      }
-
+      const out = transformSegmentBuffer(bodyBuffer);
       res.writeHead(200, {
         "Access-Control-Allow-Origin": "*",
         "Content-Type": "video/mp2t"
       });
-      return res.end(body);
+      return res.end(out);
     }
 
-    let raw = bodyBuffer.toString("utf8").trim();
-    let text = raw;
+    // Playlist payloads
+    const text = decodeIfEncrypted(bodyBuffer.toString("utf8").trim(), key);
 
-    if (key && !raw.startsWith("#EXTM3U")) {
-      try {
-        const decKey = Buffer.from(key, "base64");
-        const payload = Buffer.from(raw, "base64");
-        const out = Buffer.alloc(payload.length);
-        for (let i = 0; i < payload.length; i++) {
-          out[i] = payload[i] ^ decKey[i % decKey.length];
-        }
-        text = out.toString("utf8");
-      } catch (e) {
-        text = raw;
-      }
-    }
-
-    // Server-side Master Playlist Flattening:
-    // If the playlist contains multi-variant streams, automatically fetch the child variant media playlist.
-    if (text.includes("#EXT-X-STREAM-INF")) {
-      const lines = text.split(/\r?\n/);
-      let childVariantUrl = null;
-      for (const line of lines) {
-        const trimmed = line.trim();
-        if (trimmed && !trimmed.startsWith("#")) {
-          childVariantUrl = new URL(trimmed, targetUrl).toString();
-          break;
-        }
-      }
-
-      if (childVariantUrl) {
-        const childRes = await fetchUpstream(childVariantUrl);
-        if (childRes.ok) {
-          const childBuffer = Buffer.from(await childRes.arrayBuffer());
-          let childRaw = childBuffer.toString("utf8").trim();
-          let childText = childRaw;
-          if (key && !childRaw.startsWith("#EXTM3U")) {
-            try {
-              const decKey = Buffer.from(key, "base64");
-              const payload = Buffer.from(childRaw, "base64");
-              const out = Buffer.alloc(payload.length);
-              for (let i = 0; i < payload.length; i++) {
-                out[i] = payload[i] ^ decKey[i % decKey.length];
-              }
-              childText = out.toString("utf8");
-            } catch (e) {
-              childText = childRaw;
-            }
-          }
-          targetUrl = childVariantUrl;
-          text = childText;
-        }
-      }
-    }
-
-    const host = req.headers["host"] ?? "localhost:" + PORT;
+    const host     = req.headers["host"] ?? "localhost:" + PORT;
     const protocol = req.headers["x-forwarded-proto"] || "http";
     const proxyBase = protocol + "://" + host + "/proxy/flix-stream";
 
-    text = text.split(/\r?\n/).map(line => {
+    const buildProxyUrl = (absUrl, type) => {
+      let u = proxyBase + "?url=" + encodeURIComponent(absUrl);
+      if (key) u += "&key=" + encodeURIComponent(key);
+      if (type) u += "&type=" + type;
+      return u;
+    };
+
+    const isMaster = text.includes("#EXT-X-STREAM-INF");
+
+    const rewritten = text.split(/\r?\n/).map(line => {
       const trimmed = line.trim();
-      if (trimmed && !trimmed.startsWith("#")) {
-        const absoluteUrl = new URL(trimmed, targetUrl).toString();
-        let proxyUrl = proxyBase + "?url=" + encodeURIComponent(absoluteUrl);
-        if (key) proxyUrl += "&key=" + encodeURIComponent(key);
-        return proxyUrl + "&type=segment";
+      if (!trimmed) return line;
+
+      // Tag lines: rewrite the URI="..." attribute if present
+      if (trimmed.startsWith("#")) {
+        const uriMatch = trimmed.match(/URI="([^"]+)"/);
+        if (!uriMatch) return line;
+
+        const originalUri = uriMatch[1];
+        const absUrl      = new URL(originalUri, targetUrl).toString();
+
+        // EXT-X-KEY and EXT-X-MAP point to binary payloads
+        // EXT-X-MEDIA and EXT-X-I-FRAME-STREAM-INF point to playlists
+        let type = null;
+        if (trimmed.startsWith("#EXT-X-KEY")) type = "segment";
+        else if (trimmed.startsWith("#EXT-X-MAP")) type = "segment";
+
+        const newUri = buildProxyUrl(absUrl, type);
+        return line.replace(`URI="${originalUri}"`, `URI="${newUri}"`);
       }
-      return line;
+
+      // Bare URI line: variant playlist (master) or segment (media)
+      const absUrl = new URL(trimmed, targetUrl).toString();
+      const type   = isMaster ? null : "segment";
+      return buildProxyUrl(absUrl, type);
     }).join("\n");
 
     res.writeHead(200, {
       "Access-Control-Allow-Origin": "*",
       "Content-Type": "application/vnd.apple.mpegurl"
     });
-    return res.end(text);
+    return res.end(rewritten);
   } catch (err) {
     res.writeHead(500, { "Content-Type": "text/plain", "Access-Control-Allow-Origin": "*" });
     res.end("Proxy error: " + err.message);
@@ -213,7 +206,7 @@ const server = http.createServer(async (req, res) => {
 
   const host = req.headers["host"] ?? "localhost:" + PORT;
   const parsedUrl = new URL(req.url, "http://" + host);
-  const pathname = parsedUrl.pathname;
+  const pathname  = parsedUrl.pathname;
 
   const staticEntry = STATIC[pathname];
 
@@ -230,9 +223,7 @@ const server = http.createServer(async (req, res) => {
     const response = await worker.fetch(request, {});
 
     res.statusCode = response.status;
-    for (const [k, v] of response.headers) {
-      res.setHeader(k, v);
-    }
+    for (const [k, v] of response.headers) res.setHeader(k, v);
     res.setHeader("Access-Control-Allow-Origin", "*");
 
     const buf = await response.arrayBuffer();
