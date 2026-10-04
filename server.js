@@ -49,11 +49,16 @@ async function handleFlixProxy(req, res, parsedUrl) {
   try {
     const response = await fetch(targetUrl, {
       headers: {
-        "User-Agent": "Mozilla/5.0",
+        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
         "Referer": "https://flixcloud.cc/",
         "Origin": "https://flixcloud.cc"
       }
     });
+
+    if (!response.ok) {
+      res.writeHead(response.status, { "Content-Type": "text/plain", "Access-Control-Allow-Origin": "*" });
+      return res.end(`Upstream HTTP error: ${response.status}`);
+    }
 
     const bodyBuffer = Buffer.from(await response.arrayBuffer());
 
@@ -94,30 +99,33 @@ async function handleFlixProxy(req, res, parsedUrl) {
       return res.end(body);
     }
 
-    const raw = bodyBuffer.toString("utf8").trim();
+    let raw = bodyBuffer.toString("utf8").trim();
     let text = raw;
 
-    // If encrypted, decrypt the payload
+    // Check if decryption is needed. Encrypted payloads do not start with #EXTM3U
     if (key && !raw.startsWith("#EXTM3U")) {
-      const decKey = Buffer.from(key, "base64");
-      const payload = Buffer.from(raw, "base64");
-      const out = Buffer.alloc(payload.length);
-      for (let i = 0; i < payload.length; i++) {
-        out[i] = payload[i] ^ decKey[i % decKey.length];
+      try {
+        const decKey = Buffer.from(key, "base64");
+        const payload = Buffer.from(raw, "base64");
+        const out = Buffer.alloc(payload.length);
+        for (let i = 0; i < payload.length; i++) {
+          out[i] = payload[i] ^ decKey[i % decKey.length];
+        }
+        text = out.toString("utf8");
+      } catch (e) {
+        // If decryption fails, fallback to raw text (sometimes child playlists are unencrypted)
+        text = raw;
       }
-      text = out.toString("utf8");
     }
 
     const host = req.headers["host"] ?? "localhost:" + PORT;
     const protocol = req.headers["x-forwarded-proto"] || "http";
     const proxyBase = protocol + "://" + host + "/proxy/flix-stream";
 
-    // Rewrite internal links (child playlists or media segments) to flow back through proxy
     text = text.split(/\r?\n/).map(line => {
       const trimmed = line.trim();
       if (trimmed && !trimmed.startsWith("#")) {
         const absoluteUrl = new URL(trimmed, targetUrl).toString();
-        // Check if it points to another m3u8 playlist or a media segment chunk
         if (absoluteUrl.includes(".m3u8")) {
           let proxyUrl = proxyBase + "?url=" + encodeURIComponent(absoluteUrl);
           if (key) proxyUrl += "&key=" + encodeURIComponent(key);
@@ -158,8 +166,6 @@ async function nodeToRequest(req) {
 }
 
 const server = http.createServer(async (req, res) => {
-  console.log("→ " + req.method + " " + req.url);
-
   if (req.method === "OPTIONS") {
     res.writeHead(204, {
       "Access-Control-Allow-Origin": "*",
@@ -180,7 +186,7 @@ const server = http.createServer(async (req, res) => {
   }
 
   if (req.method === "GET" && pathname === "/proxy/flix-stream") {
-    return handleFlixProxy(req, res, parsedUrl);
+    return handleFlixProxy(res ? req : req, res, parsedUrl);
   }
 
   try {
@@ -196,12 +202,11 @@ const server = http.createServer(async (req, res) => {
     const buf = await response.arrayBuffer();
     res.end(Buffer.from(buf));
   } catch (err) {
-    console.error("Worker fetch fatal error:", err);
     res.writeHead(500, {
       "Content-Type": "application/json",
       "Access-Control-Allow-Origin": "*"
     });
-    res.end(JSON.stringify({ error: "Worker crash: " + err.message, stack: err.stack }));
+    res.end(JSON.stringify({ error: "Worker crash: " + err.message }));
   }
 });
 
