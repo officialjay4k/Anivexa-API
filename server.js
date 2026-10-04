@@ -120,48 +120,39 @@ async function handleFlixProxy(req, res, parsedUrl) {
       }
     }
 
-    // Server-side Master Playlist Flattening:
-    // If the playlist contains multi-variant streams, automatically fetch the child variant media playlist.
-    if (text.includes("#EXT-X-STREAM-INF")) {
-      const lines = text.split(/\r?\n/);
-      let childVariantUrl = null;
-      for (const line of lines) {
-        const trimmed = line.trim();
-        if (trimmed && !trimmed.startsWith("#")) {
-          childVariantUrl = new URL(trimmed, targetUrl).toString();
-          break;
-        }
-      }
-
-      if (childVariantUrl) {
-        const childRes = await fetchUpstream(childVariantUrl);
-        if (childRes.ok) {
-          const childBuffer = Buffer.from(await childRes.arrayBuffer());
-          let childRaw = childBuffer.toString("utf8").trim();
-          let childText = childRaw;
-          if (key && !childRaw.startsWith("#EXTM3U")) {
-            try {
-              const decKey = Buffer.from(key, "base64");
-              const payload = Buffer.from(childRaw, "base64");
-              const out = Buffer.alloc(payload.length);
-              for (let i = 0; i < payload.length; i++) {
-                out[i] = payload[i] ^ decKey[i % decKey.length];
-              }
-              childText = out.toString("utf8");
-            } catch (e) {
-              childText = childRaw;
-            }
-          }
-          targetUrl = childVariantUrl;
-          text = childText;
-        }
-      }
-    }
-
     const host = req.headers["host"] ?? "localhost:" + PORT;
     const protocol = req.headers["x-forwarded-proto"] || "http";
     const proxyBase = protocol + "://" + host + "/proxy/flix-stream";
 
+    // Master Playlist & Audio Stream Rewriting (Preserves Audio & Quality Variants)
+    if (text.includes("#EXT-X-STREAM-INF") || text.includes("#EXT-X-MEDIA")) {
+      text = text.split(/\r?\n/).map(line => {
+        let trimmed = line.trim();
+        if (trimmed.startsWith("#EXT-X-MEDIA")) {
+          return line.replace(/URI="([^"]+)"/, (match, uri) => {
+            const absoluteUrl = new URL(uri, targetUrl).toString();
+            let proxyUrl = proxyBase + "?url=" + encodeURIComponent(absoluteUrl);
+            if (key) proxyUrl += "&key=" + encodeURIComponent(key);
+            return `URI="${proxyUrl}"`;
+          });
+        }
+        if (trimmed && !trimmed.startsWith("#")) {
+          const absoluteUrl = new URL(trimmed, targetUrl).toString();
+          let proxyUrl = proxyBase + "?url=" + encodeURIComponent(absoluteUrl);
+          if (key) proxyUrl += "&key=" + encodeURIComponent(key);
+          return proxyUrl;
+        }
+        return line;
+      }).join("\n");
+
+      res.writeHead(200, {
+        "Access-Control-Allow-Origin": "*",
+        "Content-Type": "application/vnd.apple.mpegurl"
+      });
+      return res.end(text);
+    }
+
+    // Standard Media Playlist URL Rewriting for Segments
     text = text.split(/\r?\n/).map(line => {
       const trimmed = line.trim();
       if (trimmed && !trimmed.startsWith("#")) {
