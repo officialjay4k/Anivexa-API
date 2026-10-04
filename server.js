@@ -37,7 +37,7 @@ function serveStatic(res, entry) {
 }
 
 async function handleFlixProxy(req, res, parsedUrl) {
-  const targetUrl = parsedUrl.searchParams.get("url");
+  let targetUrl = parsedUrl.searchParams.get("url");
   const key = parsedUrl.searchParams.get("key");
   const isSegment = parsedUrl.searchParams.get("type") === "segment";
 
@@ -46,19 +46,20 @@ async function handleFlixProxy(req, res, parsedUrl) {
     return res.end("Missing URL");
   }
 
-  console.log(`[Proxy] Fetching -> ${targetUrl} (isSegment: ${isSegment})`);
-
   try {
-    const response = await fetch(targetUrl, {
-      headers: {
-        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
-        "Referer": "https://flixcloud.cc/",
-        "Origin": "https://flixcloud.cc"
-      }
-    });
+    const fetchUpstream = async (url) => {
+      return await fetch(url, {
+        headers: {
+          "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
+          "Referer": "https://flixcloud.cc/",
+          "Origin": "https://flixcloud.cc"
+        }
+      });
+    };
+
+    let response = await fetchUpstream(targetUrl);
 
     if (!response.ok) {
-      console.error(`[Proxy] Upstream error ${response.status} for ${targetUrl}`);
       res.writeHead(response.status, { "Content-Type": "text/plain", "Access-Control-Allow-Origin": "*" });
       return res.end(`Upstream HTTP error: ${response.status}`);
     }
@@ -119,6 +120,44 @@ async function handleFlixProxy(req, res, parsedUrl) {
       }
     }
 
+    // Server-side Master Playlist Flattening:
+    // If the playlist contains multi-variant streams, automatically fetch the child variant media playlist.
+    if (text.includes("#EXT-X-STREAM-INF")) {
+      const lines = text.split(/\r?\n/);
+      let childVariantUrl = null;
+      for (const line of lines) {
+        const trimmed = line.trim();
+        if (trimmed && !trimmed.startsWith("#")) {
+          childVariantUrl = new URL(trimmed, targetUrl).toString();
+          break;
+        }
+      }
+
+      if (childVariantUrl) {
+        const childRes = await fetchUpstream(childVariantUrl);
+        if (childRes.ok) {
+          const childBuffer = Buffer.from(await childRes.arrayBuffer());
+          let childRaw = childBuffer.toString("utf8").trim();
+          let childText = childRaw;
+          if (key && !childRaw.startsWith("#EXTM3U")) {
+            try {
+              const decKey = Buffer.from(key, "base64");
+              const payload = Buffer.from(childRaw, "base64");
+              const out = Buffer.alloc(payload.length);
+              for (let i = 0; i < payload.length; i++) {
+                out[i] = payload[i] ^ decKey[i % decKey.length];
+              }
+              childText = out.toString("utf8");
+            } catch (e) {
+              childText = childRaw;
+            }
+          }
+          targetUrl = childVariantUrl;
+          text = childText;
+        }
+      }
+    }
+
     const host = req.headers["host"] ?? "localhost:" + PORT;
     const protocol = req.headers["x-forwarded-proto"] || "http";
     const proxyBase = protocol + "://" + host + "/proxy/flix-stream";
@@ -127,15 +166,9 @@ async function handleFlixProxy(req, res, parsedUrl) {
       const trimmed = line.trim();
       if (trimmed && !trimmed.startsWith("#")) {
         const absoluteUrl = new URL(trimmed, targetUrl).toString();
-        // Preserve original token query params if present in child playlist URLs
         let proxyUrl = proxyBase + "?url=" + encodeURIComponent(absoluteUrl);
         if (key) proxyUrl += "&key=" + encodeURIComponent(key);
-        
-        if (absoluteUrl.includes(".m3u8")) {
-          return proxyUrl;
-        } else {
-          return proxyUrl + "&type=segment";
-        }
+        return proxyUrl + "&type=segment";
       }
       return line;
     }).join("\n");
@@ -146,7 +179,6 @@ async function handleFlixProxy(req, res, parsedUrl) {
     });
     return res.end(text);
   } catch (err) {
-    console.error("[Proxy] Exception:", err);
     res.writeHead(500, { "Content-Type": "text/plain", "Access-Control-Allow-Origin": "*" });
     res.end("Proxy error: " + err.message);
   }
