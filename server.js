@@ -113,7 +113,6 @@ async function handleFlixProxy(req, res, parsedUrl) {
         }
         text = out.toString("utf8");
       } catch (e) {
-        // If decryption fails, fallback to raw text (sometimes child playlists are unencrypted)
         text = raw;
       }
     }
@@ -186,7 +185,7 @@ const server = http.createServer(async (req, res) => {
   }
 
   if (req.method === "GET" && pathname === "/proxy/flix-stream") {
-    return handleFlixProxy(res ? req : req, res, parsedUrl);
+    return handleFlixProxy(req, res, parsedUrl);
   }
 
   try {
