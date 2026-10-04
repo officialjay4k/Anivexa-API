@@ -50,7 +50,6 @@ async function handleFlixProxy(req, res, parsedUrl) {
 
     const bodyBuffer = Buffer.from(await response.arrayBuffer());
 
-    // Decrypt XOR/Base64 manifest if key is provided and it's not raw plaintext
     if (key) {
       const raw = bodyBuffer.toString("utf8").trim();
       if (!raw.startsWith("#EXTM3U")) {
@@ -75,14 +74,14 @@ async function handleFlixProxy(req, res, parsedUrl) {
     res.end(bodyBuffer);
   } catch (err) {
     res.writeHead(500, { "Content-Type": "text/plain", "Access-Control-Allow-Origin": "*" });
-    res.end(`Proxy error: ${err.message}`);
+    res.end("Proxy error: " + err.message);
   }
 }
 
 async function nodeToRequest(req) {
-  const host     = req.headers["host"] ?? `localhost:${PORT}`;
+  const host     = req.headers["host"] ?? "localhost:" + PORT;
   const stripped = BASE && req.url.startsWith(BASE) ? req.url.slice(BASE.length) || "/" : req.url;
-  const url      = `http://${host}${stripped}`;
+  const url      = "http://" + host + stripped;
 
   const chunks = [];
   for await (const chunk of req) chunks.push(chunk);
@@ -97,10 +96,10 @@ async function nodeToRequest(req) {
 }
 
 const server = http.createServer(async (req, res) => {
-  console.log(`→ ${req.method} ${req.url}`);
+  console.log("→ " + req.method + " " + req.url);
 
-  const host = req.headers["host"] ?? `localhost:${PORT}`;
-  const parsedUrl = new URL(req.url, `http://${host}`);
+  const host = req.headers["host"] ?? "localhost:" + PORT;
+  const parsedUrl = new URL(req.url, "http://" + host);
   const pathname = parsedUrl.pathname;
 
   const staticEntry = STATIC[pathname];
@@ -109,7 +108,6 @@ const server = http.createServer(async (req, res) => {
     return serveStatic(res, staticEntry);
   }
 
-  // Intercept proxy requests for FlixCloud decryption
   if (req.method === "GET" && pathname === "/proxy/flix-stream") {
     return handleFlixProxy(req, res, parsedUrl);
   }
@@ -132,5 +130,5 @@ const server = http.createServer(async (req, res) => {
 });
 
 server.listen(PORT, () => {
-  console.log(`Anivexa dev server → http://localhost:${PORT}`);
+  console.log("Anivexa dev server → http://localhost:" + PORT);
 });
