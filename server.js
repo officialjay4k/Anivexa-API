@@ -46,6 +46,8 @@ async function handleFlixProxy(req, res, parsedUrl) {
     return res.end("Missing URL");
   }
 
+  console.log(`[Proxy] Fetching -> ${targetUrl} (isSegment: ${isSegment})`);
+
   try {
     const response = await fetch(targetUrl, {
       headers: {
@@ -56,6 +58,7 @@ async function handleFlixProxy(req, res, parsedUrl) {
     });
 
     if (!response.ok) {
+      console.error(`[Proxy] Upstream error ${response.status} for ${targetUrl}`);
       res.writeHead(response.status, { "Content-Type": "text/plain", "Access-Control-Allow-Origin": "*" });
       return res.end(`Upstream HTTP error: ${response.status}`);
     }
@@ -102,7 +105,6 @@ async function handleFlixProxy(req, res, parsedUrl) {
     let raw = bodyBuffer.toString("utf8").trim();
     let text = raw;
 
-    // Check if decryption is needed. Encrypted payloads do not start with #EXTM3U
     if (key && !raw.startsWith("#EXTM3U")) {
       try {
         const decKey = Buffer.from(key, "base64");
@@ -125,12 +127,14 @@ async function handleFlixProxy(req, res, parsedUrl) {
       const trimmed = line.trim();
       if (trimmed && !trimmed.startsWith("#")) {
         const absoluteUrl = new URL(trimmed, targetUrl).toString();
+        // Preserve original token query params if present in child playlist URLs
+        let proxyUrl = proxyBase + "?url=" + encodeURIComponent(absoluteUrl);
+        if (key) proxyUrl += "&key=" + encodeURIComponent(key);
+        
         if (absoluteUrl.includes(".m3u8")) {
-          let proxyUrl = proxyBase + "?url=" + encodeURIComponent(absoluteUrl);
-          if (key) proxyUrl += "&key=" + encodeURIComponent(key);
           return proxyUrl;
         } else {
-          return proxyBase + "?url=" + encodeURIComponent(absoluteUrl) + "&type=segment";
+          return proxyUrl + "&type=segment";
         }
       }
       return line;
@@ -142,6 +146,7 @@ async function handleFlixProxy(req, res, parsedUrl) {
     });
     return res.end(text);
   } catch (err) {
+    console.error("[Proxy] Exception:", err);
     res.writeHead(500, { "Content-Type": "text/plain", "Access-Control-Allow-Origin": "*" });
     res.end("Proxy error: " + err.message);
   }
