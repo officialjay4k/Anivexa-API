@@ -124,8 +124,8 @@ async function handleFlixProxy(req, res, parsedUrl) {
     const protocol = req.headers["x-forwarded-proto"] || "http";
     const proxyBase = protocol + "://" + host + "/proxy/flix-stream";
 
-    // Master Playlist & Audio Stream Rewriting (Preserves Audio & Quality Variants)
-    if (text.includes("#EXT-X-STREAM-INF") || text.includes("#EXT-X-MEDIA")) {
+    // STRICT Master Playlist Check (#EXT-X-STREAM-INF)
+    if (text.includes("#EXT-X-STREAM-INF")) {
       text = text.split(/\r?\n/).map(line => {
         let trimmed = line.trim();
         if (trimmed.startsWith("#EXT-X-MEDIA")) {
