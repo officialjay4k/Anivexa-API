@@ -5,7 +5,7 @@ import { fileURLToPath } from "node:url";
 import { dirname, join } from "node:path";
 import worker from "./index.js";
 
-const PORT  = Number(process.env.PORT) || 8800;
+const PORT  = Number(process.env.PORT) || 4000;
 const BASE  = process.env.BASE_PATH ?? "";
 const __dir = dirname(fileURLToPath(import.meta.url));
 
@@ -95,6 +95,9 @@ async function handleFlixProxy(req, res, parsedUrl) {
     }
 
     const raw = bodyBuffer.toString("utf8").trim();
+    let text = raw;
+
+    // If encrypted, decrypt the payload
     if (key && !raw.startsWith("#EXTM3U")) {
       const decKey = Buffer.from(key, "base64");
       const payload = Buffer.from(raw, "base64");
@@ -102,33 +105,35 @@ async function handleFlixProxy(req, res, parsedUrl) {
       for (let i = 0; i < payload.length; i++) {
         out[i] = payload[i] ^ decKey[i % decKey.length];
       }
-      
-      let text = out.toString("utf8");
-      const host = req.headers["host"] ?? "localhost:" + PORT;
-      const protocol = req.headers["x-forwarded-proto"] || "http";
-      const proxyBase = protocol + "://" + host + "/proxy/flix-stream";
-
-      text = text.split(/\r?\n/).map(line => {
-        const trimmed = line.trim();
-        if (trimmed && !trimmed.startsWith("#")) {
-          const absoluteSegmentUrl = new URL(trimmed, targetUrl).toString();
-          return proxyBase + "?url=" + encodeURIComponent(absoluteSegmentUrl) + "&type=segment";
-        }
-        return line;
-      }).join("\n");
-
-      res.writeHead(200, {
-        "Access-Control-Allow-Origin": "*",
-        "Content-Type": "application/vnd.apple.mpegurl"
-      });
-      return res.end(text);
+      text = out.toString("utf8");
     }
+
+    const host = req.headers["host"] ?? "localhost:" + PORT;
+    const protocol = req.headers["x-forwarded-proto"] || "http";
+    const proxyBase = protocol + "://" + host + "/proxy/flix-stream";
+
+    // Rewrite internal links (child playlists or media segments) to flow back through proxy
+    text = text.split(/\r?\n/).map(line => {
+      const trimmed = line.trim();
+      if (trimmed && !trimmed.startsWith("#")) {
+        const absoluteUrl = new URL(trimmed, targetUrl).toString();
+        // Check if it points to another m3u8 playlist or a media segment chunk
+        if (absoluteUrl.includes(".m3u8")) {
+          let proxyUrl = proxyBase + "?url=" + encodeURIComponent(absoluteUrl);
+          if (key) proxyUrl += "&key=" + encodeURIComponent(key);
+          return proxyUrl;
+        } else {
+          return proxyBase + "?url=" + encodeURIComponent(absoluteUrl) + "&type=segment";
+        }
+      }
+      return line;
+    }).join("\n");
 
     res.writeHead(200, {
       "Access-Control-Allow-Origin": "*",
       "Content-Type": "application/vnd.apple.mpegurl"
     });
-    res.end(bodyBuffer);
+    return res.end(text);
   } catch (err) {
     res.writeHead(500, { "Content-Type": "text/plain", "Access-Control-Allow-Origin": "*" });
     res.end("Proxy error: " + err.message);
