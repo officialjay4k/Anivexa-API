@@ -29,7 +29,7 @@ function serveStatic(res, entry) {
     res.end("Not found");
   }
 }
-
+// notation //
 async function handleFlixProxy(req, res, parsedUrl) {
   const targetUrl = parsedUrl.searchParams.get("url");
   const key = parsedUrl.searchParams.get("key");
