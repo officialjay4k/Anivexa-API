@@ -30,6 +30,55 @@ function serveStatic(res, entry) {
   }
 }
 
+async function handleFlixProxy(req, res, parsedUrl) {
+  const targetUrl = parsedUrl.searchParams.get("url");
+  const key = parsedUrl.searchParams.get("key");
+
+  if (!targetUrl) {
+    res.writeHead(400, { "Content-Type": "text/plain", "Access-Control-Allow-Origin": "*" });
+    return res.end("Missing URL");
+  }
+
+  try {
+    const response = await fetch(targetUrl, {
+      headers: {
+        "User-Agent": "Mozilla/5.0",
+        "Referer": "https://flixcloud.cc/",
+        "Origin": "https://flixcloud.cc"
+      }
+    });
+
+    const bodyBuffer = Buffer.from(await response.arrayBuffer());
+
+    // Decrypt XOR/Base64 manifest if key is provided and it's not raw plaintext
+    if (key) {
+      const raw = bodyBuffer.toString("utf8").trim();
+      if (!raw.startsWith("#EXTM3U")) {
+        const decKey = Buffer.from(key, "base64");
+        const payload = Buffer.from(raw, "base64");
+        const out = Buffer.alloc(payload.length);
+        for (let i = 0; i < payload.length; i++) {
+          out[i] = payload[i] ^ decKey[i % decKey.length];
+        }
+        res.writeHead(200, {
+          "Access-Control-Allow-Origin": "*",
+          "Content-Type": "application/vnd.apple.mpegurl"
+        });
+        return res.end(out);
+      }
+    }
+
+    res.writeHead(200, {
+      "Access-Control-Allow-Origin": "*",
+      "Content-Type": "application/vnd.apple.mpegurl"
+    });
+    res.end(bodyBuffer);
+  } catch (err) {
+    res.writeHead(500, { "Content-Type": "text/plain", "Access-Control-Allow-Origin": "*" });
+    res.end(`Proxy error: ${err.message}`);
+  }
+}
+
 async function nodeToRequest(req) {
   const host     = req.headers["host"] ?? `localhost:${PORT}`;
   const stripped = BASE && req.url.startsWith(BASE) ? req.url.slice(BASE.length) || "/" : req.url;
@@ -50,11 +99,19 @@ async function nodeToRequest(req) {
 const server = http.createServer(async (req, res) => {
   console.log(`→ ${req.method} ${req.url}`);
 
-  const pathname = req.url.split("?")[0];
+  const host = req.headers["host"] ?? `localhost:${PORT}`;
+  const parsedUrl = new URL(req.url, `http://${host}`);
+  const pathname = parsedUrl.pathname;
+
   const staticEntry = STATIC[pathname];
 
   if (req.method === "GET" && staticEntry) {
     return serveStatic(res, staticEntry);
+  }
+
+  // Intercept proxy requests for FlixCloud decryption
+  if (req.method === "GET" && pathname === "/proxy/flix-stream") {
+    return handleFlixProxy(req, res, parsedUrl);
   }
 
   try {
