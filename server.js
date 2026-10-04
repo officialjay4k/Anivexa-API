@@ -27,10 +27,11 @@ function serveStatic(res, entry) {
     res.writeHead(200, {
       "Content-Type":  entry.mime + "; charset=utf-8",
       "Cache-Control": "no-cache",
+      "Access-Control-Allow-Origin": "*"
     });
     res.end(body);
   } catch {
-    res.writeHead(404);
+    res.writeHead(404, { "Access-Control-Allow-Origin": "*" });
     res.end("Not found");
   }
 }
@@ -56,7 +57,6 @@ async function handleFlixProxy(req, res, parsedUrl) {
 
     const bodyBuffer = Buffer.from(await response.arrayBuffer());
 
-    // Handle Image-Wrapped Segments (HD-2 format)
     if (isSegment) {
       let body = bodyBuffer;
       let offset = 0;
@@ -94,7 +94,6 @@ async function handleFlixProxy(req, res, parsedUrl) {
       return res.end(body);
     }
 
-    // Handle Manifest Decryption & Segment Rewriting
     const raw = bodyBuffer.toString("utf8").trim();
     if (key && !raw.startsWith("#EXTM3U")) {
       const decKey = Buffer.from(key, "base64");
@@ -156,6 +155,16 @@ async function nodeToRequest(req) {
 const server = http.createServer(async (req, res) => {
   console.log("→ " + req.method + " " + req.url);
 
+  // Handle CORS preflight requests instantly
+  if (req.method === "OPTIONS") {
+    res.writeHead(204, {
+      "Access-Control-Allow-Origin": "*",
+      "Access-Control-Allow-Methods": "GET, POST, OPTIONS",
+      "Access-Control-Allow-Headers": "Content-Type"
+    });
+    return res.end();
+  }
+
   const host = req.headers["host"] ?? "localhost:" + PORT;
   const parsedUrl = new URL(req.url, "http://" + host);
   const pathname = parsedUrl.pathname;
@@ -175,15 +184,21 @@ const server = http.createServer(async (req, res) => {
     const response = await worker.fetch(request, {});
 
     res.statusCode = response.status;
-    for (const [k, v] of response.headers) res.setHeader(k, v);
+    for (const [k, v] of response.headers) {
+      res.setHeader(k, v);
+    }
+    // Ensure CORS is explicitly enabled on all worker responses
+    res.setHeader("Access-Control-Allow-Origin", "*");
 
     const buf = await response.arrayBuffer();
     res.end(Buffer.from(buf));
   } catch (err) {
-    console.error("Unhandled error:", err);
-    res.statusCode = 500;
-    res.setHeader("Content-Type", "application/json");
-    res.end(JSON.stringify({ error: err.message }));
+    console.error("Worker fetch fatal error:", err);
+    res.writeHead(500, {
+      "Content-Type": "application/json",
+      "Access-Control-Allow-Origin": "*"
+    });
+    res.end(JSON.stringify({ error: "Worker crash: " + err.message, stack: err.stack }));
   }
 });
 
