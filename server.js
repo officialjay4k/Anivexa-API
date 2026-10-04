@@ -62,10 +62,26 @@ async function fetchUpstream(url) {
   });
 }
 
-function transformSegmentBuffer(bodyBuffer) {
-  let offset = 0;
-  let needsXor = false;
+// Check whether a buffer looks like a raw MPEG-TS stream.
+// MPEG-TS is packetized in 188-byte chunks, each starting with 0x47.
+function looksLikeTs(buf) {
+  if (buf.length < 376) return false;                 // need at least 2 packets
+  if (buf[0] !== 0x47) return false;
+  if (buf[188] !== 0x47) return false;
+  if (buf.length >= 564 && buf[376] !== 0x47) return false;
+  return true;
+}
 
+function xorBuffer(buf, key) {
+  const out = Buffer.from(buf);
+  for (let i = 0; i < out.length; i++) {
+    out[i] ^= key[i % key.length];
+  }
+  return out;
+}
+
+function transformSegmentBuffer(bodyBuffer) {
+  // Step 1: detect and strip a fake image header if present.
   const isWebp = bodyBuffer.length > 12 &&
     bodyBuffer[0] === 0x52 && bodyBuffer[1] === 0x49 &&
     bodyBuffer[2] === 0x46 && bodyBuffer[3] === 0x46 &&
@@ -78,18 +94,41 @@ function transformSegmentBuffer(bodyBuffer) {
     bodyBuffer[4] === 0x0d && bodyBuffer[5] === 0x0a &&
     bodyBuffer[6] === 0x1a && bodyBuffer[7] === 0x0a;
 
-  if (isWebp)      { offset = 12; needsXor = bodyBuffer[offset] !== 0x47; }
-  else if (isPng)  { offset = 8;  needsXor = bodyBuffer[offset] !== 0x47; }
+  let offset = 0;
+  if (isWebp) offset = 12;
+  else if (isPng) offset = 8;
 
-  if (offset === 0) return bodyBuffer;
+  const sliced = bodyBuffer.subarray(offset);
 
-  const out = Buffer.from(bodyBuffer.subarray(offset));
-  if (needsXor) {
-    for (let i = 0; i < out.length; i++) {
-      out[i] ^= flixImageSegmentXorKey[i % flixImageSegmentXorKey.length];
-    }
+  // Step 2: try raw first — if it already looks like TS, ship it.
+  if (looksLikeTs(sliced)) {
+    return { buffer: sliced, mode: "raw" };
   }
-  return out;
+
+  // Step 3: try XOR — this is what most segments will need.
+  const xored = xorBuffer(sliced, flixImageSegmentXorKey);
+  if (looksLikeTs(xored)) {
+    return { buffer: xored, mode: "xor" };
+  }
+
+  // Step 4: neither validated. Pick whichever has more 0x47 at packet
+  // boundaries (weak heuristic) so we at least send hls.js something
+  // plausible and let it try.
+  const sliceScore = scoreTs(sliced);
+  const xorScore   = scoreTs(xored);
+  if (xorScore >= sliceScore) {
+    return { buffer: xored, mode: "xor-fallback" };
+  }
+  return { buffer: sliced, mode: "raw-fallback" };
+}
+
+// Count 0x47 sync bytes at 188-byte boundaries. Used only to break ties.
+function scoreTs(buf) {
+  let hits = 0;
+  for (let i = 0; i < buf.length && i < 188 * 20; i += 188) {
+    if (buf[i] === 0x47) hits++;
+  }
+  return hits;
 }
 
 async function handleFlixProxy(req, res, parsedUrl) {
@@ -112,21 +151,22 @@ async function handleFlixProxy(req, res, parsedUrl) {
 
     const bodyBuffer = Buffer.from(await response.arrayBuffer());
 
-    // Binary payloads (segments, keys, init maps)
     if (isSegment) {
-      const out = transformSegmentBuffer(bodyBuffer);
+      const { buffer: out, mode } = transformSegmentBuffer(bodyBuffer);
       res.writeHead(200, {
         "Access-Control-Allow-Origin": "*",
-        "Content-Type": "video/mp2t"
+        "Content-Type": "video/mp2t",
+        "X-Segment-Mode": mode,
+        "X-Segment-Bytes-In":  String(bodyBuffer.length),
+        "X-Segment-Bytes-Out": String(out.length)
       });
       return res.end(out);
     }
 
-    // Playlist payloads
     const text = decodeIfEncrypted(bodyBuffer.toString("utf8").trim(), key);
 
-    const host     = req.headers["host"] ?? "localhost:" + PORT;
-    const protocol = req.headers["x-forwarded-proto"] || "http";
+    const host      = req.headers["host"] ?? "localhost:" + PORT;
+    const protocol  = req.headers["x-forwarded-proto"] || "http";
     const proxyBase = protocol + "://" + host + "/proxy/flix-stream";
 
     const buildProxyUrl = (absUrl, type) => {
@@ -142,7 +182,6 @@ async function handleFlixProxy(req, res, parsedUrl) {
       const trimmed = line.trim();
       if (!trimmed) return line;
 
-      // Tag lines: rewrite the URI="..." attribute if present
       if (trimmed.startsWith("#")) {
         const uriMatch = trimmed.match(/URI="([^"]+)"/);
         if (!uriMatch) return line;
@@ -150,8 +189,6 @@ async function handleFlixProxy(req, res, parsedUrl) {
         const originalUri = uriMatch[1];
         const absUrl      = new URL(originalUri, targetUrl).toString();
 
-        // EXT-X-KEY and EXT-X-MAP point to binary payloads
-        // EXT-X-MEDIA and EXT-X-I-FRAME-STREAM-INF point to playlists
         let type = null;
         if (trimmed.startsWith("#EXT-X-KEY")) type = "segment";
         else if (trimmed.startsWith("#EXT-X-MAP")) type = "segment";
@@ -160,7 +197,6 @@ async function handleFlixProxy(req, res, parsedUrl) {
         return line.replace(`URI="${originalUri}"`, `URI="${newUri}"`);
       }
 
-      // Bare URI line: variant playlist (master) or segment (media)
       const absUrl = new URL(trimmed, targetUrl).toString();
       const type   = isMaster ? null : "segment";
       return buildProxyUrl(absUrl, type);
