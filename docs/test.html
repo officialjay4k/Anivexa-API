@@ -1,6 +1,6 @@
 <!DOCTYPE html>
 <html lang="en">
-  <head><script>window.__sb_state = {};</script><script src="/.webcontainer@runtime.d5306e6f.js"></script>
+  <head>
     <meta charset="UTF-8" />
     <title>Anivexa-API Multi-Provider Test Bench</title>
 
@@ -26,7 +26,7 @@
     </style>
   </head>
   <body>
-    <h1>Anivexa-API Aggregator Test — Artplayer + Libass (Ready-Gated)</h1>
+    <h1>Anivexa-API Aggregator Test — SRT Mode (no WASM)</h1>
 
     <div>
       <input type="text" id="anilistInput" placeholder="AniList ID (e.g. 16498)" value="16498" />
@@ -37,6 +37,10 @@
         <option value="anizone">AniZone</option>
         <option value="kaa">KickAssAnime</option>
       </select>
+      <label style="margin-left:10px;font-size:13px;">
+        <input type="checkbox" id="preferSrt" checked /> Prefer SRT (native renderer, works in StackBlitz)
+      </label>
+      <br/>
       <button class="btn-primary" onclick="runPipeline()">Fetch & Play Ep 1</button>
       <button class="btn-primary" onclick="document.getElementById('resultsList').innerHTML=''">Clear Log</button>
     </div>
@@ -233,6 +237,7 @@
       async function applySubtitles(watchData) {
         const s0 = (watchData.streams && watchData.streams[0]) || {};
         const subs = s0.subtitles || watchData.subtitles || [];
+        const preferSrt = document.getElementById('preferSrt').checked;
 
         log(`[Subs] Found ${subs.length} subtitle track(s) in payload.`, '#00ffcc');
         if (subs.length === 0) {
@@ -244,11 +249,25 @@
           log(`[Subs]   ${i}: ${s.language || '(untitled)'} [${s.format || '?'}] default=${!!s.default}`);
         });
 
-        const chosen = subs.find(s => s.default) || subs[0];
-        const kind = detectSubtitleType(chosen);
+        // ---- CHOOSING THE TRACK ----
+        // If preferSrt is on, pick the first .srt or .vtt we find.
+        // Otherwise, pick the default track (usually .ass), falling back to first.
+        let chosen;
+        let kind;
+        if (preferSrt) {
+          chosen = subs.find(s => detectSubtitleType(s) === 'srt')
+                || subs.find(s => detectSubtitleType(s) === 'vtt');
+          if (!chosen) {
+            log(`[Subs] No SRT/VTT track found. Falling back to default.`, 'orange');
+            chosen = subs.find(s => s.default) || subs[0];
+          }
+        } else {
+          chosen = subs.find(s => s.default) || subs[0];
+        }
+        kind = detectSubtitleType(chosen);
         const proxied = proxySubtitle(chosen.url);
 
-        log(`[Subs] Selected: <b>${chosen.language}</b> format=<b>${kind}</b>`, '#00ffcc');
+        log(`[Subs] Selected: <b>${chosen.language}</b> format=<b>${kind}</b> (preferSrt=${preferSrt})`, '#00ffcc');
         log(`[Subs] Proxied URL: ${escapeHtml(proxied)}`, '#aaa');
 
         if (kind === 'ass') {
@@ -257,13 +276,21 @@
             log(`[Subs] libass plugin not loaded — cannot render .ass`, 'red');
             return;
           }
-          log(`[Subs] libass plugin keys: ${Object.keys(libass).join(', ')}`, '#aaa');
           try {
             log(`[Subs] Handing .ass URL to libass...`, '#00ffcc');
             await libass.switch(proxied);
             libass.show();
-            art.subtitle.show = true;
-            log(`[Subs] libass.switch() resolved.`, '#00ffcc');
+
+            // Check whether the internal renderer actually initialized.
+            setTimeout(() => {
+              const internal = libass.libass;
+              if (!internal) {
+                log(`[Subs] libass.switch resolved but internal renderer is NULL.`, 'red');
+                log(`[Subs] This is the WebContainer WASM failure. Use the SRT checkbox to bypass.`, 'orange');
+              } else {
+                log(`[Subs] libass internal renderer alive.`, '#00ffcc');
+              }
+            }, 800);
           } catch (err) {
             log(`[Subs] libass error: ${escapeHtml(err.message)}`, 'red');
             console.error('[libass]', err);
@@ -290,7 +317,7 @@
             const blobUrl = URL.createObjectURL(blob);
             art.subtitle.switch(blobUrl, { type: 'vtt', encoding: 'utf-8', escape: false, name: chosen.language });
             art.subtitle.show = true;
-            log(`[Subs] Native subtitle attached.`, '#00ffcc');
+            log(`[Subs] Native subtitle attached. It should appear now.`, '#00ffcc');
           } catch (err) {
             log(`[Subs] Native subtitle error: ${escapeHtml(err.message)}`, 'red');
           }
@@ -300,50 +327,51 @@
         log(`[Subs] Unknown subtitle format — skipping.`, 'orange');
       }
 
-      // -------------------------------------------------------------------
-      // buildArtplayer now returns a Promise that resolves AFTER art.on('ready')
-      // fires. This is the fix — the libass plugin creates its canvas during
-      // Artplayer init, so switch() must be called after that's done.
-      // -------------------------------------------------------------------
       async function buildArtplayer(streamUrl) {
         if (art) { try { art.destroy(false); } catch {} art = null; }
         document.getElementById('artplayer-app').innerHTML = '';
 
-        // 1. Fetch WASM via proxy, verify magic word, blob-URL it.
+        // Pre-fetch the libass WASM + worker only when preferSrt is off.
+        // Skip entirely when SRT mode — saves bandwidth and side-steps the WebContainer issue.
+        const preferSrt = document.getElementById('preferSrt').checked;
         let wasmBlobUrl = null;
-        try {
-          wasmBlobUrl = await fetchAsBlobUrl(
-            proxyReanimeStatic('subtitles-octopus-worker.wasm'),
-            { expectWasm: true, mimeType: 'application/wasm' }
-          );
-          log(`[WASM] Blob URL ready.`, '#00ffcc');
-        } catch (err) {
-          log(`[WASM] Failed: ${escapeHtml(err.message)}`, 'red');
-        }
-
-        // 2. Fetch worker via proxy, patch its relative wasm path to the blob URL.
         let workerBlobUrl = null;
-        try {
-          log(`[Worker] Fetching worker script via proxy...`, '#aaa');
-          const workerResp = await fetch(proxyReanimeStatic('subtitles-octopus-worker.js?v=1'));
-          if (!workerResp.ok) throw new Error(`HTTP ${workerResp.status}`);
-          let workerText = await workerResp.text();
-          log(`[Worker] Fetched ${workerText.length} chars.`, '#00ffcc');
 
-          if (wasmBlobUrl) {
-            const before = workerText;
-            workerText = workerText
-              .replace(/"subtitles-octopus-worker\.wasm"/g, `"${wasmBlobUrl}"`)
-              .replace(/'subtitles-octopus-worker\.wasm'/g, `'${wasmBlobUrl}'`)
-              .replace(/subtitles-octopus-worker\.wasm/g, wasmBlobUrl);
-            log(`[Worker] Wasm path ${workerText === before ? 'NOT ' : ''}patched.`, workerText === before ? 'orange' : '#00ffcc');
+        if (!preferSrt) {
+          try {
+            wasmBlobUrl = await fetchAsBlobUrl(
+              proxyReanimeStatic('subtitles-octopus-worker.wasm'),
+              { expectWasm: true, mimeType: 'application/wasm' }
+            );
+            log(`[WASM] Blob URL ready.`, '#00ffcc');
+          } catch (err) {
+            log(`[WASM] Failed: ${escapeHtml(err.message)}`, 'red');
           }
 
-          const workerBlob = new Blob([workerText], { type: 'application/javascript' });
-          workerBlobUrl = URL.createObjectURL(workerBlob);
-          log(`[Worker] Blob URL ready.`, '#00ffcc');
-        } catch (err) {
-          log(`[Worker] Failed: ${escapeHtml(err.message)}`, 'red');
+          try {
+            log(`[Worker] Fetching worker script via proxy...`, '#aaa');
+            const workerResp = await fetch(proxyReanimeStatic('subtitles-octopus-worker.js?v=1'));
+            if (!workerResp.ok) throw new Error(`HTTP ${workerResp.status}`);
+            let workerText = await workerResp.text();
+            log(`[Worker] Fetched ${workerText.length} chars.`, '#00ffcc');
+
+            if (wasmBlobUrl) {
+              const before = workerText;
+              workerText = workerText
+                .replace(/"subtitles-octopus-worker\.wasm"/g, `"${wasmBlobUrl}"`)
+                .replace(/'subtitles-octopus-worker\.wasm'/g, `'${wasmBlobUrl}'`)
+                .replace(/subtitles-octopus-worker\.wasm/g, wasmBlobUrl);
+              log(`[Worker] Wasm path ${workerText === before ? 'NOT ' : ''}patched.`, workerText === before ? 'orange' : '#00ffcc');
+            }
+
+            const workerBlob = new Blob([workerText], { type: 'application/javascript' });
+            workerBlobUrl = URL.createObjectURL(workerBlob);
+            log(`[Worker] Blob URL ready.`, '#00ffcc');
+          } catch (err) {
+            log(`[Worker] Failed: ${escapeHtml(err.message)}`, 'red');
+          }
+        } else {
+          log(`[Libass] Skipped — SRT mode is on.`, '#aaa');
         }
 
         return new Promise((resolve) => {
@@ -389,13 +417,12 @@
                     log(`[HLS] Audio tracks updated: ${data.audioTracks.length}`, '#00ffcc');
                   });
                   hlsInstance.on(Hls.Events.ERROR, (e, data) => {
+                    if (!data.fatal) return; // ignore non-fatal noise
                     const short = (data.frag?.url || data.url || '').replace(/^https?:\/\/[^/]+/, '').slice(0, 80);
                     log(`[HLS ERROR] ${data.type} / ${data.details} fatal=${data.fatal}<br>  ${escapeHtml(short)}`, 'red');
-                    if (data.fatal) {
-                      if (data.type === Hls.ErrorTypes.NETWORK_ERROR) hlsInstance.startLoad();
-                      else if (data.type === Hls.ErrorTypes.MEDIA_ERROR) hlsInstance.recoverMediaError();
-                      else log(`[HLS] Unrecoverable error.`, 'red');
-                    }
+                    if (data.type === Hls.ErrorTypes.NETWORK_ERROR) hlsInstance.startLoad();
+                    else if (data.type === Hls.ErrorTypes.MEDIA_ERROR) hlsInstance.recoverMediaError();
+                    else log(`[HLS] Unrecoverable error.`, 'red');
                   });
                   art.on('destroy', () => { try { hlsInstance.destroy(); } catch {} hlsInstance = null; });
                 } else if (video.canPlayType('application/vnd.apple.mpegurl')) {
@@ -403,7 +430,7 @@
                 }
               }
             },
-            plugins: [
+            plugins: preferSrt ? [] : [
               artplayerPluginLibass({
                 fallbackFont: FALLBACK_FONT_URL,
                 workerUrl: workerBlobUrl,
@@ -417,8 +444,6 @@
             log(`[Artplayer] Ready.`, '#00ffcc');
             mountSkipLayer();
             art.on('video:timeupdate', updateSkipButton);
-            // Give the libass plugin a moment to finish wiring its canvas
-            // after Artplayer's ready phase, then resolve so applySubtitles runs.
             setTimeout(resolve, 300);
           });
 
@@ -517,7 +542,6 @@
           info.innerText = `Playing stream via ${provider} (proxied & decrypted)`;
           log(`Step 4: Building Artplayer...`, '#00ffcc');
 
-          // buildArtplayer only resolves AFTER art.on('ready') + 300ms delay
           await buildArtplayer(streamUrl);
 
           log(`Step 5: Applying subtitles...`, '#00ffcc');
@@ -530,11 +554,3 @@
     </script>
   </body>
 </html>
-      <script>
-        const source = new EventSource('/livereload');
-        const reload = () => location.reload(true);
-        source.onmessage = reload;
-        source.onerror = () => (source.onopen = reload);
-        console.log('[servor] listening for file changes');
-      </script>
-    
