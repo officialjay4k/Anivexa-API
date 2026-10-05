@@ -9,6 +9,9 @@ const PORT  = Number(process.env.PORT) || 4000;
 const BASE  = process.env.BASE_PATH ?? "";
 const __dir = dirname(fileURLToPath(import.meta.url));
 
+// ---------------------------------------------------------------------------
+// Static file map (served directly by this Node process)
+// ---------------------------------------------------------------------------
 const STATIC = {
   "/":          { file: "docs/landing.html", mime: "text/html" },
   "/docs":      { file: "docs/index.html",   mime: "text/html" },
@@ -16,11 +19,17 @@ const STATIC = {
   "/logo.svg":  { file: "docs/logo.svg",     mime: "image/svg+xml" },
 };
 
+// ---------------------------------------------------------------------------
+// Flixcloud segment XOR key (16 bytes)
+// ---------------------------------------------------------------------------
 const flixImageSegmentXorKey = Uint8Array.from([
   157, 42, 241, 71, 179, 142, 92, 112,
   166, 25, 228, 59, 216, 98, 15, 197
 ]);
 
+// ---------------------------------------------------------------------------
+// Static file server helper
+// ---------------------------------------------------------------------------
 function serveStatic(res, entry) {
   try {
     const body = readFileSync(join(__dir, entry.file));
@@ -36,6 +45,9 @@ function serveStatic(res, entry) {
   }
 }
 
+// ---------------------------------------------------------------------------
+// Manifest decryption: Base64 + repeating-key XOR
+// ---------------------------------------------------------------------------
 function decodeIfEncrypted(raw, key) {
   if (!key) return raw;
   if (raw.startsWith("#EXTM3U")) return raw;
@@ -52,6 +64,9 @@ function decodeIfEncrypted(raw, key) {
   }
 }
 
+// ---------------------------------------------------------------------------
+// Upstream fetcher — injects Referer/Origin/UA to beat the CDN's gating
+// ---------------------------------------------------------------------------
 async function fetchUpstream(url) {
   return await fetch(url, {
     headers: {
@@ -63,196 +78,50 @@ async function fetchUpstream(url) {
 }
 
 // ---------------------------------------------------------------------------
-// Segment transform: robust detection + offset scanning.
+// Segment transform: detect fake WebP/PNG headers, strip them, XOR if needed
 // ---------------------------------------------------------------------------
+function transformSegmentBuffer(bodyBuffer) {
+  let offset  = 0;
+  let needsXor = false;
 
-function detectFakeHeaderOffset(buf) {
-  const isWebp = buf.length > 12 &&
-    buf[0] === 0x52 && buf[1] === 0x49 && buf[2] === 0x46 && buf[3] === 0x46 &&
-    buf[8] === 0x57 && buf[9] === 0x45 && buf[10] === 0x42 && buf[11] === 0x50;
-  if (isWebp) return 12;
+  const isWebp = bodyBuffer.length > 12 &&
+    bodyBuffer[0] === 0x52 && bodyBuffer[1] === 0x49 &&
+    bodyBuffer[2] === 0x46 && bodyBuffer[3] === 0x46 &&
+    bodyBuffer[8] === 0x57 && bodyBuffer[9] === 0x45 &&
+    bodyBuffer[10] === 0x42 && bodyBuffer[11] === 0x50;
 
-  const isPng = buf.length > 8 &&
-    buf[0] === 0x89 && buf[1] === 0x50 && buf[2] === 0x4e && buf[3] === 0x47 &&
-    buf[4] === 0x0d && buf[5] === 0x0a && buf[6] === 0x1a && buf[7] === 0x0a;
-  if (isPng) return 8;
+  const isPng = bodyBuffer.length > 8 &&
+    bodyBuffer[0] === 0x89 && bodyBuffer[1] === 0x50 &&
+    bodyBuffer[2] === 0x4e && bodyBuffer[3] === 0x47 &&
+    bodyBuffer[4] === 0x0d && bodyBuffer[5] === 0x0a &&
+    bodyBuffer[6] === 0x1a && bodyBuffer[7] === 0x0a;
 
-  return 0;
-}
+  if (isWebp)     { offset = 12; needsXor = bodyBuffer[offset] !== 0x47; }
+  else if (isPng) { offset = 8;  needsXor = bodyBuffer[offset] !== 0x47; }
 
-function looksLikeTs(buf) {
-  if (buf.length < 189) return false;
-  if (buf[0] !== 0x47) return false;
-  if (buf[188] !== 0x47) return false;
-  return true;
-}
+  if (offset === 0) return bodyBuffer;
 
-function findTsStart(buf, maxScan = 64) {
-  const limit = Math.min(buf.length - 188, maxScan);
-  for (let i = 0; i <= limit; i++) {
-    if (buf[i] === 0x47 && buf[i + 188] === 0x47) return i;
+  const out = Buffer.from(bodyBuffer.subarray(offset));
+  if (needsXor) {
+    for (let i = 0; i < out.length; i++) {
+      out[i] ^= flixImageSegmentXorKey[i % flixImageSegmentXorKey.length];
+    }
   }
-  return -1;
-}
-
-function xorBuffer(buf, key) {
-  const out = Buffer.from(buf);
-  for (let i = 0; i < out.length; i++) out[i] ^= key[i % key.length];
   return out;
 }
 
-function scoreTs(buf) {
-  let hits = 0;
-  const max = Math.min(buf.length - 188, 188 * 20);
-  for (let i = 0; i <= max; i += 188) {
-    if (buf[i] === 0x47) hits++;
-  }
-  return hits;
-}
-
-function transformSegmentBuffer(bodyBuffer) {
-  if (bodyBuffer.length < 200) {
-    return { buffer: bodyBuffer, mode: "too-small", headerOffset: 0, upstreamBytes: bodyBuffer.length };
-  }
-
-  const headerOffset = detectFakeHeaderOffset(bodyBuffer);
-  const payload = bodyBuffer.subarray(headerOffset);
-
-  if (looksLikeTs(payload)) {
-    return { buffer: payload, mode: "raw", headerOffset, upstreamBytes: bodyBuffer.length };
-  }
-
-  const rawScan = findTsStart(payload);
-  if (rawScan > 0) {
-    const trimmed = payload.subarray(rawScan);
-    if (looksLikeTs(trimmed)) {
-      return { buffer: trimmed, mode: `raw-scan+${rawScan}`, headerOffset, upstreamBytes: bodyBuffer.length };
-    }
-  }
-
-  const xored = xorBuffer(payload, flixImageSegmentXorKey);
-  if (looksLikeTs(xored)) {
-    return { buffer: xored, mode: "xor", headerOffset, upstreamBytes: bodyBuffer.length };
-  }
-
-  const xorScan = findTsStart(xored);
-  if (xorScan > 0) {
-    const trimmed = xored.subarray(xorScan);
-    if (looksLikeTs(trimmed)) {
-      return { buffer: trimmed, mode: `xor-scan+${xorScan}`, headerOffset, upstreamBytes: bodyBuffer.length };
-    }
-  }
-
-  const rawScore = scoreTs(payload);
-  const xorScore = scoreTs(xored);
-  if (rawScore === 0 && xorScore === 0) {
-    return { buffer: payload, mode: "raw-fallback-no-sync", headerOffset, upstreamBytes: bodyBuffer.length };
-  }
-  if (xorScore > rawScore) {
-    return { buffer: xored, mode: "xor-fallback", headerOffset, upstreamBytes: bodyBuffer.length };
-  }
-  return { buffer: payload, mode: "raw-fallback", headerOffset, upstreamBytes: bodyBuffer.length };
-}
-
 // ---------------------------------------------------------------------------
-// Debug peek: dumps the first N bytes (hex) of an upstream URL for inspection.
+// /proxy/flix-stream — HLS manifest + segment proxy
+//
+// Tag-aware URI rewriting:
+//   - Bare URI lines (variant playlists in a master, segments in a media playlist)
+//     get rewritten to go back through this proxy.
+//   - URIs inside #EXT-X-MEDIA, #EXT-X-KEY, #EXT-X-MAP tags get rewritten too.
+//     This is what fixes audio (rendition playlist URIs live inside #EXT-X-MEDIA)
+//     and AES keys / fMP4 init maps.
+//   - No flattening. The master playlist structure is preserved, so hls.js can
+//     pick video + audio renditions naturally.
 // ---------------------------------------------------------------------------
-
-function hexDump(buf, maxBytes = 256) {
-  const slice = buf.subarray(0, Math.min(buf.length, maxBytes));
-  const lines = [];
-  for (let i = 0; i < slice.length; i += 16) {
-    const chunk = slice.subarray(i, i + 16);
-    const hex   = Array.from(chunk).map(b => b.toString(16).padStart(2, "0")).join(" ");
-    const ascii = Array.from(chunk).map(b => (b >= 32 && b < 127) ? String.fromCharCode(b) : ".").join("");
-    lines.push(`${i.toString(16).padStart(4, "0")}  ${hex.padEnd(48)}  ${ascii}`);
-  }
-  return lines.join("\n");
-}
-
-async function handlePeek(req, res, parsedUrl) {
-  const targetUrl = parsedUrl.searchParams.get("url");
-  if (!targetUrl) {
-    res.writeHead(400, { "Access-Control-Allow-Origin": "*" });
-    return res.end("Missing url");
-  }
-  try {
-    const r = await fetchUpstream(targetUrl);
-    if (!r.ok) {
-      res.writeHead(r.status, { "Content-Type": "text/plain", "Access-Control-Allow-Origin": "*" });
-      return res.end(`Upstream ${r.status}`);
-    }
-    const body = Buffer.from(await r.arrayBuffer());
-
-    const isWebp = body.length > 12 && body[0] === 0x52 && body[8] === 0x57;
-    const isPng  = body.length > 8  && body[0] === 0x89 && body[1] === 0x50;
-    const headerOffset = detectFakeHeaderOffset(body);
-    const payload = body.subarray(headerOffset);
-    const xored   = xorBuffer(payload, flixImageSegmentXorKey);
-
-    const report = [
-      `URL: ${targetUrl}`,
-      `Upstream status: ${r.status}`,
-      `Upstream Content-Type: ${r.headers.get("content-type") || "(none)"}`,
-      `Upstream Content-Length: ${r.headers.get("content-length") || "(none)"}`,
-      `Bytes received: ${body.length}`,
-      `Detected WebP: ${isWebp}`,
-      `Detected PNG: ${isPng}`,
-      `Header offset: ${headerOffset}`,
-      `Payload length after header strip: ${payload.length}`,
-      `Payload looksLikeTs (raw): ${looksLikeTs(payload)}`,
-      `Payload looksLikeTs (xor): ${looksLikeTs(xored)}`,
-      `findTsStart(raw) first 64 bytes: ${findTsStart(payload)}`,
-      `findTsStart(xor) first 64 bytes: ${findTsStart(xored)}`,
-      ``,
-      `--- First 256 bytes of UPSTREAM RAW ---`,
-      hexDump(body, 256),
-      ``,
-      `--- First 256 bytes AFTER header strip ---`,
-      hexDump(payload, 256),
-    ].join("\n");
-
-    res.writeHead(200, { "Content-Type": "text/plain; charset=utf-8", "Access-Control-Allow-Origin": "*" });
-    res.end(report);
-  } catch (e) {
-    res.writeHead(500, { "Content-Type": "text/plain", "Access-Control-Allow-Origin": "*" });
-    res.end("Peek error: " + e.message);
-  }
-}
-
-// ---------------------------------------------------------------------------
-// Subtitle proxy: passes .ass/.srt/.vtt through with clean headers.
-// ---------------------------------------------------------------------------
-
-async function handleSubtitleProxy(req, res, parsedUrl) {
-  const targetUrl = parsedUrl.searchParams.get("url");
-  if (!targetUrl) {
-    res.writeHead(400, { "Access-Control-Allow-Origin": "*" });
-    return res.end("Missing url");
-  }
-  try {
-    const r = await fetchUpstream(targetUrl);
-    if (!r.ok) {
-      res.writeHead(r.status, { "Content-Type": "text/plain", "Access-Control-Allow-Origin": "*" });
-      return res.end("Upstream " + r.status);
-    }
-    const body = Buffer.from(await r.arrayBuffer());
-    res.writeHead(200, {
-      "Access-Control-Allow-Origin": "*",
-      "Content-Type": "text/plain; charset=utf-8",
-      "Cache-Control": "public, max-age=3600"
-    });
-    res.end(body);
-  } catch (e) {
-    res.writeHead(500, { "Content-Type": "text/plain", "Access-Control-Allow-Origin": "*" });
-    res.end("Subtitle proxy error: " + e.message);
-  }
-}
-
-// ---------------------------------------------------------------------------
-// Playlist + segment proxy (main video path).
-// ---------------------------------------------------------------------------
-
 async function handleFlixProxy(req, res, parsedUrl) {
   const targetUrl = parsedUrl.searchParams.get("url");
   const key       = parsedUrl.searchParams.get("key");
@@ -273,29 +142,26 @@ async function handleFlixProxy(req, res, parsedUrl) {
 
     const bodyBuffer = Buffer.from(await response.arrayBuffer());
 
+    // ---- Binary payloads (segments, AES keys, fMP4 init maps) ----
     if (isSegment) {
-      const result = transformSegmentBuffer(bodyBuffer);
-      console.log(`[seg] mode=${result.mode} header=${result.headerOffset} in=${result.upstreamBytes} out=${result.buffer.length}`);
+      const out = transformSegmentBuffer(bodyBuffer);
       res.writeHead(200, {
         "Access-Control-Allow-Origin": "*",
-        "Content-Type": "video/mp2t",
-        "X-Segment-Mode":     result.mode,
-        "X-Segment-Header":   String(result.headerOffset),
-        "X-Segment-Upstream": String(result.upstreamBytes),
-        "X-Segment-Out":      String(result.buffer.length)
+        "Content-Type": "video/mp2t"
       });
-      return res.end(result.buffer);
+      return res.end(out);
     }
 
+    // ---- Playlist payloads ----
     const text = decodeIfEncrypted(bodyBuffer.toString("utf8").trim(), key);
 
-    const host      = req.headers["host"] ?? "localhost:" + PORT;
-    const protocol  = req.headers["x-forwarded-proto"] || "http";
+    const host     = req.headers["host"] ?? "localhost:" + PORT;
+    const protocol = req.headers["x-forwarded-proto"] || "http";
     const proxyBase = protocol + "://" + host + "/proxy/flix-stream";
 
     const buildProxyUrl = (absUrl, type) => {
       let u = proxyBase + "?url=" + encodeURIComponent(absUrl);
-      if (key) u += "&key=" + encodeURIComponent(key);
+      if (key)  u += "&key=" + encodeURIComponent(key);
       if (type) u += "&type=" + type;
       return u;
     };
@@ -306,6 +172,7 @@ async function handleFlixProxy(req, res, parsedUrl) {
       const trimmed = line.trim();
       if (!trimmed) return line;
 
+      // ---- Tag lines: rewrite URI="..." attribute if present ----
       if (trimmed.startsWith("#")) {
         const uriMatch = trimmed.match(/URI="([^"]+)"/);
         if (!uriMatch) return line;
@@ -313,6 +180,8 @@ async function handleFlixProxy(req, res, parsedUrl) {
         const originalUri = uriMatch[1];
         const absUrl      = new URL(originalUri, targetUrl).toString();
 
+        // EXT-X-KEY and EXT-X-MAP point to binary payloads (AES key, init segment).
+        // EXT-X-MEDIA and EXT-X-I-FRAME-STREAM-INF point to other playlists.
         let type = null;
         if (trimmed.startsWith("#EXT-X-KEY")) type = "segment";
         else if (trimmed.startsWith("#EXT-X-MAP")) type = "segment";
@@ -321,6 +190,7 @@ async function handleFlixProxy(req, res, parsedUrl) {
         return line.replace(`URI="${originalUri}"`, `URI="${newUri}"`);
       }
 
+      // ---- Bare URI line: variant playlist (master) or segment (media) ----
       const absUrl = new URL(trimmed, targetUrl).toString();
       const type   = isMaster ? null : "segment";
       return buildProxyUrl(absUrl, type);
@@ -337,6 +207,50 @@ async function handleFlixProxy(req, res, parsedUrl) {
   }
 }
 
+// ---------------------------------------------------------------------------
+// /proxy/subtitle — subtitle pass-through
+//
+// Why this exists:
+//   - Upstream serves .ass as application/octet-stream with no CORS header.
+//   - libass / native <track> both want text/* + CORS.
+//   - Same Referer/Origin injection as the video proxy, in case some CDN
+//     nodes are stricter about subs than manifests.
+//   - No XOR, no header stripping — bytes pass through untouched. If we ever
+//     see disguised subs, we can add the transform here.
+// ---------------------------------------------------------------------------
+async function handleSubtitleProxy(req, res, parsedUrl) {
+  const targetUrl = parsedUrl.searchParams.get("url");
+
+  if (!targetUrl) {
+    res.writeHead(400, { "Access-Control-Allow-Origin": "*" });
+    return res.end("Missing url");
+  }
+
+  try {
+    const r = await fetchUpstream(targetUrl);
+
+    if (!r.ok) {
+      res.writeHead(r.status, { "Access-Control-Allow-Origin": "*" });
+      return res.end("Upstream " + r.status);
+    }
+
+    const body = Buffer.from(await r.arrayBuffer());
+
+    res.writeHead(200, {
+      "Access-Control-Allow-Origin": "*",
+      "Content-Type": "text/plain; charset=utf-8",
+      "Cache-Control": "public, max-age=3600"
+    });
+    return res.end(body);
+  } catch (e) {
+    res.writeHead(500, { "Access-Control-Allow-Origin": "*" });
+    res.end("Subtitle proxy error: " + e.message);
+  }
+}
+
+// ---------------------------------------------------------------------------
+// Node req -> Fetch API Request (for handing off to the Worker)
+// ---------------------------------------------------------------------------
 async function nodeToRequest(req) {
   const host     = req.headers["host"] ?? "localhost:" + PORT;
   const stripped = BASE && req.url.startsWith(BASE) ? req.url.slice(BASE.length) || "/" : req.url;
@@ -354,6 +268,9 @@ async function nodeToRequest(req) {
   });
 }
 
+// ---------------------------------------------------------------------------
+// Main HTTP server
+// ---------------------------------------------------------------------------
 const server = http.createServer(async (req, res) => {
   if (req.method === "OPTIONS") {
     res.writeHead(204, {
@@ -364,28 +281,27 @@ const server = http.createServer(async (req, res) => {
     return res.end();
   }
 
-  const host = req.headers["host"] ?? "localhost:" + PORT;
+  const host      = req.headers["host"] ?? "localhost:" + PORT;
   const parsedUrl = new URL(req.url, "http://" + host);
   const pathname  = parsedUrl.pathname;
 
+  // Static files
   const staticEntry = STATIC[pathname];
-
   if (req.method === "GET" && staticEntry) {
     return serveStatic(res, staticEntry);
   }
 
+  // HLS manifest / segment proxy
   if (req.method === "GET" && pathname === "/proxy/flix-stream") {
     return handleFlixProxy(req, res, parsedUrl);
   }
 
-  if (req.method === "GET" && pathname === "/proxy/peek-segment") {
-    return handlePeek(req, res, parsedUrl);
-  }
-
+  // Subtitle pass-through proxy
   if (req.method === "GET" && pathname === "/proxy/subtitle") {
     return handleSubtitleProxy(req, res, parsedUrl);
   }
 
+  // Everything else -> Worker (Anivexa API)
   try {
     const request  = await nodeToRequest(req);
     const response = await worker.fetch(request, {});
