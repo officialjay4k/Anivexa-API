@@ -15,6 +15,7 @@ const __dir = dirname(fileURLToPath(import.meta.url));
 const STATIC = {
   "/":          { file: "docs/landing.html", mime: "text/html" },
   "/docs":      { file: "docs/index.html",   mime: "text/html" },
+  "/test":      { file: "docs/test.html",    mime: "text/html" },  // <-- NEW
   "/style.css": { file: "docs/style.css",    mime: "text/css"  },
   "/logo.svg":  { file: "docs/logo.svg",     mime: "image/svg+xml" },
 };
@@ -41,7 +42,7 @@ function serveStatic(res, entry) {
     res.end(body);
   } catch {
     res.writeHead(404, { "Access-Control-Allow-Origin": "*" });
-    res.end("Not found");
+    res.end("Not found: " + entry.file);
   }
 }
 
@@ -112,15 +113,6 @@ function transformSegmentBuffer(bodyBuffer) {
 
 // ---------------------------------------------------------------------------
 // /proxy/flix-stream — HLS manifest + segment proxy
-//
-// Tag-aware URI rewriting:
-//   - Bare URI lines (variant playlists in a master, segments in a media playlist)
-//     get rewritten to go back through this proxy.
-//   - URIs inside #EXT-X-MEDIA, #EXT-X-KEY, #EXT-X-MAP tags get rewritten too.
-//     This is what fixes audio (rendition playlist URIs live inside #EXT-X-MEDIA)
-//     and AES keys / fMP4 init maps.
-//   - No flattening. The master playlist structure is preserved, so hls.js can
-//     pick video + audio renditions naturally.
 // ---------------------------------------------------------------------------
 async function handleFlixProxy(req, res, parsedUrl) {
   const targetUrl = parsedUrl.searchParams.get("url");
@@ -142,7 +134,6 @@ async function handleFlixProxy(req, res, parsedUrl) {
 
     const bodyBuffer = Buffer.from(await response.arrayBuffer());
 
-    // ---- Binary payloads (segments, AES keys, fMP4 init maps) ----
     if (isSegment) {
       const out = transformSegmentBuffer(bodyBuffer);
       res.writeHead(200, {
@@ -152,7 +143,6 @@ async function handleFlixProxy(req, res, parsedUrl) {
       return res.end(out);
     }
 
-    // ---- Playlist payloads ----
     const text = decodeIfEncrypted(bodyBuffer.toString("utf8").trim(), key);
 
     const host      = req.headers["host"] ?? "localhost:" + PORT;
@@ -172,7 +162,6 @@ async function handleFlixProxy(req, res, parsedUrl) {
       const trimmed = line.trim();
       if (!trimmed) return line;
 
-      // ---- Tag lines: rewrite URI="..." attribute if present ----
       if (trimmed.startsWith("#")) {
         const uriMatch = trimmed.match(/URI="([^"]+)"/);
         if (!uriMatch) return line;
@@ -180,8 +169,6 @@ async function handleFlixProxy(req, res, parsedUrl) {
         const originalUri = uriMatch[1];
         const absUrl      = new URL(originalUri, targetUrl).toString();
 
-        // EXT-X-KEY and EXT-X-MAP point to binary payloads (AES key, init segment).
-        // EXT-X-MEDIA and EXT-X-I-FRAME-STREAM-INF point to other playlists.
         let type = null;
         if (trimmed.startsWith("#EXT-X-KEY")) type = "segment";
         else if (trimmed.startsWith("#EXT-X-MAP")) type = "segment";
@@ -190,7 +177,6 @@ async function handleFlixProxy(req, res, parsedUrl) {
         return line.replace(`URI="${originalUri}"`, `URI="${newUri}"`);
       }
 
-      // ---- Bare URI line: variant playlist (master) or segment (media) ----
       const absUrl = new URL(trimmed, targetUrl).toString();
       const type   = isMaster ? null : "segment";
       return buildProxyUrl(absUrl, type);
@@ -209,13 +195,6 @@ async function handleFlixProxy(req, res, parsedUrl) {
 
 // ---------------------------------------------------------------------------
 // /proxy/subtitle — subtitle pass-through
-//
-// Why this exists:
-//   - Upstream serves .ass as application/octet-stream with no CORS header.
-//   - libass / native <track> both want text/* + CORS.
-//   - Same Referer/Origin injection as the video proxy, in case some CDN
-//     nodes are stricter about subs than manifests.
-//   - No XOR, no header stripping — bytes pass through untouched.
 // ---------------------------------------------------------------------------
 async function handleSubtitleProxy(req, res, parsedUrl) {
   const targetUrl = parsedUrl.searchParams.get("url");
@@ -249,15 +228,6 @@ async function handleSubtitleProxy(req, res, parsedUrl) {
 
 // ---------------------------------------------------------------------------
 // /proxy/reanime-static — pass-through for Reanime's self-hosted libass assets
-//
-// Reanime hosts its SubtitlesOctopus worker + WASM at:
-//   https://flixcloud.cc/artplayer-new/subtitles-octopus-worker.js
-//   https://flixcloud.cc/artplayer-new/subtitles-octopus-worker.wasm
-// Both are cross-origin and Referer-gated. We proxy them here so the browser
-// can load them as same-origin assets (and so we can serve wasm with the
-// correct Content-Type).
-//
-// Usage: /proxy/reanime-static?path=subtitles-octopus-worker.js?v=1
 // ---------------------------------------------------------------------------
 async function handleReanimeStaticProxy(req, res, parsedUrl) {
   const subPath = parsedUrl.searchParams.get("path");
@@ -267,7 +237,6 @@ async function handleReanimeStaticProxy(req, res, parsedUrl) {
     return res.end("Missing path");
   }
 
-  // Guard: only allow files under artplayer-new/, no path traversal.
   const safePath = subPath.replace(/^\/+/, "").replace(/\.\./g, "");
   const targetUrl = "https://flixcloud.cc/artplayer-new/" + safePath;
 
