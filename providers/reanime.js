@@ -9,25 +9,50 @@ var FLIX = "https://flixcloud.cc";
 var ANIZIP2 = "https://api.ani.zip/mappings";
 var UA5 = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36";
 var H = { "User-Agent": UA5, Accept: "application/json, */*" };
-async function searchReanime(query, genre = null) {
+
+const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
+
+async function searchReanime(query, genre = null, attempt = 1) {
   const params = new URLSearchParams({ q: query, limit: 10 });
   if (genre) params.set("genre", genre);
-  const data = await fetch(`${BASE}/api/v1/search?${params}`, { headers: H }).then(async (r) => {
-    const _raw = await r.text();
-    if (!r.ok) { const _e = new Error(`reanime search ${r.status}`); _e.rawBody = _raw; throw _e; }
-    try { return JSON.parse(_raw); } catch (_pe) { _pe.rawBody = _raw; throw _pe; }
-  });
-  return Array.isArray(data?.results) ? data.results : [];
+
+  let data;
+  try {
+    data = await fetch(`${BASE}/api/v1/search?${params}`, { headers: H }).then(async (r) => {
+      const _raw = await r.text();
+      if (!r.ok) { const _e = new Error(`reanime search ${r.status}`); _e.rawBody = _raw; throw _e; }
+      try { return JSON.parse(_raw); } catch (_pe) { _pe.rawBody = _raw; throw _pe; }
+    });
+  } catch (err) {
+    // Network / HTTP / parse failure — retry up to 3 total attempts
+    if (attempt < 3) {
+      console.log(`[reanime] search "${query}" attempt ${attempt} failed (${err.message}), retrying...`);
+      await sleep(400 * attempt);
+      return searchReanime(query, genre, attempt + 1);
+    }
+    throw err;
+  }
+
+  const results = Array.isArray(data?.results) ? data.results : [];
+
+  // Empty result on a real query — retry. Reanime's search is known to flake.
+  if (results.length === 0 && attempt < 3) {
+    console.log(`[reanime] search "${query}" returned empty (attempt ${attempt}), retrying...`);
+    await sleep(400 * attempt);
+    return searchReanime(query, genre, attempt + 1);
+  }
+
+  return results;
 }
 __name(searchReanime, "searchReanime");
+
 async function fetchAnimeDetail(animeId) {
   const res = await fetch(`${BASE}/api/v1/anime/${animeId}`, { headers: H });
   if (!res.ok) return null;
   return res.json().catch(() => null);
 }
 __name(fetchAnimeDetail, "fetchAnimeDetail");
-// Extract AniList ID embedded in AniList CDN cover image URLs.
-// e.g. https://s4.anilist.co/file/anilistcdn/media/anime/cover/large/bx16498-xxxx.jpg → 16498
+
 function extractAnilistIdFromCover(coverImage) {
   const urls = [coverImage?.extra_large, coverImage?.large, coverImage?.medium].filter(Boolean);
   for (const url of urls) {
@@ -37,6 +62,7 @@ function extractAnilistIdFromCover(coverImage) {
   return null;
 }
 __name(extractAnilistIdFromCover, "extractAnilistIdFromCover");
+
 async function resolveSeries(anilistId, ctx = {}) {
   const cacheKey = `np:reanime:${anilistId}`;
   const cached = cacheGet(cacheKey);
@@ -45,6 +71,9 @@ async function resolveSeries(anilistId, ctx = {}) {
   const media = ctx.media ?? await getMedia(anilistId);
   const malId = media?.idMal ?? null;
   const queries = buildTitles(media, ctx.anizip).slice(0, 5);
+
+  console.log(`[reanime] resolveSeries ${anilistId} — trying ${queries.length} queries: ${queries.slice(0, 3).join(' | ')}...`);
+
   const searchRequests = queries.map((query) => searchReanime(query));
   if (media?.genres?.includes("Hentai")) {
     searchRequests.push(...queries.map((query) => searchReanime(query, "Hentai")));
@@ -57,8 +86,9 @@ async function resolveSeries(anilistId, ctx = {}) {
     }
   }));
 
-  // Fast pass: AniList CDN cover URLs embed the AniList ID as bx{id}-*.
-  // If a candidate's cover image already confirms our ID we can skip detail fetches entirely.
+  console.log(`[reanime] resolveSeries ${anilistId} — ${candidates.size} unique candidates`);
+
+  // Fast pass: AniList CDN cover URLs embed the AniList ID as bx{id}-*
   for (const [id, r] of candidates) {
     const coverId = extractAnilistIdFromCover(r.cover_image);
     if (coverId && coverId === Number(anilistId)) {
@@ -74,19 +104,20 @@ async function resolveSeries(anilistId, ctx = {}) {
         matchScore: 1,
       };
       cacheSet(cacheKey, data, SHOW_IDENTITY_TTL);
+      console.log(`[reanime] resolveSeries ${anilistId} — matched via cover_image: ${id}`);
       return data;
     }
   }
 
-  // Fallback: fetch detail pages only for candidates that had no AniList CDN cover
-  // (TMDB / MAL covers don't embed an ID we can read directly).
-  const needsDetail = [...candidates.keys()].filter(
-    (id) => extractAnilistIdFromCover(candidates.get(id)?.cover_image) === null
-  );
+  // FIX: fetch detail for ALL candidates, not just ones without AniList covers.
+  // A candidate with a mismatched cover (bx99999) still needs its detail page
+  // checked — it might genuinely be our show with a wrong-looking cover.
+  const needsDetail = [...candidates.keys()];
   const details = await Promise.all(
     needsDetail.map(async (id) => ({ id, detail: await fetchAnimeDetail(id).catch(() => null) }))
   );
 
+  // Match on anilist_id
   for (const { id, detail } of details) {
     if (detail?.anilist_id && Number(detail.anilist_id) === Number(anilistId)) {
       const data = {
@@ -101,10 +132,12 @@ async function resolveSeries(anilistId, ctx = {}) {
         matchScore: 1,
       };
       cacheSet(cacheKey, data, SHOW_IDENTITY_TTL);
+      console.log(`[reanime] resolveSeries ${anilistId} — matched via anilist_id: ${id}`);
       return data;
     }
   }
 
+  // Match on mal_id
   if (malId) {
     for (const { id, detail } of details) {
       const detailMal = detail?.mal_id;
@@ -121,14 +154,20 @@ async function resolveSeries(anilistId, ctx = {}) {
           matchScore: 0.9,
         };
         cacheSet(cacheKey, data, SHOW_IDENTITY_TTL);
+        console.log(`[reanime] resolveSeries ${anilistId} — matched via mal_id: ${id}`);
         return data;
       }
     }
   }
 
+  // Diagnostic before throwing
+  console.log(`[reanime] resolveSeries ${anilistId} FAILED. Candidate titles:`, 
+    [...candidates.values()].slice(0, 5).map(c => `${c.anime_id}:${c.title?.english || c.title?.romaji}`).join(' | '));
+
   throw new Error(`No confirmed reanime match for AniList ${anilistId}`);
 }
 __name(resolveSeries, "resolveSeries");
+
 async function fetchEpisodesList(animeId, limit = 2000) {
   const data = await fetch(`${BASE}/api/v1/anime/${animeId}/episodes?${new URLSearchParams({ limit })}`, { headers: H }).then(async (r) => {
     const _raw = await r.text();
@@ -138,10 +177,12 @@ async function fetchEpisodesList(animeId, limit = 2000) {
   return Array.isArray(data?.data) ? data.data : [];
 }
 __name(fetchEpisodesList, "fetchEpisodesList");
+
 async function fetchAnizip(anilistId) {
   return fetch(`${ANIZIP2}?anilist_id=${anilistId}`).then((r) => r.json()).catch(() => null);
 }
 __name(fetchAnizip, "fetchAnizip");
+
 function mergeEpisode(anilistId, ep, meta, audio) {
   const number = ep.episode_number;
   return {
@@ -161,10 +202,12 @@ function mergeEpisode(anilistId, ep, meta, audio) {
   };
 }
 __name(mergeEpisode, "mergeEpisode");
+
 function json3(data, status = 200) {
   return new Response(JSON.stringify(data), { status, headers: { "Content-Type": "application/json", "Access-Control-Allow-Origin": "*" } });
 }
 __name(json3, "json");
+
 async function handleEpisodes3(anilistId, url) {
   const series = await resolveSeries(anilistId);
   const [reanimeEps, anizip] = await Promise.all([
@@ -186,6 +229,7 @@ async function handleEpisodes3(anilistId, url) {
   });
 }
 __name(handleEpisodes3, "handleEpisodes");
+
 async function resolveStream3(anilistId, audio, ep) {
   const series = await resolveSeries(anilistId);
   const title2 = series.title;
@@ -241,6 +285,7 @@ async function resolveStream3(anilistId, audio, ep) {
   return { title: title2, slug, watchData, stream: streams[0].stream, server: streams[0].server.serverName, servers: uniqueServers, streams, failedServers: decrypted.filter((item) => item.error) };
 }
 __name(resolveStream3, "resolveStream");
+
 async function handleWatch3(anilistId, audio, epNum, origin) {
   if (audio !== "sub" && audio !== "dub") return json3({ error: "audio must be sub or dub" }, 400);
   const ep = parseInt(epNum);
@@ -296,6 +341,7 @@ async function handleWatch3(anilistId, audio, epNum, origin) {
   });
 }
 __name(handleWatch3, "handleWatch");
+
 async function handleStream3(anilistId, audio, epNum) {
   if (audio !== "sub" && audio !== "dub") return json3({ error: "audio must be sub or dub" }, 400);
   const ep = parseInt(epNum);
@@ -316,6 +362,7 @@ async function handleStream3(anilistId, audio, epNum) {
   });
 }
 __name(handleStream3, "handleStream");
+
 var reanime_default = {
   async fetch(request) {
     const url = new URL(request.url);
@@ -338,6 +385,7 @@ var reanime_default = {
     }
   }
 };
+
 async function getEpisodes3(anilistId, ctx = {}) {
   const series = await resolveSeries(anilistId, ctx);
   const anizip = ctx.anizip !== void 0 ? ctx.anizip : await fetchAnizip(anilistId);
@@ -360,5 +408,6 @@ async function getEpisodes3(anilistId, ctx = {}) {
   };
 }
 __name(getEpisodes3, "getEpisodes");
+
 export default reanime_default;
 export { getEpisodes3 as getEpisodes };
