@@ -311,8 +311,8 @@ const server = http.createServer(async (req, res) => {
     return handleFlixProxy(req, res, parsedUrl);
   }
 
-  // Subtitle pass-through proxy
-  if (req.method === "GET" && pathname === "/proxy/subtitle") {
+  // Subtitle pass-through proxy (accepts .ass / .ssa / .srt / .vtt suffix)
+  if (req.method === "GET" && /^\/proxy\/subtitle(\.(ass|ssa|srt|vtt))?$/.test(pathname)) {
     return handleSubtitleProxy(req, res, parsedUrl);
   }
 
