@@ -5,119 +5,31 @@
     <title>Anivexa-API Multi-Provider Test Bench</title>
 
     <script src="https://cdn.jsdelivr.net/npm/hls.js@1.6.7/dist/hls.min.js"></script>
-    <script src="https://cdn.jsdelivr.net/npm/artplayer@4.6.2/dist/artplayer.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/artplayer@5.4.0/dist/artplayer.js"></script>
     <script src="https://flixcloud.cc/artplayer-new/artplayer-plugin-libass.legacy.js?v=104"></script>
 
     <style>
-      body {
-        background: #121212;
-        color: #fff;
-        font-family: sans-serif;
-        padding: 20px;
-        margin: 0;
-      }
-      input,
-      select,
-      button {
-        padding: 10px;
-        font-size: 15px;
-        margin-right: 5px;
-        margin-bottom: 10px;
-      }
-      input,
-      select {
-        background: #222;
-        border: 1px solid #444;
-        color: #fff;
-        border-radius: 4px;
-      }
-      input[type='text'] {
-        width: 200px;
-      }
-      .btn-primary {
-        background: #6200ee;
-        color: #fff;
-        border: none;
-        cursor: pointer;
-        border-radius: 4px;
-        font-weight: bold;
-      }
-      .btn-primary:hover {
-        background: #7c4dff;
-      }
-      .results {
-        margin-top: 20px;
-        display: flex;
-        gap: 20px;
-        flex-wrap: wrap;
-      }
-      .list {
-        flex: 1;
-        min-width: 300px;
-        background: #1e1e1e;
-        padding: 15px;
-        border-radius: 8px;
-        max-height: 640px;
-        overflow-y: auto;
-      }
-      .player-container {
-        flex: 1;
-        min-width: 360px;
-        background: #1e1e1e;
-        padding: 15px;
-        border-radius: 8px;
-      }
-      .artplayer-app {
-        width: 100%;
-        aspect-ratio: 16 / 9;
-        background: #000;
-        border-radius: 8px;
-        overflow: hidden;
-        border: 1px solid #333;
-      }
-      .artplayer-app .skip-button {
-        position: absolute;
-        bottom: 80px;
-        right: 20px;
-        z-index: 30;
-        background: #ff8c00;
-        color: #fff;
-        padding: 10px 18px;
-        border: none;
-        border-radius: 6px;
-        font-weight: bold;
-        font-size: 14px;
-        cursor: pointer;
-        box-shadow: 0 4px 14px rgba(0, 0, 0, 0.8);
-        transition: transform 0.2s, background 0.2s;
-      }
-      .artplayer-app .skip-button:hover {
-        background: #ffa500;
-        transform: scale(1.05);
-      }
-      pre {
-        white-space: pre-wrap;
-        word-wrap: break-word;
-        font-size: 12px;
-        color: #00ffcc;
-      }
-      p {
-        margin: 6px 0;
-        font-size: 13px;
-        line-height: 1.4;
-      }
+      body { background: #121212; color: #fff; font-family: sans-serif; padding: 20px; margin: 0; }
+      input, select, button { padding: 10px; font-size: 15px; margin-right: 5px; margin-bottom: 10px; }
+      input, select { background: #222; border: 1px solid #444; color: #fff; border-radius: 4px; }
+      input[type="text"] { width: 200px; }
+      .btn-primary { background: #6200ee; color: #fff; border: none; cursor: pointer; border-radius: 4px; font-weight: bold; }
+      .btn-primary:hover { background: #7c4dff; }
+      .results { margin-top: 20px; display: flex; gap: 20px; flex-wrap: wrap; }
+      .list { flex: 1; min-width: 300px; background: #1e1e1e; padding: 15px; border-radius: 8px; max-height: 640px; overflow-y: auto; }
+      .player-container { flex: 1; min-width: 360px; background: #1e1e1e; padding: 15px; border-radius: 8px; }
+      .artplayer-app { width: 100%; aspect-ratio: 16 / 9; background: #000; border-radius: 8px; overflow: hidden; border: 1px solid #333; }
+      .artplayer-app .skip-button { position: absolute; bottom: 80px; right: 20px; z-index: 30; background: #ff8c00; color: #fff; padding: 10px 18px; border: none; border-radius: 6px; font-weight: bold; font-size: 14px; cursor: pointer; box-shadow: 0 4px 14px rgba(0,0,0,0.8); transition: transform .2s, background .2s; }
+      .artplayer-app .skip-button:hover { background: #ffa500; transform: scale(1.05); }
+      pre { white-space: pre-wrap; word-wrap: break-word; font-size: 12px; color: #00ffcc; }
+      p { margin: 6px 0; font-size: 13px; line-height: 1.4; }
     </style>
   </head>
   <body>
-    <h1>Anivexa-API Test — Subtitle Selector</h1>
+    <h1>Anivexa-API Test — Subtitle Selector + Auto-Switch</h1>
 
     <div>
-      <input
-        type="text"
-        id="anilistInput"
-        placeholder="AniList ID (e.g. 16498)"
-        value="16498"
-      />
+      <input type="text" id="anilistInput" placeholder="AniList ID (e.g. 16498)" value="16498" />
       <select id="providerSelect">
         <option value="reanime">Reanime</option>
         <option value="mkissa">MKissa</option>
@@ -125,35 +37,22 @@
         <option value="anizone">AniZone</option>
         <option value="kaa">KickAssAnime</option>
       </select>
-      <button class="btn-primary" onclick="runPipeline()">
-        Fetch & Play Ep 1
-      </button>
-      <button
-        class="btn-primary"
-        onclick="document.getElementById('resultsList').innerHTML=''"
-      >
-        Clear Log
-      </button>
+      <button class="btn-primary" onclick="runPipeline()">Fetch & Play Ep 1</button>
+      <button class="btn-primary" onclick="document.getElementById('resultsList').innerHTML=''">Clear Log</button>
     </div>
 
     <div class="results">
-      <div class="list" id="resultsList">
-        <p>Pipeline logs will appear here...</p>
-      </div>
+      <div class="list" id="resultsList"><p>Pipeline logs will appear here...</p></div>
       <div class="player-container">
         <h3>Player Sandbox</h3>
         <div class="artplayer-app" id="artplayer-app"></div>
-        <p
-          id="streamInfo"
-          style="margin-top: 10px; font-weight: bold; color: #bb86fc"
-        ></p>
+        <p id="streamInfo" style="margin-top: 10px; font-weight: bold; color: #bb86fc"></p>
       </div>
     </div>
 
     <script>
       const API_BASE = 'https://anivexa-api-production-46c4.up.railway.app';
-      const FALLBACK_FONT_URL =
-        'https://cdn.jsdelivr.net/fontsource/fonts/roboto@latest/latin-400-normal.woff2';
+      const FALLBACK_FONT_URL = 'https://cdn.jsdelivr.net/fontsource/fonts/roboto@latest/latin-400-normal.woff2';
 
       let art = null;
       let hlsInstance = null;
@@ -163,10 +62,7 @@
       const listDiv = document.getElementById('resultsList');
 
       function escapeHtml(str) {
-        return String(str)
-          .replace(/&/g, '&amp;')
-          .replace(/</g, '&lt;')
-          .replace(/>/g, '&gt;');
+        return String(str).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
       }
       function formatTime(seconds) {
         if (isNaN(seconds) || !seconds) return '0:00';
@@ -182,10 +78,7 @@
         listDiv.scrollTop = listDiv.scrollHeight;
       }
 
-      async function fetchAsBlobUrl(
-        proxyUrl,
-        { expectWasm = false, mimeType = 'application/javascript' } = {}
-      ) {
+      async function fetchAsBlobUrl(proxyUrl, { expectWasm = false, mimeType = 'application/javascript' } = {}) {
         log(`[Fetch] GET ${escapeHtml(proxyUrl)}`, '#aaa');
         const resp = await fetch(proxyUrl);
         if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
@@ -194,14 +87,8 @@
 
         if (expectWasm) {
           const head = new Uint8Array(buf.slice(0, 8));
-          const isWasm =
-            head[0] === 0x00 &&
-            head[1] === 0x61 &&
-            head[2] === 0x73 &&
-            head[3] === 0x6d;
-          const hex = Array.from(head)
-            .map((b) => b.toString(16).padStart(2, '0'))
-            .join(' ');
+          const isWasm = head[0] === 0x00 && head[1] === 0x61 && head[2] === 0x73 && head[3] === 0x6d;
+          const hex = Array.from(head).map(b => b.toString(16).padStart(2, '0')).join(' ');
           if (!isWasm) {
             log(`[Fetch] NOT WASM. First 8 bytes: ${hex}`, 'red');
             throw new Error(`Response is not WASM (first bytes: ${hex})`);
@@ -217,52 +104,35 @@
         try {
           const res = await fetch('https://graphql.anilist.co', {
             method: 'POST',
-            headers: {
-              'Content-Type': 'application/json',
-              Accept: 'application/json',
-            },
+            headers: { 'Content-Type': 'application/json', 'Accept': 'application/json' },
             body: JSON.stringify({
               query: `query ($id: Int) { Media (id: $id, type: ANIME) { idMal } }`,
-              variables: { id: parseInt(anilistId) },
-            }),
+              variables: { id: parseInt(anilistId) }
+            })
           });
           const json = await res.json();
           return json?.data?.Media?.idMal || anilistId;
-        } catch {
-          return anilistId;
-        }
+        } catch { return anilistId; }
       }
 
       async function fetchAniSkipIntervals(anilistId, epNum = 1) {
         try {
           const malId = await getMalIdFromAniList(anilistId);
-          log(
-            `[AniSkip] Resolved MAL ID: <b>${malId}</b>. Requesting skip intervals...`,
-            '#00ffcc'
-          );
-          const res = await fetch(
-            `https://api.aniskip.com/v2/skip-times/${malId}/${epNum}?types=op&types=ed&episodeLength=0`
-          );
+          log(`[AniSkip] Resolved MAL ID: <b>${malId}</b>. Requesting skip intervals...`, '#00ffcc');
+          const res = await fetch(`https://api.aniskip.com/v2/skip-times/${malId}/${epNum}?types=op&types=ed&episodeLength=0`);
           if (!res.ok) {
-            log(
-              `[AniSkip] No crowdsourced skip timestamps found for MAL ID ${malId} Ep ${epNum}.`,
-              '#aaa'
-            );
+            log(`[AniSkip] No crowdsourced skip timestamps found for MAL ID ${malId} Ep ${epNum}.`, '#aaa');
             return null;
           }
           const data = await res.json();
           if (data && data.found) {
-            const op = data.results?.find((r) => r.skipType === 'op')?.interval;
-            const ed = data.results?.find((r) => r.skipType === 'ed')?.interval;
+            const op = data.results?.find(r => r.skipType === 'op')?.interval;
+            const ed = data.results?.find(r => r.skipType === 'ed')?.interval;
             if (op || ed) {
               return {
-                op: op
-                  ? { startTime: op.startTime, endTime: op.endTime }
-                  : null,
-                ed: ed
-                  ? { startTime: ed.startTime, endTime: ed.endTime }
-                  : null,
-                source: 'aniskip',
+                op: op ? { startTime: op.startTime, endTime: op.endTime } : null,
+                ed: ed ? { startTime: ed.startTime, endTime: ed.endTime } : null,
+                source: 'aniskip'
               };
             }
           }
@@ -275,62 +145,37 @@
 
       async function resolveSkipIntervals(anilistId, epNum, watchData) {
         const streams = watchData?.streams || [];
-        const source = streams.find((s) => s.intro || s.outro) || watchData;
-        const intro = source?.intro;
-        const outro = source?.outro;
+        const source = streams.find(s => s.intro || s.outro) || watchData;
+        const intro  = source?.intro;
+        const outro  = source?.outro;
 
         if (intro || outro) {
-          log(
-            `[Payload] intro/outro found — <b>using payload (exact match to source)</b>`,
-            '#00ffcc'
-          );
-          if (intro)
-            log(
-              `[Payload]   intro: ${formatTime(intro.start)} — ${formatTime(
-                intro.end
-              )}`
-            );
-          if (outro)
-            log(
-              `[Payload]   outro: ${formatTime(outro.start)} — ${formatTime(
-                outro.end
-              )}`
-            );
+          log(`[Payload] intro/outro found — <b>using payload (exact match to source)</b>`, '#00ffcc');
+          if (intro) log(`[Payload]   intro: ${formatTime(intro.start)} — ${formatTime(intro.end)}`);
+          if (outro) log(`[Payload]   outro: ${formatTime(outro.start)} — ${formatTime(outro.end)}`);
           return {
             op: intro ? { startTime: intro.start, endTime: intro.end } : null,
             ed: outro ? { startTime: outro.start, endTime: outro.end } : null,
-            source: 'payload',
+            source: 'payload'
           };
         }
 
-        const chapters =
-          watchData?.chapters || (source && source.chapters) || [];
+        const chapters = watchData?.chapters || (source && source.chapters) || [];
         if (chapters.length > 0) {
-          const find = (wanted) =>
-            chapters.find((c) => (c.title || '').toLowerCase() === wanted);
+          const find = (wanted) => chapters.find(c => (c.title || '').toLowerCase() === wanted);
           const opChapter = find('opening');
           const edChapter = find('ending');
           if (opChapter || edChapter) {
-            log(
-              `[Payload] chapters[] present — <b>using chapters</b>`,
-              '#00ffcc'
-            );
+            log(`[Payload] chapters[] present — <b>using chapters</b>`, '#00ffcc');
             return {
-              op: opChapter
-                ? { startTime: opChapter.start, endTime: opChapter.end }
-                : null,
-              ed: edChapter
-                ? { startTime: edChapter.start, endTime: edChapter.end }
-                : null,
-              source: 'chapters',
+              op: opChapter ? { startTime: opChapter.start, endTime: opChapter.end } : null,
+              ed: edChapter ? { startTime: edChapter.start, endTime: edChapter.end } : null,
+              source: 'chapters'
             };
           }
         }
 
-        log(
-          `[Resolve] No payload data — falling back to AniSkip (may be off on TV cuts)`,
-          'orange'
-        );
+        log(`[Resolve] No payload data — falling back to AniSkip (may be off on TV cuts)`, 'orange');
         return await fetchAniSkipIntervals(anilistId, epNum);
       }
 
@@ -338,7 +183,7 @@
         art.layers.add({
           name: 'skip',
           html: '<button class="skip-button" style="display:none">Skip Intro ➔</button>',
-          style: { position: 'absolute', inset: '0', pointerEvents: 'none' },
+          style: { position: 'absolute', inset: '0', pointerEvents: 'none' }
         });
         const layer = art.layers.skip;
         skipLayerEl = layer.querySelector('.skip-button');
@@ -350,28 +195,16 @@
         if (!skipLayerEl || !art || !art.video) return;
         const t = art.video.currentTime;
 
-        if (
-          currentSkipIntervals.op &&
-          t >= currentSkipIntervals.op.startTime &&
-          t < currentSkipIntervals.op.endTime
-        ) {
+        if (currentSkipIntervals.op && t >= currentSkipIntervals.op.startTime && t < currentSkipIntervals.op.endTime) {
           skipLayerEl.innerText = 'Skip Intro ➔';
           skipLayerEl.style.display = 'block';
-          skipLayerEl.onclick = () => {
-            art.currentTime = currentSkipIntervals.op.endTime;
-          };
+          skipLayerEl.onclick = () => { art.currentTime = currentSkipIntervals.op.endTime; };
           return;
         }
-        if (
-          currentSkipIntervals.ed &&
-          t >= currentSkipIntervals.ed.startTime &&
-          t < currentSkipIntervals.ed.endTime
-        ) {
+        if (currentSkipIntervals.ed && t >= currentSkipIntervals.ed.startTime && t < currentSkipIntervals.ed.endTime) {
           skipLayerEl.innerText = 'Skip Outro ➔';
           skipLayerEl.style.display = 'block';
-          skipLayerEl.onclick = () => {
-            art.currentTime = currentSkipIntervals.ed.endTime;
-          };
+          skipLayerEl.onclick = () => { art.currentTime = currentSkipIntervals.ed.endTime; };
           return;
         }
         skipLayerEl.style.display = 'none';
@@ -382,9 +215,7 @@
       }
 
       function proxyReanimeStatic(path) {
-        return `${API_BASE}/proxy/reanime-static?path=${encodeURIComponent(
-          path
-        )}`;
+        return `${API_BASE}/proxy/reanime-static?path=${encodeURIComponent(path)}`;
       }
 
       function detectSubtitleType(sub) {
@@ -399,11 +230,10 @@
         return 'unknown';
       }
 
-      // --------------------------------------------------------------
-      // Build the selector array from the payload
-      // --------------------------------------------------------------
       function buildSubtitleSelector(subs) {
-        const items = [{ html: 'Off', url: null, default: true }];
+        const items = [
+          { html: 'Off', url: null, default: false }
+        ];
         subs.forEach((sub, i) => {
           const kind = detectSubtitleType(sub);
           items.push({
@@ -412,38 +242,29 @@
             type: kind,
             name: sub.language || `Track ${i}`,
             format: kind,
-            default: false,
+            default: !!sub.default
           });
         });
         return items;
       }
 
-      // --------------------------------------------------------------
-      // Load a subtitle track (called from onSelect)
-      // --------------------------------------------------------------
       async function loadSubtitle(item) {
         if (!item || !item.url) {
           art.subtitle.show = false;
           if (art.plugins.artplayerPluginLibass) {
-            try {
-              art.plugins.artplayerPluginLibass.hide();
-            } catch {}
+            try { art.plugins.artplayerPluginLibass.hide(); } catch {}
           }
           log(`[Subs] Switched OFF.`, '#aaa');
           return;
         }
 
-        log(
-          `[Subs] Switching to <b>${item.html}</b> (${item.format})`,
-          '#00ffcc'
-        );
+        log(`[Subs] Switching to <b>${item.html}</b> (${item.format})`, '#00ffcc');
 
         // --- ASS path: libass ---
         if (item.format === 'ass') {
           const libass = art.plugins && art.plugins.artplayerPluginLibass;
           if (!libass) {
             log(`[Subs] libass plugin not loaded — cannot render .ass`, 'red');
-            art.notice.show = 'ASS rendering unavailable';
             return;
           }
           try {
@@ -451,15 +272,12 @@
             log(`[Subs] Handing URL to libass...`, '#00ffcc');
             await libass.switch(item.url);
             libass.show();
-            art.subtitle.show = false; // libass renders to its own canvas
+            art.subtitle.show = true;
             log(`[Subs] libass.switch() resolved.`, '#00ffcc');
             art.notice.show = 'Subtitles ready';
-            setTimeout(() => {
-              art.notice.show = '';
-            }, 1500);
+            setTimeout(() => { art.notice.show = ''; }, 1500);
           } catch (err) {
             log(`[Subs] libass error: ${escapeHtml(err.message)}`, 'red');
-            art.notice.show = 'Subtitle error';
             console.error('[libass]', err);
           }
           return;
@@ -476,42 +294,31 @@
 
             let vttText = text;
             if (item.format === 'srt') {
-              vttText =
-                'WEBVTT\n\n' +
-                text
-                  .replace(/\r+/g, '')
-                  .replace(/^\d+\s*$/gm, '')
-                  .replace(/(\d{2}:\d{2}:\d{2}),(\d{3})/g, '$1.$2')
-                  .replace(/\n{3,}/g, '\n\n');
+              vttText = 'WEBVTT\n\n' + text
+                .replace(/\r+/g, '')
+                .replace(/^\d+\s*$/gm, '')
+                .replace(/(\d{2}:\d{2}:\d{2}),(\d{3})/g, '$1.$2')
+                .replace(/\n{3,}/g, '\n\n');
             }
             const blob = new Blob([vttText], { type: 'text/vtt' });
             const blobUrl = URL.createObjectURL(blob);
 
-            // Hide libass if it's currently active
             if (art.plugins.artplayerPluginLibass) {
-              try {
-                art.plugins.artplayerPluginLibass.hide();
-              } catch {}
+              try { art.plugins.artplayerPluginLibass.hide(); } catch {}
             }
 
             art.subtitle.switch(blobUrl, {
               type: 'vtt',
               encoding: 'utf-8',
               escape: false,
-              name: item.name,
+              name: item.name
             });
             art.subtitle.show = true;
             log(`[Subs] Native subtitle attached.`, '#00ffcc');
             art.notice.show = 'Subtitles ready';
-            setTimeout(() => {
-              art.notice.show = '';
-            }, 1500);
+            setTimeout(() => { art.notice.show = ''; }, 1500);
           } catch (err) {
-            log(
-              `[Subs] Native subtitle error: ${escapeHtml(err.message)}`,
-              'red'
-            );
-            art.notice.show = 'Subtitle error';
+            log(`[Subs] Native subtitle error: ${escapeHtml(err.message)}`, 'red');
           }
           return;
         }
@@ -520,22 +327,24 @@
       }
 
       async function buildArtplayer(streamUrl, watchData) {
-        if (art) {
-          try {
-            art.destroy(false);
-          } catch {}
-          art = null;
-        }
+        if (art) { try { art.destroy(false); } catch {} art = null; }
         document.getElementById('artplayer-app').innerHTML = '';
 
         const s0 = (watchData?.streams && watchData.streams[0]) || {};
         const subs = s0.subtitles || watchData?.subtitles || [];
-        log(
-          `[Subs] Building selector with ${subs.length} track(s).`,
-          '#00ffcc'
-        );
+        log(`[Subs] Building selector with ${subs.length} track(s).`, '#00ffcc');
 
-        // Preload libass WASM + worker so ASS tracks are ready to switch to
+        // Pick a default subtitle to hand to Artplayer at construction time.
+        // The plugin will auto-switch to this AFTER its internal SubtitlesOctopus
+        // instance finishes init'ing. This is the fix — previously we called
+        // libass.switch() manually before the plugin was ready.
+        const chosenSub = subs.find(s => s.default) || subs[0] || null;
+        const defaultSubUrl = chosenSub ? proxySubtitle(chosenSub.url) : '';
+        const defaultSubType = chosenSub ? detectSubtitleType(chosenSub) : null;
+        const defaultSubName = chosenSub?.language || 'English';
+        log(`[Subs] Default track: <b>${defaultSubName}</b> (${defaultSubType})`, '#00ffcc');
+
+        // Preload libass WASM + worker
         let wasmBlobUrl = null;
         let workerBlobUrl = null;
         try {
@@ -549,9 +358,7 @@
         }
         try {
           log(`[Worker] Fetching worker script via proxy...`, '#aaa');
-          const workerResp = await fetch(
-            proxyReanimeStatic('subtitles-octopus-worker.js?v=1')
-          );
+          const workerResp = await fetch(proxyReanimeStatic('subtitles-octopus-worker.js?v=1'));
           if (!workerResp.ok) throw new Error(`HTTP ${workerResp.status}`);
           let workerText = await workerResp.text();
           log(`[Worker] Fetched ${workerText.length} chars.`, '#00ffcc');
@@ -562,17 +369,10 @@
               .replace(/"subtitles-octopus-worker\.wasm"/g, `"${wasmBlobUrl}"`)
               .replace(/'subtitles-octopus-worker\.wasm'/g, `'${wasmBlobUrl}'`)
               .replace(/subtitles-octopus-worker\.wasm/g, wasmBlobUrl);
-            log(
-              `[Worker] Wasm path ${
-                workerText === before ? 'NOT ' : ''
-              }patched.`,
-              workerText === before ? 'orange' : '#00ffcc'
-            );
+            log(`[Worker] Wasm path ${workerText === before ? 'NOT ' : ''}patched.`, workerText === before ? 'orange' : '#00ffcc');
           }
 
-          const workerBlob = new Blob([workerText], {
-            type: 'application/javascript',
-          });
+          const workerBlob = new Blob([workerText], { type: 'application/javascript' });
           workerBlobUrl = URL.createObjectURL(workerBlob);
           log(`[Worker] Blob URL ready.`, '#00ffcc');
         } catch (err) {
@@ -580,7 +380,7 @@
         }
 
         return new Promise((resolve) => {
-          art = new Artplayer({
+          const artConfig = {
             container: '#artplayer-app',
             url: streamUrl,
             type: 'm3u8',
@@ -598,6 +398,15 @@
             theme: '#6200ee',
             lang: 'en',
             moreVideoAttr: { crossOrigin: 'anonymous' },
+            // --- THE FIX ---
+            // Set subtitle.url at construction. The libass plugin reads this
+            // in its init() and auto-switches — no manual race-y switch() call.
+            subtitle: defaultSubUrl ? {
+              url: defaultSubUrl,
+              type: defaultSubType === 'ass' ? 'ass' : 'vtt',
+              name: defaultSubName,
+              escape: false
+            } : undefined,
             customType: {
               m3u8: function (video, url, art) {
                 if (Hls.isSupported()) {
@@ -606,66 +415,34 @@
                     enableWorker: true,
                     fragLoadingMaxRetry: 8,
                     manifestLoadingMaxRetry: 4,
-                    levelLoadingMaxRetry: 4,
+                    levelLoadingMaxRetry: 4
                   });
                   art.hls = hlsInstance;
                   hlsInstance.loadSource(url);
                   hlsInstance.attachMedia(video);
                   hlsInstance.on(Hls.Events.MANIFEST_PARSED, (e, data) => {
-                    log(
-                      `[HLS] Manifest parsed. Levels: ${data.levels.length}`,
-                      '#00ffcc'
-                    );
+                    log(`[HLS] Manifest parsed. Levels: ${data.levels.length}`, '#00ffcc');
                     data.levels.forEach((lvl, i) => {
-                      log(
-                        `[HLS] Level ${i}: ${lvl.width || '?'}x${
-                          lvl.height || '?'
-                        } video=${lvl.videoCodec || 'none'} audio=${
-                          lvl.audioCodec || 'NONE'
-                        }`,
-                        '#00ffcc'
-                      );
+                      log(`[HLS] Level ${i}: ${lvl.width || '?'}x${lvl.height || '?'} video=${lvl.videoCodec || 'none'} audio=${lvl.audioCodec || 'NONE'}`, '#00ffcc');
                     });
-                    log(
-                      `[HLS] Audio tracks declared: ${
-                        data.audioTracks ? data.audioTracks.length : 0
-                      }`,
-                      '#00ffcc'
-                    );
+                    log(`[HLS] Audio tracks declared: ${data.audioTracks ? data.audioTracks.length : 0}`, '#00ffcc');
                   });
                   hlsInstance.on(Hls.Events.AUDIO_TRACKS_UPDATED, (e, data) => {
-                    log(
-                      `[HLS] Audio tracks updated: ${data.audioTracks.length}`,
-                      '#00ffcc'
-                    );
+                    log(`[HLS] Audio tracks updated: ${data.audioTracks.length}`, '#00ffcc');
                   });
                   hlsInstance.on(Hls.Events.ERROR, (e, data) => {
                     if (!data.fatal) return;
-                    const short = (data.frag?.url || data.url || '')
-                      .replace(/^https?:\/\/[^/]+/, '')
-                      .slice(0, 80);
-                    log(
-                      `[HLS ERROR] ${data.type} / ${data.details} fatal=${
-                        data.fatal
-                      }<br>  ${escapeHtml(short)}`,
-                      'red'
-                    );
-                    if (data.type === Hls.ErrorTypes.NETWORK_ERROR)
-                      hlsInstance.startLoad();
-                    else if (data.type === Hls.ErrorTypes.MEDIA_ERROR)
-                      hlsInstance.recoverMediaError();
+                    const short = (data.frag?.url || data.url || '').replace(/^https?:\/\/[^/]+/, '').slice(0, 80);
+                    log(`[HLS ERROR] ${data.type} / ${data.details} fatal=${data.fatal}<br>  ${escapeHtml(short)}`, 'red');
+                    if (data.type === Hls.ErrorTypes.NETWORK_ERROR) hlsInstance.startLoad();
+                    else if (data.type === Hls.ErrorTypes.MEDIA_ERROR) hlsInstance.recoverMediaError();
                     else log(`[HLS] Unrecoverable error.`, 'red');
                   });
-                  art.on('destroy', () => {
-                    try {
-                      hlsInstance.destroy();
-                    } catch {}
-                    hlsInstance = null;
-                  });
+                  art.on('destroy', () => { try { hlsInstance.destroy(); } catch {} hlsInstance = null; });
                 } else if (video.canPlayType('application/vnd.apple.mpegurl')) {
                   video.src = url;
                 }
-              },
+              }
             },
             controls: [
               {
@@ -677,17 +454,29 @@
                 onSelect: function (item, $dom) {
                   loadSubtitle(item);
                   return item.html;
-                },
-              },
+                }
+              }
             ],
             plugins: [
               artplayerPluginLibass({
                 fallbackFont: FALLBACK_FONT_URL,
                 workerUrl: workerBlobUrl,
                 wasmUrl: wasmBlobUrl,
-                legacyWorkerUrl: workerBlobUrl,
-              }),
-            ],
+                legacyWorkerUrl: workerBlobUrl
+              })
+            ]
+          };
+
+          art = new Artplayer(artConfig);
+
+          art.on('artplayerPluginLibass:init', () => {
+            log(`[Plugin] libass init done — internal instance live.`, '#00ffcc');
+          });
+          art.on('artplayerPluginLibass:switch', (url) => {
+            log(`[Plugin] libass switching to: ${escapeHtml(String(url)).slice(0, 80)}...`, '#00ffcc');
+          });
+          art.on('artplayerPluginLibass:visible', (v) => {
+            log(`[Plugin] libass visible = ${v}`, '#aaa');
           });
 
           art.on('ready', () => {
@@ -698,38 +487,27 @@
           });
 
           art.on('video:loadedmetadata', () => {
-            log(
-              `[Artplayer] Metadata loaded. Duration: ${formatTime(
-                art.duration
-              )}`,
-              '#00ffcc'
-            );
+            log(`[Artplayer] Metadata loaded. Duration: ${formatTime(art.duration)}`, '#00ffcc');
           });
 
           art.on('video:playing', () => {
             const hasAudio =
-              !!art.video.mozHasAudio ||
-              art.video.webkitAudioDecodedByteCount > 0 ||
+              !!(art.video.mozHasAudio) ||
+              (art.video.webkitAudioDecodedByteCount > 0) ||
               (art.video.audioTracks && art.video.audioTracks.length > 0);
-            log(
-              `[Player] Playing. Audio decoded: ${hasAudio}`,
-              hasAudio ? '#00ffcc' : 'red'
-            );
+            log(`[Player] Playing. Audio decoded: ${hasAudio}`, hasAudio ? '#00ffcc' : 'red');
           });
 
           art.on('video:error', (e) => {
-            log(
-              `[Player] Media error: ${escapeHtml(e?.message || 'unknown')}`,
-              'red'
-            );
+            log(`[Player] Media error: ${escapeHtml(e?.message || 'unknown')}`, 'red');
           });
         });
       }
 
       async function runPipeline() {
         const anilistId = document.getElementById('anilistInput').value.trim();
-        const provider = document.getElementById('providerSelect').value;
-        const info = document.getElementById('streamInfo');
+        const provider  = document.getElementById('providerSelect').value;
+        const info      = document.getElementById('streamInfo');
 
         if (!anilistId) return;
         currentSkipIntervals = { op: null, ed: null };
@@ -737,60 +515,37 @@
         info.innerText = '';
 
         try {
-          log(
-            `Step 1: Fetching episodes for AniList ID ${anilistId} via provider [<b>${provider}</b>]...`,
-            '#00ffcc'
-          );
+          log(`Step 1: Fetching episodes for AniList ID ${anilistId} via provider [<b>${provider}</b>]...`, '#00ffcc');
 
-          const epRes = await fetch(
-            `${API_BASE}/episodes/${provider}/${anilistId}`
-          );
+          const epRes   = await fetch(`${API_BASE}/episodes/${provider}/${anilistId}`);
           const rawText = await epRes.text();
 
-          if (
-            rawText.trim().startsWith('<!DOCTYPE') ||
-            rawText.trim().startsWith('<html')
-          ) {
-            log(
-              `Server returned HTML (Status: ${epRes.status}):<pre>${escapeHtml(
-                rawText
-              )}</pre>`,
-              'red'
-            );
+          if (rawText.trim().startsWith('<!DOCTYPE') || rawText.trim().startsWith('<html')) {
+            log(`Server returned HTML (Status: ${epRes.status}):<pre>${escapeHtml(rawText)}</pre>`, 'red');
             return;
           }
 
-          const epData = JSON.parse(rawText);
+          const epData       = JSON.parse(rawText);
           const providerData = epData[provider];
 
           if (!providerData || providerData.error) {
-            throw new Error(
-              providerData?.error || 'Provider data unavailable for this ID.'
-            );
+            throw new Error(providerData?.error || 'Provider data unavailable for this ID.');
           }
 
           const subEpisodes = providerData.episodes?.sub || [];
-          if (subEpisodes.length === 0)
-            throw new Error('No sub episodes found for this provider.');
+          if (subEpisodes.length === 0) throw new Error('No sub episodes found for this provider.');
 
-          const firstEp = subEpisodes[0];
+          const firstEp      = subEpisodes[0];
           const epIdentifier = firstEp.id.split('/').pop();
 
           log(`Found Ep ID: <b>${firstEp.id}</b>`, '#00ffcc');
           log(`Step 2: Resolving watch stream...`, '#00ffcc');
 
-          const watchRes = await fetch(
-            `${API_BASE}/watch/${provider}/${anilistId}/sub/${epIdentifier}`
-          );
+          const watchRes = await fetch(`${API_BASE}/watch/${provider}/${anilistId}/sub/${epIdentifier}`);
           const watchRaw = await watchRes.text();
 
-          if (
-            watchRaw.trim().startsWith('<!DOCTYPE') ||
-            watchRaw.trim().startsWith('<html')
-          ) {
-            throw new Error(
-              `Watch endpoint returned HTML instead of JSON (Status: ${watchRes.status})`
-            );
+          if (watchRaw.trim().startsWith('<!DOCTYPE') || watchRaw.trim().startsWith('<html')) {
+            throw new Error(`Watch endpoint returned HTML instead of JSON (Status: ${watchRes.status})`);
           }
 
           const watchData = JSON.parse(watchRaw);
@@ -798,14 +553,7 @@
 
           log(`[Payload Keys] ${Object.keys(watchData).join(', ')}`, '#aaa');
           log(`[Stream 0 Keys] ${Object.keys(s0).join(', ')}`, '#aaa');
-          log(
-            `[Summary] streams: ${watchData.streams?.length || 0} | chapters: ${
-              (watchData.chapters || []).length
-            } | stream0.intro: ${s0.intro ? 'yes' : 'no'} | stream0.outro: ${
-              s0.outro ? 'yes' : 'no'
-            } | subs: ${(s0.subtitles || watchData.subtitles || []).length}`,
-            '#00ffcc'
-          );
+          log(`[Summary] streams: ${watchData.streams?.length || 0} | chapters: ${(watchData.chapters || []).length} | stream0.intro: ${s0.intro ? 'yes' : 'no'} | stream0.outro: ${s0.outro ? 'yes' : 'no'} | subs: ${(s0.subtitles || watchData.subtitles || []).length}`, '#00ffcc');
 
           log(`Step 3: Resolving intro/outro...`, '#00ffcc');
           const skip = await resolveSkipIntervals(anilistId, 1, watchData);
@@ -817,33 +565,24 @@
           let rawStreamUrl =
             watchData.stream_url ||
             watchData.url ||
-            (watchData.streams && watchData.streams.length > 0
-              ? watchData.streams[0].url
-              : '');
+            (watchData.streams && watchData.streams.length > 0 ? watchData.streams[0].url : '');
           let playlistKey =
             watchData.playlist_key ||
             (watchData.streams && watchData.streams.length > 0
-              ? watchData.streams[0].playlist_key ||
-                watchData.streams[0].key ||
-                ''
+              ? (watchData.streams[0].playlist_key || watchData.streams[0].key || '')
               : '');
 
           if (!rawStreamUrl) {
-            info.innerText =
-              'Error: could not extract playable stream URL from response.';
+            info.innerText = 'Error: could not extract playable stream URL from response.';
             return;
           }
 
-          const streamUrl = `${API_BASE}/proxy/flix-stream?url=${encodeURIComponent(
-            rawStreamUrl
-          )}&key=${encodeURIComponent(playlistKey)}`;
+          const streamUrl = `${API_BASE}/proxy/flix-stream?url=${encodeURIComponent(rawStreamUrl)}&key=${encodeURIComponent(playlistKey)}`;
           info.innerText = `Playing stream via ${provider} (proxied & decrypted)`;
-          log(
-            `Step 4: Building Artplayer with subtitle selector...`,
-            '#00ffcc'
-          );
+          log(`Step 4: Building Artplayer with subtitle auto-switch...`, '#00ffcc');
 
           await buildArtplayer(streamUrl, watchData);
+          // No more manual applySubtitles call — the plugin's init handles it.
         } catch (err) {
           log(`Error: ${escapeHtml(err.message)}`, 'red');
           console.error(err);
