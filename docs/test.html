@@ -1,512 +1,45 @@
-<!DOCTYPE html>
-<html lang="en">
-  <head>
-    <meta charset="UTF-8" />
-    <title>Anivexa-API Multi-Provider Test Bench</title>
-
-    <script src="https://cdn.jsdelivr.net/npm/hls.js@1.6.7/dist/hls.min.js"></script>
-    <script src="https://cdn.jsdelivr.net/npm/artplayer@5.4.0/dist/artplayer.js"></script>
-    <script src="https://flixcloud.cc/artplayer-new/artplayer-plugin-libass.legacy.js?v=104"></script>
-
-    <style>
-      body { background: #121212; color: #fff; font-family: sans-serif; padding: 20px; margin: 0; }
-      input, select, button { padding: 10px; font-size: 15px; margin-right: 5px; margin-bottom: 10px; }
-      input, select { background: #222; border: 1px solid #444; color: #fff; border-radius: 4px; }
-      input[type="text"] { width: 200px; }
-      .btn-primary { background: #6200ee; color: #fff; border: none; cursor: pointer; border-radius: 4px; font-weight: bold; }
-      .btn-primary:hover { background: #7c4dff; }
-      .results { margin-top: 20px; display: flex; gap: 20px; flex-wrap: wrap; }
-      .list { flex: 1; min-width: 300px; background: #1e1e1e; padding: 15px; border-radius: 8px; max-height: 640px; overflow-y: auto; }
-      .player-container { flex: 1; min-width: 360px; background: #1e1e1e; padding: 15px; border-radius: 8px; }
-      .artplayer-app { width: 100%; aspect-ratio: 16 / 9; background: #000; border-radius: 8px; overflow: hidden; border: 1px solid #333; }
-      .artplayer-app .skip-button { position: absolute; bottom: 80px; right: 20px; z-index: 30; background: #ff8c00; color: #fff; padding: 10px 18px; border: none; border-radius: 6px; font-weight: bold; font-size: 14px; cursor: pointer; box-shadow: 0 4px 14px rgba(0,0,0,0.8); transition: transform .2s, background .2s; }
-      .artplayer-app .skip-button:hover { background: #ffa500; transform: scale(1.05); }
-      pre { white-space: pre-wrap; word-wrap: break-word; font-size: 12px; color: #00ffcc; }
-      p { margin: 6px 0; font-size: 13px; line-height: 1.4; }
-    </style>
-  </head>
-  <body>
-    <h1>Anivexa-API Aggregator Test — SRT Mode (no WASM)</h1>
-
-    <div>
-      <input type="text" id="anilistInput" placeholder="AniList ID (e.g. 16498)" value="16498" />
-      <select id="providerSelect">
-        <option value="reanime">Reanime</option>
-        <option value="mkissa">MKissa</option>
-        <option value="senshi">Senshi</option>
-        <option value="anizone">AniZone</option>
-        <option value="kaa">KickAssAnime</option>
-      </select>
-      <label style="margin-left:10px;font-size:13px;">
-        <input type="checkbox" id="preferSrt" checked /> Prefer SRT (native renderer, works in StackBlitz)
-      </label>
-      <br/>
-      <button class="btn-primary" onclick="runPipeline()">Fetch & Play Ep 1</button>
-      <button class="btn-primary" onclick="document.getElementById('resultsList').innerHTML=''">Clear Log</button>
-    </div>
-
-    <div class="results">
-      <div class="list" id="resultsList"><p>Pipeline logs will appear here...</p></div>
-      <div class="player-container">
-        <h3>Player Sandbox</h3>
-        <div class="artplayer-app" id="artplayer-app"></div>
-        <p id="streamInfo" style="margin-top: 10px; font-weight: bold; color: #bb86fc"></p>
-      </div>
-    </div>
-
-    <script>
-      const API_BASE = 'https://anivexa-api-production-46c4.up.railway.app';
-      const FALLBACK_FONT_URL = 'https://cdn.jsdelivr.net/fontsource/fonts/roboto@latest/latin-400-normal.woff2';
-
-      let art = null;
-      let hlsInstance = null;
-      let currentSkipIntervals = { op: null, ed: null };
-      let skipLayerEl = null;
-
-      const listDiv = document.getElementById('resultsList');
-
-      function escapeHtml(str) {
-        return String(str).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
-      }
-      function formatTime(seconds) {
-        if (isNaN(seconds) || !seconds) return '0:00';
-        const m = Math.floor(seconds / 60);
-        const s = Math.floor(seconds % 60);
-        return `${m}:${s < 10 ? '0' : ''}${s}`;
-      }
-      function log(html, color) {
-        const p = document.createElement('p');
-        if (color) p.style.color = color;
-        p.innerHTML = html;
-        listDiv.appendChild(p);
-        listDiv.scrollTop = listDiv.scrollHeight;
-      }
-
-      async function fetchAsBlobUrl(proxyUrl, { expectWasm = false, mimeType = 'application/javascript' } = {}) {
-        log(`[Fetch] GET ${escapeHtml(proxyUrl)}`, '#aaa');
-        const resp = await fetch(proxyUrl);
-        if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
-        const buf = await resp.arrayBuffer();
-        log(`[Fetch] Got ${buf.byteLength} bytes.`, '#00ffcc');
-
-        if (expectWasm) {
-          const head = new Uint8Array(buf.slice(0, 8));
-          const isWasm = head[0] === 0x00 && head[1] === 0x61 && head[2] === 0x73 && head[3] === 0x6d;
-          const hex = Array.from(head).map(b => b.toString(16).padStart(2, '0')).join(' ');
-          if (!isWasm) {
-            log(`[Fetch] NOT WASM. First 8 bytes: ${hex}`, 'red');
-            throw new Error(`Response is not WASM (first bytes: ${hex})`);
-          }
-          log(`[Fetch] Magic word OK (00 61 73 6d).`, '#00ffcc');
-        }
-
-        const blob = new Blob([buf], { type: mimeType });
-        return URL.createObjectURL(blob);
-      }
-
-      async function getMalIdFromAniList(anilistId) {
-        try {
-          const res = await fetch('https://graphql.anilist.co', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json', 'Accept': 'application/json' },
-            body: JSON.stringify({
-              query: `query ($id: Int) { Media (id: $id, type: ANIME) { idMal } }`,
-              variables: { id: parseInt(anilistId) }
-            })
-          });
-          const json = await res.json();
-          return json?.data?.Media?.idMal || anilistId;
-        } catch { return anilistId; }
-      }
-
-      async function fetchAniSkipIntervals(anilistId, epNum = 1) {
-        try {
-          const malId = await getMalIdFromAniList(anilistId);
-          log(`[AniSkip] Resolved MAL ID: <b>${malId}</b>. Requesting skip intervals...`, '#00ffcc');
-          const res = await fetch(`https://api.aniskip.com/v2/skip-times/${malId}/${epNum}?types=op&types=ed&episodeLength=0`);
-          if (!res.ok) {
-            log(`[AniSkip] No crowdsourced skip timestamps found for MAL ID ${malId} Ep ${epNum}.`, '#aaa');
-            return null;
-          }
-          const data = await res.json();
-          if (data && data.found) {
-            const op = data.results?.find(r => r.skipType === 'op')?.interval;
-            const ed = data.results?.find(r => r.skipType === 'ed')?.interval;
-            if (op || ed) {
-              return {
-                op: op ? { startTime: op.startTime, endTime: op.endTime } : null,
-                ed: ed ? { startTime: ed.startTime, endTime: ed.endTime } : null,
-                source: 'aniskip'
-              };
-            }
-          }
-          log(`[AniSkip] API returned no match for this episode.`, '#aaa');
-        } catch (err) {
-          log(`[AniSkip] Fetch failed: ${escapeHtml(err.message)}`, '#aaa');
-        }
-        return null;
-      }
-
-      async function resolveSkipIntervals(anilistId, epNum, watchData) {
-        const streams = watchData?.streams || [];
-        const source = streams.find(s => s.intro || s.outro) || watchData;
-        const intro  = source?.intro;
-        const outro  = source?.outro;
-
-        if (intro || outro) {
-          log(`[Payload] intro/outro found — <b>using payload (exact match to source)</b>`, '#00ffcc');
-          if (intro) log(`[Payload]   intro: ${formatTime(intro.start)} — ${formatTime(intro.end)}`);
-          if (outro) log(`[Payload]   outro: ${formatTime(outro.start)} — ${formatTime(outro.end)}`);
-          return {
-            op: intro ? { startTime: intro.start, endTime: intro.end } : null,
-            ed: outro ? { startTime: outro.start, endTime: outro.end } : null,
-            source: 'payload'
-          };
-        }
-
-        const chapters = watchData?.chapters || (source && source.chapters) || [];
-        if (chapters.length > 0) {
-          const find = (wanted) => chapters.find(c => (c.title || '').toLowerCase() === wanted);
-          const opChapter = find('opening');
-          const edChapter = find('ending');
-          if (opChapter || edChapter) {
-            log(`[Payload] chapters[] present — <b>using chapters</b>`, '#00ffcc');
-            return {
-              op: opChapter ? { startTime: opChapter.start, endTime: opChapter.end } : null,
-              ed: edChapter ? { startTime: edChapter.start, endTime: edChapter.end } : null,
-              source: 'chapters'
-            };
-          }
-        }
-
-        log(`[Resolve] No payload data — falling back to AniSkip (may be off on TV cuts)`, 'orange');
-        return await fetchAniSkipIntervals(anilistId, epNum);
-      }
-
-      function mountSkipLayer() {
-        art.layers.add({
-          name: 'skip',
-          html: '<button class="skip-button" style="display:none">Skip Intro ➔</button>',
-          style: { position: 'absolute', inset: '0', pointerEvents: 'none' }
-        });
-        const layer = art.layers.skip;
-        skipLayerEl = layer.querySelector('.skip-button');
-        skipLayerEl.style.pointerEvents = 'auto';
-        skipLayerEl.style.display = 'none';
-      }
-
-      function updateSkipButton() {
-        if (!skipLayerEl || !art || !art.video) return;
-        const t = art.video.currentTime;
-
-        if (currentSkipIntervals.op && t >= currentSkipIntervals.op.startTime && t < currentSkipIntervals.op.endTime) {
-          skipLayerEl.innerText = 'Skip Intro ➔';
-          skipLayerEl.style.display = 'block';
-          skipLayerEl.onclick = () => { art.currentTime = currentSkipIntervals.op.endTime; };
-          return;
-        }
-        if (currentSkipIntervals.ed && t >= currentSkipIntervals.ed.startTime && t < currentSkipIntervals.ed.endTime) {
-          skipLayerEl.innerText = 'Skip Outro ➔';
-          skipLayerEl.style.display = 'block';
-          skipLayerEl.onclick = () => { art.currentTime = currentSkipIntervals.ed.endTime; };
-          return;
-        }
-        skipLayerEl.style.display = 'none';
-      }
-
-      function proxySubtitle(rawUrl) {
-        return `${API_BASE}/proxy/subtitle?url=${encodeURIComponent(rawUrl)}`;
-      }
-
-      function proxyReanimeStatic(path) {
-        return `${API_BASE}/proxy/reanime-static?path=${encodeURIComponent(path)}`;
-      }
-
-      function detectSubtitleType(sub) {
-        const fmt = (sub.format || '').toLowerCase();
-        if (fmt === 'ass' || fmt === 'ssa') return 'ass';
-        if (fmt === 'srt') return 'srt';
-        if (fmt === 'vtt' || fmt === 'webvtt') return 'vtt';
-        const m = (sub.url || '').toLowerCase().match(/\.([a-z0-9]+)(?:\?|$)/);
-        if (m && (m[1] === 'ass' || m[1] === 'ssa')) return 'ass';
-        if (m && m[1] === 'srt') return 'srt';
-        if (m && m[1] === 'vtt') return 'vtt';
-        return 'unknown';
-      }
-
-      async function applySubtitles(watchData) {
-        const s0 = (watchData.streams && watchData.streams[0]) || {};
-        const subs = s0.subtitles || watchData.subtitles || [];
-        const preferSrt = document.getElementById('preferSrt').checked;
-
-        log(`[Subs] Found ${subs.length} subtitle track(s) in payload.`, '#00ffcc');
-        if (subs.length === 0) {
-          log(`[Subs] No subtitles to load.`, 'orange');
-          return;
-        }
-
-        subs.forEach((s, i) => {
-          log(`[Subs]   ${i}: ${s.language || '(untitled)'} [${s.format || '?'}] default=${!!s.default}`);
-        });
-
-        // ---- CHOOSING THE TRACK ----
-        // If preferSrt is on, pick the first .srt or .vtt we find.
-        // Otherwise, pick the default track (usually .ass), falling back to first.
-        let chosen;
-        let kind;
-        if (preferSrt) {
-          chosen = subs.find(s => detectSubtitleType(s) === 'srt')
-                || subs.find(s => detectSubtitleType(s) === 'vtt');
-          if (!chosen) {
-            log(`[Subs] No SRT/VTT track found. Falling back to default.`, 'orange');
-            chosen = subs.find(s => s.default) || subs[0];
-          }
-        } else {
-          chosen = subs.find(s => s.default) || subs[0];
-        }
-        kind = detectSubtitleType(chosen);
-        const proxied = proxySubtitle(chosen.url);
-
-        log(`[Subs] Selected: <b>${chosen.language}</b> format=<b>${kind}</b> (preferSrt=${preferSrt})`, '#00ffcc');
-        log(`[Subs] Proxied URL: ${escapeHtml(proxied)}`, '#aaa');
-
-        if (kind === 'ass') {
-          const libass = art.plugins && art.plugins.artplayerPluginLibass;
-          if (!libass) {
-            log(`[Subs] libass plugin not loaded — cannot render .ass`, 'red');
-            return;
-          }
-          try {
-            log(`[Subs] Handing .ass URL to libass...`, '#00ffcc');
-            await libass.switch(proxied);
-            libass.show();
-
-            // Check whether the internal renderer actually initialized.
-            setTimeout(() => {
-              const internal = libass.libass;
-              if (!internal) {
-                log(`[Subs] libass.switch resolved but internal renderer is NULL.`, 'red');
-                log(`[Subs] This is the WebContainer WASM failure. Use the SRT checkbox to bypass.`, 'orange');
-              } else {
-                log(`[Subs] libass internal renderer alive.`, '#00ffcc');
-              }
-            }, 800);
-          } catch (err) {
-            log(`[Subs] libass error: ${escapeHtml(err.message)}`, 'red');
-            console.error('[libass]', err);
-          }
-          return;
-        }
-
-        if (kind === 'srt' || kind === 'vtt') {
-          try {
-            log(`[Subs] Fetching text subtitle via proxy...`, '#00ffcc');
-            const res = await fetch(proxied);
-            const text = await res.text();
-            log(`[Subs] Got ${text.length} chars.`, '#00ffcc');
-
-            let vttText = text;
-            if (kind === 'srt') {
-              vttText = 'WEBVTT\n\n' + text
-                .replace(/\r+/g, '')
-                .replace(/^\d+\s*$/gm, '')
-                .replace(/(\d{2}:\d{2}:\d{2}),(\d{3})/g, '$1.$2')
-                .replace(/\n{3,}/g, '\n\n');
-            }
-            const blob = new Blob([vttText], { type: 'text/vtt' });
-            const blobUrl = URL.createObjectURL(blob);
-            art.subtitle.switch(blobUrl, { type: 'vtt', encoding: 'utf-8', escape: false, name: chosen.language });
-            art.subtitle.show = true;
-            log(`[Subs] Native subtitle attached. It should appear now.`, '#00ffcc');
-          } catch (err) {
-            log(`[Subs] Native subtitle error: ${escapeHtml(err.message)}`, 'red');
-          }
-          return;
-        }
-
-        log(`[Subs] Unknown subtitle format — skipping.`, 'orange');
-      }
-
-      async function buildArtplayer(streamUrl) {
-        if (art) { try { art.destroy(false); } catch {} art = null; }
-        document.getElementById('artplayer-app').innerHTML = '';
-
-        // Pre-fetch the libass WASM + worker only when preferSrt is off.
-        // Skip entirely when SRT mode — saves bandwidth and side-steps the WebContainer issue.
-        const preferSrt = document.getElementById('preferSrt').checked;
-        let wasmBlobUrl = null;
-        let workerBlobUrl = null;
-
-        if (!preferSrt) {
-          try {
-            wasmBlobUrl = await fetchAsBlobUrl(
-              proxyReanimeStatic('subtitles-octopus-worker.wasm'),
-              { expectWasm: true, mimeType: 'application/wasm' }
+Text.trim().startsWith('<html')
+          ) {
+            log(
+              `Server returned HTML (Status: ${epRes.status}):<pre>${escapeHtml(
+                rawText
+              )}</pre>`,
+              'red'
             );
-            log(`[WASM] Blob URL ready.`, '#00ffcc');
-          } catch (err) {
-            log(`[WASM] Failed: ${escapeHtml(err.message)}`, 'red');
-          }
-
-          try {
-            log(`[Worker] Fetching worker script via proxy...`, '#aaa');
-            const workerResp = await fetch(proxyReanimeStatic('subtitles-octopus-worker.js?v=1'));
-            if (!workerResp.ok) throw new Error(`HTTP ${workerResp.status}`);
-            let workerText = await workerResp.text();
-            log(`[Worker] Fetched ${workerText.length} chars.`, '#00ffcc');
-
-            if (wasmBlobUrl) {
-              const before = workerText;
-              workerText = workerText
-                .replace(/"subtitles-octopus-worker\.wasm"/g, `"${wasmBlobUrl}"`)
-                .replace(/'subtitles-octopus-worker\.wasm'/g, `'${wasmBlobUrl}'`)
-                .replace(/subtitles-octopus-worker\.wasm/g, wasmBlobUrl);
-              log(`[Worker] Wasm path ${workerText === before ? 'NOT ' : ''}patched.`, workerText === before ? 'orange' : '#00ffcc');
-            }
-
-            const workerBlob = new Blob([workerText], { type: 'application/javascript' });
-            workerBlobUrl = URL.createObjectURL(workerBlob);
-            log(`[Worker] Blob URL ready.`, '#00ffcc');
-          } catch (err) {
-            log(`[Worker] Failed: ${escapeHtml(err.message)}`, 'red');
-          }
-        } else {
-          log(`[Libass] Skipped — SRT mode is on.`, '#aaa');
-        }
-
-        return new Promise((resolve) => {
-          art = new Artplayer({
-            container: '#artplayer-app',
-            url: streamUrl,
-            type: 'm3u8',
-            autoplay: true,
-            muted: false,
-            volume: 1,
-            setting: true,
-            playbackRate: true,
-            aspectRatio: true,
-            fullscreen: true,
-            fullscreenWeb: true,
-            pip: true,
-            screenshot: true,
-            hotkey: true,
-            theme: '#6200ee',
-            lang: 'en',
-            moreVideoAttr: { crossOrigin: 'anonymous' },
-            customType: {
-              m3u8: function (video, url, art) {
-                if (Hls.isSupported()) {
-                  if (hlsInstance) hlsInstance.destroy();
-                  hlsInstance = new Hls({
-                    enableWorker: true,
-                    fragLoadingMaxRetry: 8,
-                    manifestLoadingMaxRetry: 4,
-                    levelLoadingMaxRetry: 4
-                  });
-                  art.hls = hlsInstance;
-                  hlsInstance.loadSource(url);
-                  hlsInstance.attachMedia(video);
-                  hlsInstance.on(Hls.Events.MANIFEST_PARSED, (e, data) => {
-                    log(`[HLS] Manifest parsed. Levels: ${data.levels.length}`, '#00ffcc');
-                    data.levels.forEach((lvl, i) => {
-                      log(`[HLS] Level ${i}: ${lvl.width || '?'}x${lvl.height || '?'} video=${lvl.videoCodec || 'none'} audio=${lvl.audioCodec || 'NONE'}`, '#00ffcc');
-                    });
-                    log(`[HLS] Audio tracks declared: ${data.audioTracks ? data.audioTracks.length : 0}`, '#00ffcc');
-                  });
-                  hlsInstance.on(Hls.Events.AUDIO_TRACKS_UPDATED, (e, data) => {
-                    log(`[HLS] Audio tracks updated: ${data.audioTracks.length}`, '#00ffcc');
-                  });
-                  hlsInstance.on(Hls.Events.ERROR, (e, data) => {
-                    if (!data.fatal) return; // ignore non-fatal noise
-                    const short = (data.frag?.url || data.url || '').replace(/^https?:\/\/[^/]+/, '').slice(0, 80);
-                    log(`[HLS ERROR] ${data.type} / ${data.details} fatal=${data.fatal}<br>  ${escapeHtml(short)}`, 'red');
-                    if (data.type === Hls.ErrorTypes.NETWORK_ERROR) hlsInstance.startLoad();
-                    else if (data.type === Hls.ErrorTypes.MEDIA_ERROR) hlsInstance.recoverMediaError();
-                    else log(`[HLS] Unrecoverable error.`, 'red');
-                  });
-                  art.on('destroy', () => { try { hlsInstance.destroy(); } catch {} hlsInstance = null; });
-                } else if (video.canPlayType('application/vnd.apple.mpegurl')) {
-                  video.src = url;
-                }
-              }
-            },
-            plugins: preferSrt ? [] : [
-              artplayerPluginLibass({
-                fallbackFont: FALLBACK_FONT_URL,
-                workerUrl: workerBlobUrl,
-                wasmUrl: wasmBlobUrl,
-                legacyWorkerUrl: workerBlobUrl
-              })
-            ]
-          });
-
-          art.on('ready', () => {
-            log(`[Artplayer] Ready.`, '#00ffcc');
-            mountSkipLayer();
-            art.on('video:timeupdate', updateSkipButton);
-            setTimeout(resolve, 300);
-          });
-
-          art.on('video:loadedmetadata', () => {
-            log(`[Artplayer] Metadata loaded. Duration: ${formatTime(art.duration)}`, '#00ffcc');
-          });
-
-          art.on('video:playing', () => {
-            const hasAudio =
-              !!(art.video.mozHasAudio) ||
-              (art.video.webkitAudioDecodedByteCount > 0) ||
-              (art.video.audioTracks && art.video.audioTracks.length > 0);
-            log(`[Player] Playing. Audio decoded: ${hasAudio}`, hasAudio ? '#00ffcc' : 'red');
-          });
-
-          art.on('video:error', (e) => {
-            log(`[Player] Media error: ${escapeHtml(e?.message || 'unknown')}`, 'red');
-          });
-        });
-      }
-
-      async function runPipeline() {
-        const anilistId = document.getElementById('anilistInput').value.trim();
-        const provider  = document.getElementById('providerSelect').value;
-        const info      = document.getElementById('streamInfo');
-
-        if (!anilistId) return;
-        currentSkipIntervals = { op: null, ed: null };
-        listDiv.innerHTML = '';
-        info.innerText = '';
-
-        try {
-          log(`Step 1: Fetching episodes for AniList ID ${anilistId} via provider [<b>${provider}</b>]...`, '#00ffcc');
-
-          const epRes   = await fetch(`${API_BASE}/episodes/${provider}/${anilistId}`);
-          const rawText = await epRes.text();
-
-          if (rawText.trim().startsWith('<!DOCTYPE') || rawText.trim().startsWith('<html')) {
-            log(`Server returned HTML (Status: ${epRes.status}):<pre>${escapeHtml(rawText)}</pre>`, 'red');
             return;
           }
 
-          const epData       = JSON.parse(rawText);
+          const epData = JSON.parse(rawText);
           const providerData = epData[provider];
 
           if (!providerData || providerData.error) {
-            throw new Error(providerData?.error || 'Provider data unavailable for this ID.');
+            throw new Error(
+              providerData?.error || 'Provider data unavailable for this ID.'
+            );
           }
 
           const subEpisodes = providerData.episodes?.sub || [];
-          if (subEpisodes.length === 0) throw new Error('No sub episodes found for this provider.');
+          if (subEpisodes.length === 0)
+            throw new Error('No sub episodes found for this provider.');
 
-          const firstEp      = subEpisodes[0];
+          const firstEp = subEpisodes[0];
           const epIdentifier = firstEp.id.split('/').pop();
 
           log(`Found Ep ID: <b>${firstEp.id}</b>`, '#00ffcc');
           log(`Step 2: Resolving watch stream...`, '#00ffcc');
 
-          const watchRes = await fetch(`${API_BASE}/watch/${provider}/${anilistId}/sub/${epIdentifier}`);
+          const watchRes = await fetch(
+            `${API_BASE}/watch/${provider}/${anilistId}/sub/${epIdentifier}`
+          );
           const watchRaw = await watchRes.text();
 
-          if (watchRaw.trim().startsWith('<!DOCTYPE') || watchRaw.trim().startsWith('<html')) {
-            throw new Error(`Watch endpoint returned HTML instead of JSON (Status: ${watchRes.status})`);
+          if (
+            watchRaw.trim().startsWith('<!DOCTYPE') ||
+            watchRaw.trim().startsWith('<html')
+          ) {
+            throw new Error(
+              `Watch endpoint returned HTML instead of JSON (Status: ${watchRes.status})`
+            );
           }
 
           const watchData = JSON.parse(watchRaw);
@@ -514,7 +47,14 @@
 
           log(`[Payload Keys] ${Object.keys(watchData).join(', ')}`, '#aaa');
           log(`[Stream 0 Keys] ${Object.keys(s0).join(', ')}`, '#aaa');
-          log(`[Summary] streams: ${watchData.streams?.length || 0} | chapters: ${(watchData.chapters || []).length} | stream0.intro: ${s0.intro ? 'yes' : 'no'} | stream0.outro: ${s0.outro ? 'yes' : 'no'} | subs: ${(s0.subtitles || watchData.subtitles || []).length}`, '#00ffcc');
+          log(
+            `[Summary] streams: ${watchData.streams?.length || 0} | chapters: ${
+              (watchData.chapters || []).length
+            } | stream0.intro: ${s0.intro ? 'yes' : 'no'} | stream0.outro: ${
+              s0.outro ? 'yes' : 'no'
+            } | subs: ${(s0.subtitles || watchData.subtitles || []).length}`,
+            '#00ffcc'
+          );
 
           log(`Step 3: Resolving intro/outro...`, '#00ffcc');
           const skip = await resolveSkipIntervals(anilistId, 1, watchData);
@@ -526,26 +66,33 @@
           let rawStreamUrl =
             watchData.stream_url ||
             watchData.url ||
-            (watchData.streams && watchData.streams.length > 0 ? watchData.streams[0].url : '');
+            (watchData.streams && watchData.streams.length > 0
+              ? watchData.streams[0].url
+              : '');
           let playlistKey =
             watchData.playlist_key ||
             (watchData.streams && watchData.streams.length > 0
-              ? (watchData.streams[0].playlist_key || watchData.streams[0].key || '')
+              ? watchData.streams[0].playlist_key ||
+                watchData.streams[0].key ||
+                ''
               : '');
 
           if (!rawStreamUrl) {
-            info.innerText = 'Error: could not extract playable stream URL from response.';
+            info.innerText =
+              'Error: could not extract playable stream URL from response.';
             return;
           }
 
-          const streamUrl = `${API_BASE}/proxy/flix-stream?url=${encodeURIComponent(rawStreamUrl)}&key=${encodeURIComponent(playlistKey)}`;
+          const streamUrl = `${API_BASE}/proxy/flix-stream?url=${encodeURIComponent(
+            rawStreamUrl
+          )}&key=${encodeURIComponent(playlistKey)}`;
           info.innerText = `Playing stream via ${provider} (proxied & decrypted)`;
-          log(`Step 4: Building Artplayer...`, '#00ffcc');
+          log(
+            `Step 4: Building Artplayer with subtitle selector...`,
+            '#00ffcc'
+          );
 
-          await buildArtplayer(streamUrl);
-
-          log(`Step 5: Applying subtitles...`, '#00ffcc');
-          await applySubtitles(watchData);
+          await buildArtplayer(streamUrl, watchData);
         } catch (err) {
           log(`Error: ${escapeHtml(err.message)}`, 'red');
           console.error(err);
