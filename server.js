@@ -17,7 +17,6 @@ const STATIC = {
   "/docs":      { file: "docs/index.html",   mime: "text/html" },
   "/style.css": { file: "docs/style.css",    mime: "text/css"  },
   "/logo.svg":  { file: "docs/logo.svg",     mime: "image/svg+xml" },
-  "/test":      { file: "docs/test.html",    mime: "text/html" },
 };
 
 // ---------------------------------------------------------------------------
@@ -280,7 +279,7 @@ async function handleReanimeStaticProxy(req, res, parsedUrl) {
       return res.end("Upstream " + r.status);
     }
 
-    const buf   = Buffer.from(await r.arrayBuffer());
+    const buf    = Buffer.from(await r.arrayBuffer());
     const isWasm = safePath.endsWith(".wasm") || safePath.includes(".wasm?");
 
     res.writeHead(200, {
