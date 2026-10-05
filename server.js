@@ -15,7 +15,7 @@ const __dir = dirname(fileURLToPath(import.meta.url));
 const STATIC = {
   "/":          { file: "docs/landing.html", mime: "text/html" },
   "/docs":      { file: "docs/index.html",   mime: "text/html" },
-  "/test":      { file: "docs/test.html",    mime: "text/html" },  // <-- NEW
+  "/test":      { file: "docs/test.html",    mime: "text/html" },
   "/style.css": { file: "docs/style.css",    mime: "text/css"  },
   "/logo.svg":  { file: "docs/logo.svg",     mime: "image/svg+xml" },
 };
@@ -134,6 +134,7 @@ async function handleFlixProxy(req, res, parsedUrl) {
 
     const bodyBuffer = Buffer.from(await response.arrayBuffer());
 
+    // Binary payloads (segments, AES keys, fMP4 init maps)
     if (isSegment) {
       const out = transformSegmentBuffer(bodyBuffer);
       res.writeHead(200, {
@@ -143,6 +144,7 @@ async function handleFlixProxy(req, res, parsedUrl) {
       return res.end(out);
     }
 
+    // Playlist payloads
     const text = decodeIfEncrypted(bodyBuffer.toString("utf8").trim(), key);
 
     const host      = req.headers["host"] ?? "localhost:" + PORT;
@@ -162,6 +164,7 @@ async function handleFlixProxy(req, res, parsedUrl) {
       const trimmed = line.trim();
       if (!trimmed) return line;
 
+      // Tag lines: rewrite URI="..." attribute if present
       if (trimmed.startsWith("#")) {
         const uriMatch = trimmed.match(/URI="([^"]+)"/);
         if (!uriMatch) return line;
@@ -177,6 +180,7 @@ async function handleFlixProxy(req, res, parsedUrl) {
         return line.replace(`URI="${originalUri}"`, `URI="${newUri}"`);
       }
 
+      // Bare URI line: variant playlist (master) or segment (media)
       const absUrl = new URL(trimmed, targetUrl).toString();
       const type   = isMaster ? null : "segment";
       return buildProxyUrl(absUrl, type);
@@ -195,6 +199,8 @@ async function handleFlixProxy(req, res, parsedUrl) {
 
 // ---------------------------------------------------------------------------
 // /proxy/subtitle — subtitle pass-through
+// Accepts optional .ass/.ssa/.srt/.vtt suffix in the path so the libass
+// plugin's extension sniffing works (it splits on "?" first, then ".").
 // ---------------------------------------------------------------------------
 async function handleSubtitleProxy(req, res, parsedUrl) {
   const targetUrl = parsedUrl.searchParams.get("url");
@@ -264,6 +270,53 @@ async function handleReanimeStaticProxy(req, res, parsedUrl) {
 }
 
 // ---------------------------------------------------------------------------
+// /proxy/introdb — IntroDB segments proxy
+//
+// IntroDB blocks CORS so the browser can't fetch it directly.
+// We proxy read-only GETs to the public segments endpoint.
+//
+// Usage: /proxy/introdb?imdb_id=tt43650242&season=1&episode=1
+//        /proxy/introdb?imdb_id=tt0371746&is_movie=true
+// ---------------------------------------------------------------------------
+async function handleIntroDbProxy(req, res, parsedUrl) {
+  const imdbId  = parsedUrl.searchParams.get("imdb_id");
+  const season  = parsedUrl.searchParams.get("season");
+  const episode = parsedUrl.searchParams.get("episode");
+  const isMovie = parsedUrl.searchParams.get("is_movie");
+
+  if (!imdbId) {
+    res.writeHead(400, { "Access-Control-Allow-Origin": "*" });
+    return res.end("Missing imdb_id");
+  }
+
+  let upstreamUrl = `https://api.introdb.app/segments?imdb_id=${encodeURIComponent(imdbId)}`;
+  if (isMovie === "true") {
+    upstreamUrl += "&is_movie=true";
+  } else {
+    if (season)  upstreamUrl += `&season=${encodeURIComponent(season)}`;
+    if (episode) upstreamUrl += `&episode=${encodeURIComponent(episode)}`;
+  }
+
+  try {
+    const r = await fetch(upstreamUrl, { headers: { "Accept": "application/json" } });
+    if (!r.ok) {
+      res.writeHead(r.status, { "Access-Control-Allow-Origin": "*" });
+      return res.end("Upstream " + r.status);
+    }
+    const body = Buffer.from(await r.arrayBuffer());
+    res.writeHead(200, {
+      "Access-Control-Allow-Origin": "*",
+      "Content-Type": "application/json; charset=utf-8",
+      "Cache-Control": "public, max-age=3600"
+    });
+    return res.end(body);
+  } catch (e) {
+    res.writeHead(500, { "Access-Control-Allow-Origin": "*" });
+    res.end("IntroDB proxy error: " + e.message);
+  }
+}
+
+// ---------------------------------------------------------------------------
 // Node req -> Fetch API Request (for handing off to the Worker)
 // ---------------------------------------------------------------------------
 async function nodeToRequest(req) {
@@ -321,6 +374,11 @@ const server = http.createServer(async (req, res) => {
     return handleReanimeStaticProxy(req, res, parsedUrl);
   }
 
+  // IntroDB segments proxy
+  if (req.method === "GET" && pathname === "/proxy/introdb") {
+    return handleIntroDbProxy(req, res, parsedUrl);
+  }
+
   // Everything else -> Worker (Anivexa API)
   try {
     const request  = await nodeToRequest(req);
@@ -329,7 +387,6 @@ const server = http.createServer(async (req, res) => {
     res.statusCode = response.status;
     for (const [k, v] of response.headers) res.setHeader(k, v);
     res.setHeader("Access-Control-Allow-Origin", "*");
-    res.setHeader("Cache-Control", "no-store, no-cache, must-revalidate");
 
     const buf = await response.arrayBuffer();
     res.end(Buffer.from(buf));
