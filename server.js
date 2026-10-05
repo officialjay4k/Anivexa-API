@@ -66,7 +66,6 @@ async function fetchUpstream(url) {
 // Segment transform: robust detection + offset scanning.
 // ---------------------------------------------------------------------------
 
-// Detect fake image headers and return the offset where the real payload begins.
 function detectFakeHeaderOffset(buf) {
   const isWebp = buf.length > 12 &&
     buf[0] === 0x52 && buf[1] === 0x49 && buf[2] === 0x46 && buf[3] === 0x46 &&
@@ -81,8 +80,6 @@ function detectFakeHeaderOffset(buf) {
   return 0;
 }
 
-// Check whether a buffer begins at a valid TS packet boundary.
-// Requires at least 2 sync bytes at 188-byte intervals.
 function looksLikeTs(buf) {
   if (buf.length < 189) return false;
   if (buf[0] !== 0x47) return false;
@@ -90,8 +87,6 @@ function looksLikeTs(buf) {
   return true;
 }
 
-// Scan the first `maxScan` bytes for a 0x47 that's followed by another 0x47
-// at +188. Returns the offset, or -1 if not found.
 function findTsStart(buf, maxScan = 64) {
   const limit = Math.min(buf.length - 188, maxScan);
   for (let i = 0; i <= limit; i++) {
@@ -116,21 +111,17 @@ function scoreTs(buf) {
 }
 
 function transformSegmentBuffer(bodyBuffer) {
-  // Bail on tiny / empty segments — they're almost always CDN placeholders.
   if (bodyBuffer.length < 200) {
-    return { buffer: bodyBuffer, mode: "too-small", upstreamBytes: bodyBuffer.length };
+    return { buffer: bodyBuffer, mode: "too-small", headerOffset: 0, upstreamBytes: bodyBuffer.length };
   }
 
-  // Strip any fake image header first.
   const headerOffset = detectFakeHeaderOffset(bodyBuffer);
   const payload = bodyBuffer.subarray(headerOffset);
 
-  // Strategy 1: try raw as-is.
   if (looksLikeTs(payload)) {
     return { buffer: payload, mode: "raw", headerOffset, upstreamBytes: bodyBuffer.length };
   }
 
-  // Strategy 2: try raw but scan for offset (in case there's extra junk).
   const rawScan = findTsStart(payload);
   if (rawScan > 0) {
     const trimmed = payload.subarray(rawScan);
@@ -139,13 +130,11 @@ function transformSegmentBuffer(bodyBuffer) {
     }
   }
 
-  // Strategy 3: XOR the whole payload.
   const xored = xorBuffer(payload, flixImageSegmentXorKey);
   if (looksLikeTs(xored)) {
     return { buffer: xored, mode: "xor", headerOffset, upstreamBytes: bodyBuffer.length };
   }
 
-  // Strategy 4: XOR then scan.
   const xorScan = findTsStart(xored);
   if (xorScan > 0) {
     const trimmed = xored.subarray(xorScan);
@@ -154,9 +143,6 @@ function transformSegmentBuffer(bodyBuffer) {
     }
   }
 
-  // Strategy 5: neither validates. Score both at TS boundaries and pick the
-  // one that looks more TS-like. If both score zero, we're lost — return raw
-  // so hls.js gets a clean error and retries rather than being fed XOR'd junk.
   const rawScore = scoreTs(payload);
   const xorScore = scoreTs(xored);
   if (rawScore === 0 && xorScore === 0) {
@@ -177,7 +163,7 @@ function hexDump(buf, maxBytes = 256) {
   const lines = [];
   for (let i = 0; i < slice.length; i += 16) {
     const chunk = slice.subarray(i, i + 16);
-    const hex = Array.from(chunk).map(b => b.toString(16).padStart(2, "0")).join(" ");
+    const hex   = Array.from(chunk).map(b => b.toString(16).padStart(2, "0")).join(" ");
     const ascii = Array.from(chunk).map(b => (b >= 32 && b < 127) ? String.fromCharCode(b) : ".").join("");
     lines.push(`${i.toString(16).padStart(4, "0")}  ${hex.padEnd(48)}  ${ascii}`);
   }
@@ -199,10 +185,10 @@ async function handlePeek(req, res, parsedUrl) {
     const body = Buffer.from(await r.arrayBuffer());
 
     const isWebp = body.length > 12 && body[0] === 0x52 && body[8] === 0x57;
-    const isPng = body.length > 8 && body[0] === 0x89 && body[1] === 0x50;
+    const isPng  = body.length > 8  && body[0] === 0x89 && body[1] === 0x50;
     const headerOffset = detectFakeHeaderOffset(body);
     const payload = body.subarray(headerOffset);
-    const xored = xorBuffer(payload, flixImageSegmentXorKey);
+    const xored   = xorBuffer(payload, flixImageSegmentXorKey);
 
     const report = [
       `URL: ${targetUrl}`,
@@ -235,7 +221,36 @@ async function handlePeek(req, res, parsedUrl) {
 }
 
 // ---------------------------------------------------------------------------
-// Playlist + segment proxy (main path).
+// Subtitle proxy: passes .ass/.srt/.vtt through with clean headers.
+// ---------------------------------------------------------------------------
+
+async function handleSubtitleProxy(req, res, parsedUrl) {
+  const targetUrl = parsedUrl.searchParams.get("url");
+  if (!targetUrl) {
+    res.writeHead(400, { "Access-Control-Allow-Origin": "*" });
+    return res.end("Missing url");
+  }
+  try {
+    const r = await fetchUpstream(targetUrl);
+    if (!r.ok) {
+      res.writeHead(r.status, { "Content-Type": "text/plain", "Access-Control-Allow-Origin": "*" });
+      return res.end("Upstream " + r.status);
+    }
+    const body = Buffer.from(await r.arrayBuffer());
+    res.writeHead(200, {
+      "Access-Control-Allow-Origin": "*",
+      "Content-Type": "text/plain; charset=utf-8",
+      "Cache-Control": "public, max-age=3600"
+    });
+    res.end(body);
+  } catch (e) {
+    res.writeHead(500, { "Content-Type": "text/plain", "Access-Control-Allow-Origin": "*" });
+    res.end("Subtitle proxy error: " + e.message);
+  }
+}
+
+// ---------------------------------------------------------------------------
+// Playlist + segment proxy (main video path).
 // ---------------------------------------------------------------------------
 
 async function handleFlixProxy(req, res, parsedUrl) {
@@ -264,10 +279,10 @@ async function handleFlixProxy(req, res, parsedUrl) {
       res.writeHead(200, {
         "Access-Control-Allow-Origin": "*",
         "Content-Type": "video/mp2t",
-        "X-Segment-Mode":        result.mode,
-        "X-Segment-Header":      String(result.headerOffset),
-        "X-Segment-Upstream":    String(result.upstreamBytes),
-        "X-Segment-Out":         String(result.buffer.length)
+        "X-Segment-Mode":     result.mode,
+        "X-Segment-Header":   String(result.headerOffset),
+        "X-Segment-Upstream": String(result.upstreamBytes),
+        "X-Segment-Out":      String(result.buffer.length)
       });
       return res.end(result.buffer);
     }
@@ -365,6 +380,10 @@ const server = http.createServer(async (req, res) => {
 
   if (req.method === "GET" && pathname === "/proxy/peek-segment") {
     return handlePeek(req, res, parsedUrl);
+  }
+
+  if (req.method === "GET" && pathname === "/proxy/subtitle") {
+    return handleSubtitleProxy(req, res, parsedUrl);
   }
 
   try {
