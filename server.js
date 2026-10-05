@@ -155,8 +155,8 @@ async function handleFlixProxy(req, res, parsedUrl) {
     // ---- Playlist payloads ----
     const text = decodeIfEncrypted(bodyBuffer.toString("utf8").trim(), key);
 
-    const host     = req.headers["host"] ?? "localhost:" + PORT;
-    const protocol = req.headers["x-forwarded-proto"] || "http";
+    const host      = req.headers["host"] ?? "localhost:" + PORT;
+    const protocol  = req.headers["x-forwarded-proto"] || "http";
     const proxyBase = protocol + "://" + host + "/proxy/flix-stream";
 
     const buildProxyUrl = (absUrl, type) => {
@@ -215,8 +215,7 @@ async function handleFlixProxy(req, res, parsedUrl) {
 //   - libass / native <track> both want text/* + CORS.
 //   - Same Referer/Origin injection as the video proxy, in case some CDN
 //     nodes are stricter about subs than manifests.
-//   - No XOR, no header stripping — bytes pass through untouched. If we ever
-//     see disguised subs, we can add the transform here.
+//   - No XOR, no header stripping — bytes pass through untouched.
 // ---------------------------------------------------------------------------
 async function handleSubtitleProxy(req, res, parsedUrl) {
   const targetUrl = parsedUrl.searchParams.get("url");
@@ -245,6 +244,53 @@ async function handleSubtitleProxy(req, res, parsedUrl) {
   } catch (e) {
     res.writeHead(500, { "Access-Control-Allow-Origin": "*" });
     res.end("Subtitle proxy error: " + e.message);
+  }
+}
+
+// ---------------------------------------------------------------------------
+// /proxy/reanime-static — pass-through for Reanime's self-hosted libass assets
+//
+// Reanime hosts its SubtitlesOctopus worker + WASM at:
+//   https://flixcloud.cc/artplayer-new/subtitles-octopus-worker.js
+//   https://flixcloud.cc/artplayer-new/subtitles-octopus-worker.wasm
+// Both are cross-origin and Referer-gated. We proxy them here so the browser
+// can load them as same-origin assets (and so we can serve wasm with the
+// correct Content-Type).
+//
+// Usage: /proxy/reanime-static?path=subtitles-octopus-worker.js?v=1
+// ---------------------------------------------------------------------------
+async function handleReanimeStaticProxy(req, res, parsedUrl) {
+  const subPath = parsedUrl.searchParams.get("path");
+
+  if (!subPath) {
+    res.writeHead(400, { "Access-Control-Allow-Origin": "*" });
+    return res.end("Missing path");
+  }
+
+  // Guard: only allow files under artplayer-new/, no path traversal.
+  const safePath = subPath.replace(/^\/+/, "").replace(/\.\./g, "");
+  const targetUrl = "https://flixcloud.cc/artplayer-new/" + safePath;
+
+  try {
+    const r = await fetchUpstream(targetUrl);
+
+    if (!r.ok) {
+      res.writeHead(r.status, { "Access-Control-Allow-Origin": "*" });
+      return res.end("Upstream " + r.status);
+    }
+
+    const buf   = Buffer.from(await r.arrayBuffer());
+    const isWasm = safePath.endsWith(".wasm") || safePath.includes(".wasm?");
+
+    res.writeHead(200, {
+      "Access-Control-Allow-Origin": "*",
+      "Content-Type": isWasm ? "application/wasm" : "application/javascript; charset=utf-8",
+      "Cache-Control": "public, max-age=3600"
+    });
+    return res.end(buf);
+  } catch (e) {
+    res.writeHead(500, { "Access-Control-Allow-Origin": "*" });
+    res.end("Reanime static proxy error: " + e.message);
   }
 }
 
@@ -299,6 +345,11 @@ const server = http.createServer(async (req, res) => {
   // Subtitle pass-through proxy
   if (req.method === "GET" && pathname === "/proxy/subtitle") {
     return handleSubtitleProxy(req, res, parsedUrl);
+  }
+
+  // Reanime self-hosted libass worker + wasm proxy
+  if (req.method === "GET" && pathname === "/proxy/reanime-static") {
+    return handleReanimeStaticProxy(req, res, parsedUrl);
   }
 
   // Everything else -> Worker (Anivexa API)
