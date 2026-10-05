@@ -329,6 +329,7 @@ const server = http.createServer(async (req, res) => {
     res.statusCode = response.status;
     for (const [k, v] of response.headers) res.setHeader(k, v);
     res.setHeader("Access-Control-Allow-Origin", "*");
+    res.setHeader("Cache-Control", "no-store, no-cache, must-revalidate");
 
     const buf = await response.arrayBuffer();
     res.end(Buffer.from(buf));
