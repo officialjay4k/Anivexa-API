@@ -56,16 +56,15 @@ function decodeIfEncrypted(raw, key) {
 // ---------------------------------------------------------------------------
 // Upstream headers.
 //
-// Flixcloud-family hosts (flixcloud.cc + its segment CDNs) need the Flixcloud
-// Referer. Segment CDNs you'll see in practice:
-//   - vault-*.fallencdn.top
-//   - vault-*.glaciercdn.top
-//   - vault-*.vortexcdn.top
-//   - vault-*.rundowncdn.top
-//   - fetch8/fetch9.flixcloud.cc
+// Priority:
+//   1. If a referer was explicitly passed as a query param, use it.
+//      (Frontend extracts this from the payload's stream.headers.Referer
+//       or stream.referer fields when available.)
+//   2. Otherwise, fall back to a hostname-based whitelist.
 //
-// Other provider CDNs (anidap.biz, krussdomi.com, etc.) get browser UA only.
-// If a specific provider starts blocking, add its own Referer below.
+// Flixcloud-family hosts need the Flixcloud Referer.
+// AniZone's CDN works with no Referer at all.
+// Anything else: no Referer.
 // ---------------------------------------------------------------------------
 const FLIXCLOUD_HOSTS = [
   "flixcloud.cc",
@@ -80,11 +79,21 @@ function isFlixcloudFamily(hostname) {
   return FLIXCLOUD_HOSTS.some(domain => h === domain || h.endsWith("." + domain));
 }
 
-function headersForUpstream(targetUrl) {
+function headersForUpstream(targetUrl, explicitReferer) {
   const baseHeaders = {
     "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
     "Accept": "*/*"
   };
+
+  // Explicit referer wins if provided. Origin is derived from it.
+  if (explicitReferer) {
+    const headers = { ...baseHeaders, "Referer": explicitReferer };
+    try {
+      const origin = new URL(explicitReferer).origin;
+      headers["Origin"] = origin;
+    } catch {}
+    return headers;
+  }
 
   let hostname;
   try { hostname = new URL(targetUrl).hostname; }
@@ -98,30 +107,11 @@ function headersForUpstream(targetUrl) {
     };
   }
 
-  // Senshi / AniZone — anidap.biz. Currently 521 (origin down), but the
-  // Referer these CDNs expect is the provider's own site.
-  if (hostname.endsWith("anidap.biz")) {
-    return {
-      ...baseHeaders,
-      "Referer": "https://senshi.live/",
-      "Origin":  "https://senshi.live"
-    };
-  }
-
-  // KickAssAnime — krussdomi.com
-  if (hostname.endsWith("krussdomi.com")) {
-    return {
-      ...baseHeaders,
-      "Referer": "https://kickassanime.mx/",
-      "Origin":  "https://kickassanime.mx"
-    };
-  }
-
   return baseHeaders;
 }
 
-async function fetchUpstream(url) {
-  return await fetch(url, { headers: headersForUpstream(url) });
+async function fetchUpstream(url, explicitReferer) {
+  return await fetch(url, { headers: headersForUpstream(url, explicitReferer) });
 }
 
 function transformSegmentBuffer(bodyBuffer) {
@@ -158,6 +148,7 @@ async function handleFlixProxy(req, res, parsedUrl) {
   const targetUrl = parsedUrl.searchParams.get("url");
   const key       = parsedUrl.searchParams.get("key");
   const typeParam = parsedUrl.searchParams.get("type");
+  const referer   = parsedUrl.searchParams.get("referer");
 
   if (!targetUrl) {
     res.writeHead(400, { "Content-Type": "text/plain", "Access-Control-Allow-Origin": "*" });
@@ -165,11 +156,11 @@ async function handleFlixProxy(req, res, parsedUrl) {
   }
 
   try {
-    const response = await fetchUpstream(targetUrl);
+    const response = await fetchUpstream(targetUrl, referer);
 
     if (!response.ok) {
       const hostname = (() => { try { return new URL(targetUrl).hostname; } catch { return '?'; } })();
-      console.log(`[Proxy] Upstream ${response.status} from ${hostname} (${typeParam || 'playlist'})`);
+      console.log(`[Proxy] Upstream ${response.status} from ${hostname} (${typeParam || 'playlist'})${referer ? ` ref=${referer}` : ''}`);
       res.writeHead(response.status, { "Content-Type": "text/plain", "Access-Control-Allow-Origin": "*" });
       return res.end(`Upstream HTTP error: ${response.status}`);
     }
@@ -204,8 +195,9 @@ async function handleFlixProxy(req, res, parsedUrl) {
 
     const buildProxyUrl = (absUrl, type) => {
       let u = proxyBase + "?url=" + encodeURIComponent(absUrl);
-      if (key)  u += "&key=" + encodeURIComponent(key);
-      if (type) u += "&type=" + type;
+      if (key)     u += "&key=" + encodeURIComponent(key);
+      if (referer) u += "&referer=" + encodeURIComponent(referer);
+      if (type)    u += "&type=" + type;
       return u;
     };
 
@@ -248,9 +240,10 @@ async function handleFlixProxy(req, res, parsedUrl) {
 
 async function handleSubtitleProxy(req, res, parsedUrl) {
   const targetUrl = parsedUrl.searchParams.get("url");
+  const referer   = parsedUrl.searchParams.get("referer");
   if (!targetUrl) { res.writeHead(400, { "Access-Control-Allow-Origin": "*" }); return res.end("Missing url"); }
   try {
-    const r = await fetchUpstream(targetUrl);
+    const r = await fetchUpstream(targetUrl, referer);
     if (!r.ok) { res.writeHead(r.status, { "Access-Control-Allow-Origin": "*" }); return res.end("Upstream " + r.status); }
     const body = Buffer.from(await r.arrayBuffer());
     res.writeHead(200, {
@@ -319,9 +312,10 @@ async function handleIntroDbProxy(req, res, parsedUrl) {
 
 async function handleRawProxy(req, res, parsedUrl) {
   const targetUrl = parsedUrl.searchParams.get("url");
+  const referer   = parsedUrl.searchParams.get("referer");
   if (!targetUrl) { res.writeHead(400, { "Access-Control-Allow-Origin": "*" }); return res.end("Missing url"); }
   try {
-    const r = await fetchUpstream(targetUrl);
+    const r = await fetchUpstream(targetUrl, referer);
     if (!r.ok) { res.writeHead(r.status, { "Access-Control-Allow-Origin": "*" }); return res.end("Upstream " + r.status); }
     const body = Buffer.from(await r.arrayBuffer());
     const ct = r.headers.get("content-type") || "application/octet-stream";
