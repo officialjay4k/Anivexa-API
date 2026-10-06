@@ -54,10 +54,32 @@ function decodeIfEncrypted(raw, key) {
 }
 
 // ---------------------------------------------------------------------------
-// Upstream headers — only Flixcloud-family hosts get the Flixcloud Referer.
-// Everything else gets browser UA and no Referer, which is what most CDNs
-// expect. If a specific CDN starts blocking, add its hostname below.
+// Upstream headers.
+//
+// Flixcloud-family hosts (flixcloud.cc + its segment CDNs) need the Flixcloud
+// Referer. Segment CDNs you'll see in practice:
+//   - vault-*.fallencdn.top
+//   - vault-*.glaciercdn.top
+//   - vault-*.vortexcdn.top
+//   - vault-*.rundowncdn.top
+//   - fetch8/fetch9.flixcloud.cc
+//
+// Other provider CDNs (anidap.biz, krussdomi.com, etc.) get browser UA only.
+// If a specific provider starts blocking, add its own Referer below.
 // ---------------------------------------------------------------------------
+const FLIXCLOUD_HOSTS = [
+  "flixcloud.cc",
+  "fallencdn.top",
+  "glaciercdn.top",
+  "vortexcdn.top",
+  "rundowncdn.top"
+];
+
+function isFlixcloudFamily(hostname) {
+  const h = hostname.toLowerCase();
+  return FLIXCLOUD_HOSTS.some(domain => h === domain || h.endsWith("." + domain));
+}
+
 function headersForUpstream(targetUrl) {
   const baseHeaders = {
     "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
@@ -65,12 +87,10 @@ function headersForUpstream(targetUrl) {
   };
 
   let hostname;
-  try { hostname = new URL(targetUrl).hostname.toLowerCase(); }
+  try { hostname = new URL(targetUrl).hostname; }
   catch { return baseHeaders; }
 
-  // Flixcloud's own domains get the full Referer/Origin. Verified working
-  // for fetch8/fetch9.flixcloud.cc and the .cc domain itself.
-  if (hostname.endsWith("flixcloud.cc") || hostname === "flixcloud.cc") {
+  if (isFlixcloudFamily(hostname)) {
     return {
       ...baseHeaders,
       "Referer": "https://flixcloud.cc/",
@@ -78,8 +98,25 @@ function headersForUpstream(targetUrl) {
     };
   }
 
-  // All other CDNs (fallencdn.top, glaciercdn.top, vortexcdn.top,
-  // rundowncdn.top, anidap.biz, etc.) get no Referer.
+  // Senshi / AniZone — anidap.biz. Currently 521 (origin down), but the
+  // Referer these CDNs expect is the provider's own site.
+  if (hostname.endsWith("anidap.biz")) {
+    return {
+      ...baseHeaders,
+      "Referer": "https://senshi.live/",
+      "Origin":  "https://senshi.live"
+    };
+  }
+
+  // KickAssAnime — krussdomi.com
+  if (hostname.endsWith("krussdomi.com")) {
+    return {
+      ...baseHeaders,
+      "Referer": "https://kickassanime.mx/",
+      "Origin":  "https://kickassanime.mx"
+    };
+  }
+
   return baseHeaders;
 }
 
@@ -132,17 +169,15 @@ async function handleFlixProxy(req, res, parsedUrl) {
 
     if (!response.ok) {
       const hostname = (() => { try { return new URL(targetUrl).hostname; } catch { return '?'; } })();
-      console.log(`[Proxy] Upstream ${response.status} from ${hostname}`);
+      console.log(`[Proxy] Upstream ${response.status} from ${hostname} (${typeParam || 'playlist'})`);
       res.writeHead(response.status, { "Content-Type": "text/plain", "Access-Control-Allow-Origin": "*" });
       return res.end(`Upstream HTTP error: ${response.status}`);
     }
 
     const bodyBuffer = Buffer.from(await response.arrayBuffer());
 
-    // ---- Binary paths: segments and mp4 ----
     if (typeParam === "segment" || typeParam === "mp4") {
-      let out;
-      let ct;
+      let out, ct;
       if (typeParam === "mp4") {
         out = bodyBuffer;
         ct  = "video/mp4";
@@ -157,12 +192,9 @@ async function handleFlixProxy(req, res, parsedUrl) {
       return res.end(out);
     }
 
-    // ---- Playlist path ----
-    const hostname = (() => { try { return new URL(targetUrl).hostname.toLowerCase(); } catch { return ''; } })();
-    const isFlixcloudFamily = hostname.endsWith("flixcloud.cc") || hostname === "flixcloud.cc";
-
+    const hostname = (() => { try { return new URL(targetUrl).hostname; } catch { return ''; } })();
     let text = bodyBuffer.toString("utf8").trim();
-    if (key && isFlixcloudFamily) {
+    if (key && isFlixcloudFamily(hostname)) {
       text = decodeIfEncrypted(text, key);
     }
 
@@ -309,11 +341,9 @@ async function nodeToRequest(req) {
   const host     = req.headers["host"] ?? "localhost:" + PORT;
   const stripped = BASE && req.url.startsWith(BASE) ? req.url.slice(BASE.length) || "/" : req.url;
   const url      = "http://" + host + stripped;
-
   const chunks = [];
   for await (const chunk of req) chunks.push(chunk);
   const body = chunks.length ? Buffer.concat(chunks) : null;
-
   return new Request(url, {
     method:  req.method,
     headers: req.headers,
