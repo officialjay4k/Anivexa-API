@@ -10,7 +10,7 @@ const BASE  = process.env.BASE_PATH ?? "";
 const __dir = dirname(fileURLToPath(import.meta.url));
 
 // ---------------------------------------------------------------------------
-// Static file map (served directly by this Node process)
+// Static file map
 // ---------------------------------------------------------------------------
 const STATIC = {
   "/":          { file: "docs/landing.html", mime: "text/html" },
@@ -21,7 +21,7 @@ const STATIC = {
 };
 
 // ---------------------------------------------------------------------------
-// Flixcloud segment XOR key (16 bytes)
+// Flixcloud segment XOR key
 // ---------------------------------------------------------------------------
 const flixImageSegmentXorKey = Uint8Array.from([
   157, 42, 241, 71, 179, 142, 92, 112,
@@ -29,7 +29,7 @@ const flixImageSegmentXorKey = Uint8Array.from([
 ]);
 
 // ---------------------------------------------------------------------------
-// Static file server helper
+// Static file helper
 // ---------------------------------------------------------------------------
 function serveStatic(res, entry) {
   try {
@@ -66,7 +66,7 @@ function decodeIfEncrypted(raw, key) {
 }
 
 // ---------------------------------------------------------------------------
-// Upstream fetcher — injects Referer/Origin/UA to beat the CDN's gating
+// Upstream fetcher — Referer/Origin/UA injection
 // ---------------------------------------------------------------------------
 async function fetchUpstream(url) {
   return await fetch(url, {
@@ -79,7 +79,7 @@ async function fetchUpstream(url) {
 }
 
 // ---------------------------------------------------------------------------
-// Segment transform: detect fake WebP/PNG headers, strip them, XOR if needed
+// Segment transform
 // ---------------------------------------------------------------------------
 function transformSegmentBuffer(bodyBuffer) {
   let offset  = 0;
@@ -134,7 +134,6 @@ async function handleFlixProxy(req, res, parsedUrl) {
 
     const bodyBuffer = Buffer.from(await response.arrayBuffer());
 
-    // Binary payloads (segments, AES keys, fMP4 init maps)
     if (isSegment) {
       const out = transformSegmentBuffer(bodyBuffer);
       res.writeHead(200, {
@@ -144,7 +143,6 @@ async function handleFlixProxy(req, res, parsedUrl) {
       return res.end(out);
     }
 
-    // Playlist payloads
     const text = decodeIfEncrypted(bodyBuffer.toString("utf8").trim(), key);
 
     const host      = req.headers["host"] ?? "localhost:" + PORT;
@@ -164,7 +162,6 @@ async function handleFlixProxy(req, res, parsedUrl) {
       const trimmed = line.trim();
       if (!trimmed) return line;
 
-      // Tag lines: rewrite URI="..." attribute if present
       if (trimmed.startsWith("#")) {
         const uriMatch = trimmed.match(/URI="([^"]+)"/);
         if (!uriMatch) return line;
@@ -180,7 +177,6 @@ async function handleFlixProxy(req, res, parsedUrl) {
         return line.replace(`URI="${originalUri}"`, `URI="${newUri}"`);
       }
 
-      // Bare URI line: variant playlist (master) or segment (media)
       const absUrl = new URL(trimmed, targetUrl).toString();
       const type   = isMaster ? null : "segment";
       return buildProxyUrl(absUrl, type);
@@ -200,7 +196,7 @@ async function handleFlixProxy(req, res, parsedUrl) {
 // ---------------------------------------------------------------------------
 // /proxy/subtitle — subtitle pass-through
 // Accepts optional .ass/.ssa/.srt/.vtt suffix in the path so the libass
-// plugin's extension sniffing works (it splits on "?" first, then ".").
+// plugin's extension sniffing works.
 // ---------------------------------------------------------------------------
 async function handleSubtitleProxy(req, res, parsedUrl) {
   const targetUrl = parsedUrl.searchParams.get("url");
@@ -233,7 +229,7 @@ async function handleSubtitleProxy(req, res, parsedUrl) {
 }
 
 // ---------------------------------------------------------------------------
-// /proxy/reanime-static — pass-through for Reanime's self-hosted libass assets
+// /proxy/reanime-static — Reanime's self-hosted libass assets
 // ---------------------------------------------------------------------------
 async function handleReanimeStaticProxy(req, res, parsedUrl) {
   const subPath = parsedUrl.searchParams.get("path");
@@ -271,12 +267,6 @@ async function handleReanimeStaticProxy(req, res, parsedUrl) {
 
 // ---------------------------------------------------------------------------
 // /proxy/introdb — IntroDB segments proxy
-//
-// IntroDB blocks CORS so the browser can't fetch it directly.
-// We proxy read-only GETs to the public segments endpoint.
-//
-// Usage: /proxy/introdb?imdb_id=tt43650242&season=1&episode=1
-//        /proxy/introdb?imdb_id=tt0371746&is_movie=true
 // ---------------------------------------------------------------------------
 async function handleIntroDbProxy(req, res, parsedUrl) {
   const imdbId  = parsedUrl.searchParams.get("imdb_id");
@@ -317,7 +307,38 @@ async function handleIntroDbProxy(req, res, parsedUrl) {
 }
 
 // ---------------------------------------------------------------------------
-// Node req -> Fetch API Request (for handing off to the Worker)
+// /proxy/raw — generic passthrough with upstream headers
+// Used to inspect Flixcloud embed pages and fetch external font files.
+// ---------------------------------------------------------------------------
+async function handleRawProxy(req, res, parsedUrl) {
+  const targetUrl = parsedUrl.searchParams.get("url");
+  if (!targetUrl) {
+    res.writeHead(400, { "Access-Control-Allow-Origin": "*" });
+    return res.end("Missing url");
+  }
+
+  try {
+    const r = await fetchUpstream(targetUrl);
+    if (!r.ok) {
+      res.writeHead(r.status, { "Access-Control-Allow-Origin": "*" });
+      return res.end("Upstream " + r.status);
+    }
+    const body = Buffer.from(await r.arrayBuffer());
+    const ct = r.headers.get("content-type") || "application/octet-stream";
+    res.writeHead(200, {
+      "Access-Control-Allow-Origin": "*",
+      "Content-Type": ct,
+      "Cache-Control": "public, max-age=3600"
+    });
+    return res.end(body);
+  } catch (e) {
+    res.writeHead(500, { "Access-Control-Allow-Origin": "*" });
+    res.end("Raw proxy error: " + e.message);
+  }
+}
+
+// ---------------------------------------------------------------------------
+// Node req -> Fetch API Request
 // ---------------------------------------------------------------------------
 async function nodeToRequest(req) {
   const host     = req.headers["host"] ?? "localhost:" + PORT;
@@ -353,33 +374,31 @@ const server = http.createServer(async (req, res) => {
   const parsedUrl = new URL(req.url, "http://" + host);
   const pathname  = parsedUrl.pathname;
 
-  // Static files
   const staticEntry = STATIC[pathname];
   if (req.method === "GET" && staticEntry) {
     return serveStatic(res, staticEntry);
   }
 
-  // HLS manifest / segment proxy
   if (req.method === "GET" && pathname === "/proxy/flix-stream") {
     return handleFlixProxy(req, res, parsedUrl);
   }
 
-  // Subtitle pass-through proxy (accepts .ass / .ssa / .srt / .vtt suffix)
   if (req.method === "GET" && /^\/proxy\/subtitle(\.(ass|ssa|srt|vtt))?$/.test(pathname)) {
     return handleSubtitleProxy(req, res, parsedUrl);
   }
 
-  // Reanime self-hosted libass worker + wasm proxy
   if (req.method === "GET" && pathname === "/proxy/reanime-static") {
     return handleReanimeStaticProxy(req, res, parsedUrl);
   }
 
-  // IntroDB segments proxy
   if (req.method === "GET" && pathname === "/proxy/introdb") {
     return handleIntroDbProxy(req, res, parsedUrl);
   }
 
-  // Everything else -> Worker (Anivexa API)
+  if (req.method === "GET" && pathname === "/proxy/raw") {
+    return handleRawProxy(req, res, parsedUrl);
+  }
+
   try {
     const request  = await nodeToRequest(req);
     const response = await worker.fetch(request, {});
