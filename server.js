@@ -9,6 +9,9 @@ const PORT  = Number(process.env.PORT) || 4000;
 const BASE  = process.env.BASE_PATH ?? "";
 const __dir = dirname(fileURLToPath(import.meta.url));
 
+// ---------------------------------------------------------------------------
+// Static file map — served by this Node process, not by the Worker
+// ---------------------------------------------------------------------------
 const STATIC = {
   "/":          { file: "docs/landing.html", mime: "text/html" },
   "/docs":      { file: "docs/index.html",   mime: "text/html" },
@@ -17,11 +20,17 @@ const STATIC = {
   "/logo.svg":  { file: "docs/logo.svg",     mime: "image/svg+xml" },
 };
 
+// ---------------------------------------------------------------------------
+// Flixcloud segment XOR key (16 bytes) — applied after stripping fake header
+// ---------------------------------------------------------------------------
 const flixImageSegmentXorKey = Uint8Array.from([
   157, 42, 241, 71, 179, 142, 92, 112,
   166, 25, 228, 59, 216, 98, 15, 197
 ]);
 
+// ---------------------------------------------------------------------------
+// Static file server
+// ---------------------------------------------------------------------------
 function serveStatic(res, entry) {
   try {
     const body = readFileSync(join(__dir, entry.file));
@@ -37,6 +46,9 @@ function serveStatic(res, entry) {
   }
 }
 
+// ---------------------------------------------------------------------------
+// Manifest decryption: Base64 decode then repeating-key XOR
+// ---------------------------------------------------------------------------
 function decodeIfEncrypted(raw, key) {
   if (!key) return raw;
   if (raw.startsWith("#EXTM3U")) return raw;
@@ -57,14 +69,11 @@ function decodeIfEncrypted(raw, key) {
 // Upstream headers.
 //
 // Priority:
-//   1. If a referer was explicitly passed as a query param, use it.
-//      (Frontend extracts this from the payload's stream.headers.Referer
-//       or stream.referer fields when available.)
-//   2. Otherwise, fall back to a hostname-based whitelist.
-//
-// Flixcloud-family hosts need the Flixcloud Referer.
-// AniZone's CDN works with no Referer at all.
-// Anything else: no Referer.
+//   1. If explicitReferer was supplied (from the payload), use it. Origin
+//      is derived from the referer's origin. This is how KAA and Senshi
+//      streams get their correct Referer — the Worker tells us what to send.
+//   2. Otherwise fall back to a hostname whitelist. Flixcloud-family hosts
+//      get the Flixcloud Referer, everything else gets browser UA only.
 // ---------------------------------------------------------------------------
 const FLIXCLOUD_HOSTS = [
   "flixcloud.cc",
@@ -85,7 +94,6 @@ function headersForUpstream(targetUrl, explicitReferer) {
     "Accept": "*/*"
   };
 
-  // Explicit referer wins if provided. Origin is derived from it.
   if (explicitReferer) {
     const headers = { ...baseHeaders, "Referer": explicitReferer };
     try {
@@ -114,8 +122,12 @@ async function fetchUpstream(url, explicitReferer) {
   return await fetch(url, { headers: headersForUpstream(url, explicitReferer) });
 }
 
+// ---------------------------------------------------------------------------
+// Segment transform: detect fake WebP/PNG magic, strip it, XOR if needed.
+// Only applies to type=segment. MP4s pass through raw.
+// ---------------------------------------------------------------------------
 function transformSegmentBuffer(bodyBuffer) {
-  let offset  = 0;
+  let offset   = 0;
   let needsXor = false;
 
   const isWebp = bodyBuffer.length > 12 &&
@@ -144,6 +156,21 @@ function transformSegmentBuffer(bodyBuffer) {
   return out;
 }
 
+// ---------------------------------------------------------------------------
+// /proxy/flix-stream — HLS manifest + segment proxy
+//
+// Query params:
+//   url      (required) — upstream URL to fetch
+//   key      (optional) — playlist decryption key (Flixcloud family only)
+//   type     (optional) — "segment" | "mp4" | unset (playlist)
+//   referer  (optional) — explicit Referer to send; overrides whitelist
+//
+// Behavior:
+//   - Binary payloads (segment/mp4) — transform & serve
+//   - Playlists — decrypt if needed, then rewrite every URI through the proxy
+//   - Every rewritten URI inherits key + referer so the whole chain stays
+//     authenticated as it walks through nested manifests and segments
+// ---------------------------------------------------------------------------
 async function handleFlixProxy(req, res, parsedUrl) {
   const targetUrl = parsedUrl.searchParams.get("url");
   const key       = parsedUrl.searchParams.get("key");
@@ -167,6 +194,7 @@ async function handleFlixProxy(req, res, parsedUrl) {
 
     const bodyBuffer = Buffer.from(await response.arrayBuffer());
 
+    // ---- Binary payloads ----
     if (typeParam === "segment" || typeParam === "mp4") {
       let out, ct;
       if (typeParam === "mp4") {
@@ -183,8 +211,11 @@ async function handleFlixProxy(req, res, parsedUrl) {
       return res.end(out);
     }
 
+    // ---- Playlist payloads ----
     const hostname = (() => { try { return new URL(targetUrl).hostname; } catch { return ''; } })();
     let text = bodyBuffer.toString("utf8").trim();
+
+    // Decrypt only if the source is a Flixcloud-family host AND we have a key.
     if (key && isFlixcloudFamily(hostname)) {
       text = decodeIfEncrypted(text, key);
     }
@@ -207,6 +238,9 @@ async function handleFlixProxy(req, res, parsedUrl) {
       const trimmed = line.trim();
       if (!trimmed) return line;
 
+      // Tag lines: rewrite URI="..." attribute if present.
+      // This is what makes audio renditions, AES keys, and fMP4 init maps
+      // go through the proxy instead of hitting the CDN directly.
       if (trimmed.startsWith("#")) {
         const uriMatch = trimmed.match(/URI="([^"]+)"/);
         if (!uriMatch) return line;
@@ -215,13 +249,14 @@ async function handleFlixProxy(req, res, parsedUrl) {
         const absUrl      = new URL(originalUri, targetUrl).toString();
 
         let type = null;
-        if (trimmed.startsWith("#EXT-X-KEY")) type = "segment";
+        if (trimmed.startsWith("#EXT-X-KEY"))      type = "segment";
         else if (trimmed.startsWith("#EXT-X-MAP")) type = "segment";
 
         const newUri = buildProxyUrl(absUrl, type);
         return line.replace(`URI="${originalUri}"`, `URI="${newUri}"`);
       }
 
+      // Bare URI line: variant playlist (master) or segment (media playlist)
       const absUrl = new URL(trimmed, targetUrl).toString();
       const type   = isMaster ? null : "segment";
       return buildProxyUrl(absUrl, type);
@@ -238,13 +273,27 @@ async function handleFlixProxy(req, res, parsedUrl) {
   }
 }
 
+// ---------------------------------------------------------------------------
+// /proxy/subtitle.ass (or .ssa, .srt, .vtt) — subtitle passthrough
+//
+// The extension in the PATH is critical for the libass plugin's sniffer.
+// Don't change to an exact-match route without understanding why.
+// ---------------------------------------------------------------------------
 async function handleSubtitleProxy(req, res, parsedUrl) {
   const targetUrl = parsedUrl.searchParams.get("url");
   const referer   = parsedUrl.searchParams.get("referer");
-  if (!targetUrl) { res.writeHead(400, { "Access-Control-Allow-Origin": "*" }); return res.end("Missing url"); }
+
+  if (!targetUrl) {
+    res.writeHead(400, { "Access-Control-Allow-Origin": "*" });
+    return res.end("Missing url");
+  }
+
   try {
     const r = await fetchUpstream(targetUrl, referer);
-    if (!r.ok) { res.writeHead(r.status, { "Access-Control-Allow-Origin": "*" }); return res.end("Upstream " + r.status); }
+    if (!r.ok) {
+      res.writeHead(r.status, { "Access-Control-Allow-Origin": "*" });
+      return res.end("Upstream " + r.status);
+    }
     const body = Buffer.from(await r.arrayBuffer());
     res.writeHead(200, {
       "Access-Control-Allow-Origin": "*",
@@ -258,16 +307,32 @@ async function handleSubtitleProxy(req, res, parsedUrl) {
   }
 }
 
+// ---------------------------------------------------------------------------
+// /proxy/reanime-static — libass worker + wasm proxy
+//
+// Serves the worker script as JS and the wasm binary with the correct
+// application/wasm Content-Type (upstream doesn't set it, which breaks
+// stream-compilation in the browser).
+// ---------------------------------------------------------------------------
 async function handleReanimeStaticProxy(req, res, parsedUrl) {
   const subPath = parsedUrl.searchParams.get("path");
-  if (!subPath) { res.writeHead(400, { "Access-Control-Allow-Origin": "*" }); return res.end("Missing path"); }
-  const safePath = subPath.replace(/^\/+/, "").replace(/\.\./g, "");
+  if (!subPath) {
+    res.writeHead(400, { "Access-Control-Allow-Origin": "*" });
+    return res.end("Missing path");
+  }
+
+  const safePath  = subPath.replace(/^\/+/, "").replace(/\.\./g, "");
   const targetUrl = "https://flixcloud.cc/artplayer-new/" + safePath;
+
   try {
     const r = await fetchUpstream(targetUrl);
-    if (!r.ok) { res.writeHead(r.status, { "Access-Control-Allow-Origin": "*" }); return res.end("Upstream " + r.status); }
-    const buf = Buffer.from(await r.arrayBuffer());
+    if (!r.ok) {
+      res.writeHead(r.status, { "Access-Control-Allow-Origin": "*" });
+      return res.end("Upstream " + r.status);
+    }
+    const buf    = Buffer.from(await r.arrayBuffer());
     const isWasm = safePath.endsWith(".wasm") || safePath.includes(".wasm?");
+
     res.writeHead(200, {
       "Access-Control-Allow-Origin": "*",
       "Content-Type": isWasm ? "application/wasm" : "application/javascript; charset=utf-8",
@@ -280,23 +345,37 @@ async function handleReanimeStaticProxy(req, res, parsedUrl) {
   }
 }
 
+// ---------------------------------------------------------------------------
+// /proxy/introdb — IntroDB segments CORS bypass
+//
+// IntroDB doesn't send Access-Control-Allow-Origin so the browser refuses
+// to let our JS read it. We fetch server-side and re-serve with CORS.
+// ---------------------------------------------------------------------------
 async function handleIntroDbProxy(req, res, parsedUrl) {
   const imdbId  = parsedUrl.searchParams.get("imdb_id");
   const season  = parsedUrl.searchParams.get("season");
   const episode = parsedUrl.searchParams.get("episode");
   const isMovie = parsedUrl.searchParams.get("is_movie");
-  if (!imdbId) { res.writeHead(400, { "Access-Control-Allow-Origin": "*" }); return res.end("Missing imdb_id"); }
+
+  if (!imdbId) {
+    res.writeHead(400, { "Access-Control-Allow-Origin": "*" });
+    return res.end("Missing imdb_id");
+  }
 
   let upstreamUrl = `https://api.introdb.app/segments?imdb_id=${encodeURIComponent(imdbId)}`;
-  if (isMovie === "true") upstreamUrl += "&is_movie=true";
-  else {
+  if (isMovie === "true") {
+    upstreamUrl += "&is_movie=true";
+  } else {
     if (season)  upstreamUrl += `&season=${encodeURIComponent(season)}`;
     if (episode) upstreamUrl += `&episode=${encodeURIComponent(episode)}`;
   }
 
   try {
     const r = await fetch(upstreamUrl, { headers: { "Accept": "application/json" } });
-    if (!r.ok) { res.writeHead(r.status, { "Access-Control-Allow-Origin": "*" }); return res.end("Upstream " + r.status); }
+    if (!r.ok) {
+      res.writeHead(r.status, { "Access-Control-Allow-Origin": "*" });
+      return res.end("Upstream " + r.status);
+    }
     const body = Buffer.from(await r.arrayBuffer());
     res.writeHead(200, {
       "Access-Control-Allow-Origin": "*",
@@ -310,15 +389,29 @@ async function handleIntroDbProxy(req, res, parsedUrl) {
   }
 }
 
+// ---------------------------------------------------------------------------
+// /proxy/raw — generic passthrough with upstream headers
+//
+// Used for: fetching embed pages to scrape font lists, proxying font files,
+// and debugging arbitrary upstream responses.
+// ---------------------------------------------------------------------------
 async function handleRawProxy(req, res, parsedUrl) {
   const targetUrl = parsedUrl.searchParams.get("url");
   const referer   = parsedUrl.searchParams.get("referer");
-  if (!targetUrl) { res.writeHead(400, { "Access-Control-Allow-Origin": "*" }); return res.end("Missing url"); }
+
+  if (!targetUrl) {
+    res.writeHead(400, { "Access-Control-Allow-Origin": "*" });
+    return res.end("Missing url");
+  }
+
   try {
     const r = await fetchUpstream(targetUrl, referer);
-    if (!r.ok) { res.writeHead(r.status, { "Access-Control-Allow-Origin": "*" }); return res.end("Upstream " + r.status); }
+    if (!r.ok) {
+      res.writeHead(r.status, { "Access-Control-Allow-Origin": "*" });
+      return res.end("Upstream " + r.status);
+    }
     const body = Buffer.from(await r.arrayBuffer());
-    const ct = r.headers.get("content-type") || "application/octet-stream";
+    const ct   = r.headers.get("content-type") || "application/octet-stream";
     res.writeHead(200, {
       "Access-Control-Allow-Origin": "*",
       "Content-Type": ct,
@@ -331,13 +424,18 @@ async function handleRawProxy(req, res, parsedUrl) {
   }
 }
 
+// ---------------------------------------------------------------------------
+// Convert Node request → Fetch API Request (for the Worker)
+// ---------------------------------------------------------------------------
 async function nodeToRequest(req) {
   const host     = req.headers["host"] ?? "localhost:" + PORT;
   const stripped = BASE && req.url.startsWith(BASE) ? req.url.slice(BASE.length) || "/" : req.url;
   const url      = "http://" + host + stripped;
+
   const chunks = [];
   for await (const chunk of req) chunks.push(chunk);
   const body = chunks.length ? Buffer.concat(chunks) : null;
+
   return new Request(url, {
     method:  req.method,
     headers: req.headers,
@@ -346,7 +444,11 @@ async function nodeToRequest(req) {
   });
 }
 
+// ---------------------------------------------------------------------------
+// Main HTTP server — routes to static files, proxies, or the Worker
+// ---------------------------------------------------------------------------
 const server = http.createServer(async (req, res) => {
+  // CORS preflight
   if (req.method === "OPTIONS") {
     res.writeHead(204, {
       "Access-Control-Allow-Origin": "*",
@@ -360,15 +462,38 @@ const server = http.createServer(async (req, res) => {
   const parsedUrl = new URL(req.url, "http://" + host);
   const pathname  = parsedUrl.pathname;
 
+  // 1. Static files
   const staticEntry = STATIC[pathname];
-  if (req.method === "GET" && staticEntry) return serveStatic(res, staticEntry);
+  if (req.method === "GET" && staticEntry) {
+    return serveStatic(res, staticEntry);
+  }
 
-  if (req.method === "GET" && pathname === "/proxy/flix-stream") return handleFlixProxy(req, res, parsedUrl);
-  if (req.method === "GET" && /^\/proxy\/subtitle(\.(ass|ssa|srt|vtt))?$/.test(pathname)) return handleSubtitleProxy(req, res, parsedUrl);
-  if (req.method === "GET" && pathname === "/proxy/reanime-static") return handleReanimeStaticProxy(req, res, parsedUrl);
-  if (req.method === "GET" && pathname === "/proxy/introdb") return handleIntroDbProxy(req, res, parsedUrl);
-  if (req.method === "GET" && pathname === "/proxy/raw") return handleRawProxy(req, res, parsedUrl);
+  // 2. HLS manifest + segment proxy
+  if (req.method === "GET" && pathname === "/proxy/flix-stream") {
+    return handleFlixProxy(req, res, parsedUrl);
+  }
 
+  // 3. Subtitle proxy — regex route accepts .ass/.ssa/.srt/.vtt suffix
+  if (req.method === "GET" && /^\/proxy\/subtitle(\.(ass|ssa|srt|vtt))?$/.test(pathname)) {
+    return handleSubtitleProxy(req, res, parsedUrl);
+  }
+
+  // 4. libass worker + wasm proxy
+  if (req.method === "GET" && pathname === "/proxy/reanime-static") {
+    return handleReanimeStaticProxy(req, res, parsedUrl);
+  }
+
+  // 5. IntroDB CORS bypass
+  if (req.method === "GET" && pathname === "/proxy/introdb") {
+    return handleIntroDbProxy(req, res, parsedUrl);
+  }
+
+  // 6. Generic raw passthrough
+  if (req.method === "GET" && pathname === "/proxy/raw") {
+    return handleRawProxy(req, res, parsedUrl);
+  }
+
+  // 7. Everything else → Anivexa Worker
   try {
     const request  = await nodeToRequest(req);
     const response = await worker.fetch(request, {});
