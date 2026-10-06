@@ -66,16 +66,66 @@ function decodeIfEncrypted(raw, key) {
 }
 
 // ---------------------------------------------------------------------------
-// Upstream fetcher — Referer/Origin/UA injection
+// Upstream headers — chosen based on the target hostname.
+// Each CDN may want different Referer/Origin values, or none at all.
 // ---------------------------------------------------------------------------
-async function fetchUpstream(url) {
-  return await fetch(url, {
-    headers: {
-      "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
+function headersForUpstream(targetUrl) {
+  const baseHeaders = {
+    "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
+    "Accept": "*/*"
+  };
+
+  let hostname;
+  try { hostname = new URL(targetUrl).hostname.toLowerCase(); }
+  catch { return baseHeaders; }
+
+  // Flixcloud CDN family (Reanime, some Mkissa, etc.)
+  //   flixcloud.cc, fetch8.flixcloud.cc, fallencdn.top, glaciercdn.top, vortexcdn.top
+  if (
+    hostname.endsWith("flixcloud.cc") ||
+    hostname.includes("flixcloud") ||
+    hostname.includes("fallencdn") ||
+    hostname.includes("glaciercdn") ||
+    hostname.includes("vortexcdn")
+  ) {
+    return {
+      ...baseHeaders,
       "Referer": "https://flixcloud.cc/",
       "Origin":  "https://flixcloud.cc"
-    }
-  });
+    };
+  }
+
+  // Senshi's CDN (anidap.biz)
+  if (hostname.includes("anidap")) {
+    return {
+      ...baseHeaders,
+      "Referer": "https://senshi.live/",
+      "Origin":  "https://senshi.live"
+    };
+  }
+
+  // Mkissa's CDN (add specific hosts as you discover them)
+  // if (hostname.includes("mkissa")) {
+  //   return { ...baseHeaders, "Referer": "https://mkissa.to/", "Origin": "https://mkissa.to" };
+  // }
+
+  // AniZone's CDN (add specific hosts as you discover them)
+  // if (hostname.includes("anizone")) { ... }
+
+  // KAA's CDN (add specific hosts as you discover them)
+  // if (hostname.includes("kickassanime")) { ... }
+
+  // Default: browser UA, no Referer, no Origin.
+  // Many modern CDNs accept this fine; the ones that don't will 4xx
+  // and the chain will escalate to the next provider.
+  return baseHeaders;
+}
+
+// ---------------------------------------------------------------------------
+// Upstream fetcher — delegates header selection to headersForUpstream
+// ---------------------------------------------------------------------------
+async function fetchUpstream(url) {
+  return await fetch(url, { headers: headersForUpstream(url) });
 }
 
 // ---------------------------------------------------------------------------
@@ -113,6 +163,7 @@ function transformSegmentBuffer(bodyBuffer) {
 
 // ---------------------------------------------------------------------------
 // /proxy/flix-stream — HLS manifest + segment proxy
+// (Route name kept for backwards compat; now handles any provider's CDN)
 // ---------------------------------------------------------------------------
 async function handleFlixProxy(req, res, parsedUrl) {
   const targetUrl = parsedUrl.searchParams.get("url");
@@ -128,6 +179,8 @@ async function handleFlixProxy(req, res, parsedUrl) {
     const response = await fetchUpstream(targetUrl);
 
     if (!response.ok) {
+      const hostname = (() => { try { return new URL(targetUrl).hostname; } catch { return '?'; } })();
+      console.log(`[Proxy] Upstream ${response.status} from ${hostname}`);
       res.writeHead(response.status, { "Content-Type": "text/plain", "Access-Control-Allow-Origin": "*" });
       return res.end(`Upstream HTTP error: ${response.status}`);
     }
@@ -143,7 +196,20 @@ async function handleFlixProxy(req, res, parsedUrl) {
       return res.end(out);
     }
 
-    const text = decodeIfEncrypted(bodyBuffer.toString("utf8").trim(), key);
+    // Only apply Flixcloud manifest decryption if we actually have a key
+    // AND the target is a Flixcloud-family CDN.
+    const hostname = (() => { try { return new URL(targetUrl).hostname.toLowerCase(); } catch { return ''; } })();
+    const isFlixcloudFamily =
+      hostname.endsWith("flixcloud.cc") ||
+      hostname.includes("flixcloud") ||
+      hostname.includes("fallencdn") ||
+      hostname.includes("glaciercdn") ||
+      hostname.includes("vortexcdn");
+
+    let text = bodyBuffer.toString("utf8").trim();
+    if (key && isFlixcloudFamily) {
+      text = decodeIfEncrypted(text, key);
+    }
 
     const host      = req.headers["host"] ?? "localhost:" + PORT;
     const protocol  = req.headers["x-forwarded-proto"] || "http";
@@ -194,9 +260,7 @@ async function handleFlixProxy(req, res, parsedUrl) {
 }
 
 // ---------------------------------------------------------------------------
-// /proxy/subtitle — subtitle pass-through
-// Accepts optional .ass/.ssa/.srt/.vtt suffix in the path so the libass
-// plugin's extension sniffing works.
+// /proxy/subtitle
 // ---------------------------------------------------------------------------
 async function handleSubtitleProxy(req, res, parsedUrl) {
   const targetUrl = parsedUrl.searchParams.get("url");
@@ -229,7 +293,7 @@ async function handleSubtitleProxy(req, res, parsedUrl) {
 }
 
 // ---------------------------------------------------------------------------
-// /proxy/reanime-static — Reanime's self-hosted libass assets
+// /proxy/reanime-static
 // ---------------------------------------------------------------------------
 async function handleReanimeStaticProxy(req, res, parsedUrl) {
   const subPath = parsedUrl.searchParams.get("path");
@@ -266,7 +330,7 @@ async function handleReanimeStaticProxy(req, res, parsedUrl) {
 }
 
 // ---------------------------------------------------------------------------
-// /proxy/introdb — IntroDB segments proxy
+// /proxy/introdb
 // ---------------------------------------------------------------------------
 async function handleIntroDbProxy(req, res, parsedUrl) {
   const imdbId  = parsedUrl.searchParams.get("imdb_id");
@@ -307,8 +371,7 @@ async function handleIntroDbProxy(req, res, parsedUrl) {
 }
 
 // ---------------------------------------------------------------------------
-// /proxy/raw — generic passthrough with upstream headers
-// Used to inspect Flixcloud embed pages and fetch external font files.
+// /proxy/raw
 // ---------------------------------------------------------------------------
 async function handleRawProxy(req, res, parsedUrl) {
   const targetUrl = parsedUrl.searchParams.get("url");
