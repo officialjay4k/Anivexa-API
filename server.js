@@ -9,9 +9,6 @@ const PORT  = Number(process.env.PORT) || 4000;
 const BASE  = process.env.BASE_PATH ?? "";
 const __dir = dirname(fileURLToPath(import.meta.url));
 
-// ---------------------------------------------------------------------------
-// Static file map
-// ---------------------------------------------------------------------------
 const STATIC = {
   "/":          { file: "docs/landing.html", mime: "text/html" },
   "/docs":      { file: "docs/index.html",   mime: "text/html" },
@@ -20,17 +17,11 @@ const STATIC = {
   "/logo.svg":  { file: "docs/logo.svg",     mime: "image/svg+xml" },
 };
 
-// ---------------------------------------------------------------------------
-// Flixcloud segment XOR key
-// ---------------------------------------------------------------------------
 const flixImageSegmentXorKey = Uint8Array.from([
   157, 42, 241, 71, 179, 142, 92, 112,
   166, 25, 228, 59, 216, 98, 15, 197
 ]);
 
-// ---------------------------------------------------------------------------
-// Static file helper
-// ---------------------------------------------------------------------------
 function serveStatic(res, entry) {
   try {
     const body = readFileSync(join(__dir, entry.file));
@@ -46,9 +37,6 @@ function serveStatic(res, entry) {
   }
 }
 
-// ---------------------------------------------------------------------------
-// Manifest decryption: Base64 + repeating-key XOR
-// ---------------------------------------------------------------------------
 function decodeIfEncrypted(raw, key) {
   if (!key) return raw;
   if (raw.startsWith("#EXTM3U")) return raw;
@@ -66,8 +54,9 @@ function decodeIfEncrypted(raw, key) {
 }
 
 // ---------------------------------------------------------------------------
-// Upstream headers — chosen based on the target hostname.
-// Each CDN may want different Referer/Origin values, or none at all.
+// Upstream headers — only Flixcloud-family hosts get the Flixcloud Referer.
+// Everything else gets browser UA and no Referer, which is what most CDNs
+// expect. If a specific CDN starts blocking, add its hostname below.
 // ---------------------------------------------------------------------------
 function headersForUpstream(targetUrl) {
   const baseHeaders = {
@@ -79,15 +68,9 @@ function headersForUpstream(targetUrl) {
   try { hostname = new URL(targetUrl).hostname.toLowerCase(); }
   catch { return baseHeaders; }
 
-  // Flixcloud CDN family (Reanime, some Mkissa, etc.)
-  //   flixcloud.cc, fetch8.flixcloud.cc, fallencdn.top, glaciercdn.top, vortexcdn.top
-  if (
-    hostname.endsWith("flixcloud.cc") ||
-    hostname.includes("flixcloud") ||
-    hostname.includes("fallencdn") ||
-    hostname.includes("glaciercdn") ||
-    hostname.includes("vortexcdn")
-  ) {
+  // Flixcloud's own domains get the full Referer/Origin. Verified working
+  // for fetch8/fetch9.flixcloud.cc and the .cc domain itself.
+  if (hostname.endsWith("flixcloud.cc") || hostname === "flixcloud.cc") {
     return {
       ...baseHeaders,
       "Referer": "https://flixcloud.cc/",
@@ -95,42 +78,15 @@ function headersForUpstream(targetUrl) {
     };
   }
 
-  // Senshi's CDN (anidap.biz)
-  if (hostname.includes("anidap")) {
-    return {
-      ...baseHeaders,
-      "Referer": "https://senshi.live/",
-      "Origin":  "https://senshi.live"
-    };
-  }
-
-  // Mkissa's CDN (add specific hosts as you discover them)
-  // if (hostname.includes("mkissa")) {
-  //   return { ...baseHeaders, "Referer": "https://mkissa.to/", "Origin": "https://mkissa.to" };
-  // }
-
-  // AniZone's CDN (add specific hosts as you discover them)
-  // if (hostname.includes("anizone")) { ... }
-
-  // KAA's CDN (add specific hosts as you discover them)
-  // if (hostname.includes("kickassanime")) { ... }
-
-  // Default: browser UA, no Referer, no Origin.
-  // Many modern CDNs accept this fine; the ones that don't will 4xx
-  // and the chain will escalate to the next provider.
+  // All other CDNs (fallencdn.top, glaciercdn.top, vortexcdn.top,
+  // rundowncdn.top, anidap.biz, etc.) get no Referer.
   return baseHeaders;
 }
 
-// ---------------------------------------------------------------------------
-// Upstream fetcher — delegates header selection to headersForUpstream
-// ---------------------------------------------------------------------------
 async function fetchUpstream(url) {
   return await fetch(url, { headers: headersForUpstream(url) });
 }
 
-// ---------------------------------------------------------------------------
-// Segment transform
-// ---------------------------------------------------------------------------
 function transformSegmentBuffer(bodyBuffer) {
   let offset  = 0;
   let needsXor = false;
@@ -161,14 +117,10 @@ function transformSegmentBuffer(bodyBuffer) {
   return out;
 }
 
-// ---------------------------------------------------------------------------
-// /proxy/flix-stream — HLS manifest + segment proxy
-// (Route name kept for backwards compat; now handles any provider's CDN)
-// ---------------------------------------------------------------------------
 async function handleFlixProxy(req, res, parsedUrl) {
   const targetUrl = parsedUrl.searchParams.get("url");
   const key       = parsedUrl.searchParams.get("key");
-  const isSegment = parsedUrl.searchParams.get("type") === "segment";
+  const typeParam = parsedUrl.searchParams.get("type");
 
   if (!targetUrl) {
     res.writeHead(400, { "Content-Type": "text/plain", "Access-Control-Allow-Origin": "*" });
@@ -187,24 +139,27 @@ async function handleFlixProxy(req, res, parsedUrl) {
 
     const bodyBuffer = Buffer.from(await response.arrayBuffer());
 
-    if (isSegment) {
-      const out = transformSegmentBuffer(bodyBuffer);
+    // ---- Binary paths: segments and mp4 ----
+    if (typeParam === "segment" || typeParam === "mp4") {
+      let out;
+      let ct;
+      if (typeParam === "mp4") {
+        out = bodyBuffer;
+        ct  = "video/mp4";
+      } else {
+        out = transformSegmentBuffer(bodyBuffer);
+        ct  = "video/mp2t";
+      }
       res.writeHead(200, {
         "Access-Control-Allow-Origin": "*",
-        "Content-Type": "video/mp2t"
+        "Content-Type": ct
       });
       return res.end(out);
     }
 
-    // Only apply Flixcloud manifest decryption if we actually have a key
-    // AND the target is a Flixcloud-family CDN.
+    // ---- Playlist path ----
     const hostname = (() => { try { return new URL(targetUrl).hostname.toLowerCase(); } catch { return ''; } })();
-    const isFlixcloudFamily =
-      hostname.endsWith("flixcloud.cc") ||
-      hostname.includes("flixcloud") ||
-      hostname.includes("fallencdn") ||
-      hostname.includes("glaciercdn") ||
-      hostname.includes("vortexcdn");
+    const isFlixcloudFamily = hostname.endsWith("flixcloud.cc") || hostname === "flixcloud.cc";
 
     let text = bodyBuffer.toString("utf8").trim();
     if (key && isFlixcloudFamily) {
@@ -259,27 +214,13 @@ async function handleFlixProxy(req, res, parsedUrl) {
   }
 }
 
-// ---------------------------------------------------------------------------
-// /proxy/subtitle
-// ---------------------------------------------------------------------------
 async function handleSubtitleProxy(req, res, parsedUrl) {
   const targetUrl = parsedUrl.searchParams.get("url");
-
-  if (!targetUrl) {
-    res.writeHead(400, { "Access-Control-Allow-Origin": "*" });
-    return res.end("Missing url");
-  }
-
+  if (!targetUrl) { res.writeHead(400, { "Access-Control-Allow-Origin": "*" }); return res.end("Missing url"); }
   try {
     const r = await fetchUpstream(targetUrl);
-
-    if (!r.ok) {
-      res.writeHead(r.status, { "Access-Control-Allow-Origin": "*" });
-      return res.end("Upstream " + r.status);
-    }
-
+    if (!r.ok) { res.writeHead(r.status, { "Access-Control-Allow-Origin": "*" }); return res.end("Upstream " + r.status); }
     const body = Buffer.from(await r.arrayBuffer());
-
     res.writeHead(200, {
       "Access-Control-Allow-Origin": "*",
       "Content-Type": "text/plain; charset=utf-8",
@@ -292,31 +233,16 @@ async function handleSubtitleProxy(req, res, parsedUrl) {
   }
 }
 
-// ---------------------------------------------------------------------------
-// /proxy/reanime-static
-// ---------------------------------------------------------------------------
 async function handleReanimeStaticProxy(req, res, parsedUrl) {
   const subPath = parsedUrl.searchParams.get("path");
-
-  if (!subPath) {
-    res.writeHead(400, { "Access-Control-Allow-Origin": "*" });
-    return res.end("Missing path");
-  }
-
+  if (!subPath) { res.writeHead(400, { "Access-Control-Allow-Origin": "*" }); return res.end("Missing path"); }
   const safePath = subPath.replace(/^\/+/, "").replace(/\.\./g, "");
   const targetUrl = "https://flixcloud.cc/artplayer-new/" + safePath;
-
   try {
     const r = await fetchUpstream(targetUrl);
-
-    if (!r.ok) {
-      res.writeHead(r.status, { "Access-Control-Allow-Origin": "*" });
-      return res.end("Upstream " + r.status);
-    }
-
-    const buf    = Buffer.from(await r.arrayBuffer());
+    if (!r.ok) { res.writeHead(r.status, { "Access-Control-Allow-Origin": "*" }); return res.end("Upstream " + r.status); }
+    const buf = Buffer.from(await r.arrayBuffer());
     const isWasm = safePath.endsWith(".wasm") || safePath.includes(".wasm?");
-
     res.writeHead(200, {
       "Access-Control-Allow-Origin": "*",
       "Content-Type": isWasm ? "application/wasm" : "application/javascript; charset=utf-8",
@@ -329,34 +255,23 @@ async function handleReanimeStaticProxy(req, res, parsedUrl) {
   }
 }
 
-// ---------------------------------------------------------------------------
-// /proxy/introdb
-// ---------------------------------------------------------------------------
 async function handleIntroDbProxy(req, res, parsedUrl) {
   const imdbId  = parsedUrl.searchParams.get("imdb_id");
   const season  = parsedUrl.searchParams.get("season");
   const episode = parsedUrl.searchParams.get("episode");
   const isMovie = parsedUrl.searchParams.get("is_movie");
-
-  if (!imdbId) {
-    res.writeHead(400, { "Access-Control-Allow-Origin": "*" });
-    return res.end("Missing imdb_id");
-  }
+  if (!imdbId) { res.writeHead(400, { "Access-Control-Allow-Origin": "*" }); return res.end("Missing imdb_id"); }
 
   let upstreamUrl = `https://api.introdb.app/segments?imdb_id=${encodeURIComponent(imdbId)}`;
-  if (isMovie === "true") {
-    upstreamUrl += "&is_movie=true";
-  } else {
+  if (isMovie === "true") upstreamUrl += "&is_movie=true";
+  else {
     if (season)  upstreamUrl += `&season=${encodeURIComponent(season)}`;
     if (episode) upstreamUrl += `&episode=${encodeURIComponent(episode)}`;
   }
 
   try {
     const r = await fetch(upstreamUrl, { headers: { "Accept": "application/json" } });
-    if (!r.ok) {
-      res.writeHead(r.status, { "Access-Control-Allow-Origin": "*" });
-      return res.end("Upstream " + r.status);
-    }
+    if (!r.ok) { res.writeHead(r.status, { "Access-Control-Allow-Origin": "*" }); return res.end("Upstream " + r.status); }
     const body = Buffer.from(await r.arrayBuffer());
     res.writeHead(200, {
       "Access-Control-Allow-Origin": "*",
@@ -370,22 +285,12 @@ async function handleIntroDbProxy(req, res, parsedUrl) {
   }
 }
 
-// ---------------------------------------------------------------------------
-// /proxy/raw
-// ---------------------------------------------------------------------------
 async function handleRawProxy(req, res, parsedUrl) {
   const targetUrl = parsedUrl.searchParams.get("url");
-  if (!targetUrl) {
-    res.writeHead(400, { "Access-Control-Allow-Origin": "*" });
-    return res.end("Missing url");
-  }
-
+  if (!targetUrl) { res.writeHead(400, { "Access-Control-Allow-Origin": "*" }); return res.end("Missing url"); }
   try {
     const r = await fetchUpstream(targetUrl);
-    if (!r.ok) {
-      res.writeHead(r.status, { "Access-Control-Allow-Origin": "*" });
-      return res.end("Upstream " + r.status);
-    }
+    if (!r.ok) { res.writeHead(r.status, { "Access-Control-Allow-Origin": "*" }); return res.end("Upstream " + r.status); }
     const body = Buffer.from(await r.arrayBuffer());
     const ct = r.headers.get("content-type") || "application/octet-stream";
     res.writeHead(200, {
@@ -400,9 +305,6 @@ async function handleRawProxy(req, res, parsedUrl) {
   }
 }
 
-// ---------------------------------------------------------------------------
-// Node req -> Fetch API Request
-// ---------------------------------------------------------------------------
 async function nodeToRequest(req) {
   const host     = req.headers["host"] ?? "localhost:" + PORT;
   const stripped = BASE && req.url.startsWith(BASE) ? req.url.slice(BASE.length) || "/" : req.url;
@@ -420,9 +322,6 @@ async function nodeToRequest(req) {
   });
 }
 
-// ---------------------------------------------------------------------------
-// Main HTTP server
-// ---------------------------------------------------------------------------
 const server = http.createServer(async (req, res) => {
   if (req.method === "OPTIONS") {
     res.writeHead(204, {
@@ -438,29 +337,13 @@ const server = http.createServer(async (req, res) => {
   const pathname  = parsedUrl.pathname;
 
   const staticEntry = STATIC[pathname];
-  if (req.method === "GET" && staticEntry) {
-    return serveStatic(res, staticEntry);
-  }
+  if (req.method === "GET" && staticEntry) return serveStatic(res, staticEntry);
 
-  if (req.method === "GET" && pathname === "/proxy/flix-stream") {
-    return handleFlixProxy(req, res, parsedUrl);
-  }
-
-  if (req.method === "GET" && /^\/proxy\/subtitle(\.(ass|ssa|srt|vtt))?$/.test(pathname)) {
-    return handleSubtitleProxy(req, res, parsedUrl);
-  }
-
-  if (req.method === "GET" && pathname === "/proxy/reanime-static") {
-    return handleReanimeStaticProxy(req, res, parsedUrl);
-  }
-
-  if (req.method === "GET" && pathname === "/proxy/introdb") {
-    return handleIntroDbProxy(req, res, parsedUrl);
-  }
-
-  if (req.method === "GET" && pathname === "/proxy/raw") {
-    return handleRawProxy(req, res, parsedUrl);
-  }
+  if (req.method === "GET" && pathname === "/proxy/flix-stream") return handleFlixProxy(req, res, parsedUrl);
+  if (req.method === "GET" && /^\/proxy\/subtitle(\.(ass|ssa|srt|vtt))?$/.test(pathname)) return handleSubtitleProxy(req, res, parsedUrl);
+  if (req.method === "GET" && pathname === "/proxy/reanime-static") return handleReanimeStaticProxy(req, res, parsedUrl);
+  if (req.method === "GET" && pathname === "/proxy/introdb") return handleIntroDbProxy(req, res, parsedUrl);
+  if (req.method === "GET" && pathname === "/proxy/raw") return handleRawProxy(req, res, parsedUrl);
 
   try {
     const request  = await nodeToRequest(req);
