@@ -7,8 +7,14 @@ import { get as cacheGet, set as cacheSet, isFresh as cacheIsFresh, SHOW_IDENTIT
 var BASE = "https://reanime.to";
 var FLIX = "https://flixcloud.cc";
 var ANIZIP2 = "https://api.ani.zip/mappings";
-var UA5 = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36";
-var H = { "User-Agent": UA5, Accept: "application/json, */*" };
+var UA5 = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/151.0.0.0 Safari/537.36";
+var H = {
+  "User-Agent": UA5,
+  "Accept": "application/json, */*",
+  "Accept-Language": "en-US,en;q=0.9",
+  "Referer": `${BASE}/`,
+  "Origin": BASE
+};
 
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 
@@ -20,7 +26,11 @@ async function searchReanime(query, genre = null, attempt = 1) {
   try {
     data = await fetch(`${BASE}/api/v1/search?${params}`, { headers: H }).then(async (r) => {
       const _raw = await r.text();
-      if (!r.ok) { const _e = new Error(`reanime search ${r.status}`); _e.rawBody = _raw; throw _e; }
+      if (!r.ok) {
+        const _e = new Error(`reanime search ${r.status} — body: ${String(_raw).slice(0, 200)}`);
+        _e.rawBody = _raw;
+        throw _e;
+      }
       try { return JSON.parse(_raw); } catch (_pe) { _pe.rawBody = _raw; throw _pe; }
     });
   } catch (err) {
@@ -88,6 +98,27 @@ async function resolveSeries(anilistId, ctx = {}) {
 
   console.log(`[reanime] resolveSeries ${anilistId} — ${candidates.size} unique candidates`);
 
+  // Fastest pass: the search API already returns the AniList ID as a direct
+  // field on every result. Trust it before doing any cover-URL archaeology.
+  for (const [id, r] of candidates) {
+    if (Number(r.anilist_id) === Number(anilistId)) {
+      const data = {
+        animeId: id,
+        title: r.title?.english || r.title?.romaji || id,
+        anilistId: Number(anilistId),
+        malId: null,
+        subbed: Number.isFinite(r.subbed) ? r.subbed : null,
+        dubbed: Number.isFinite(r.dubbed) ? r.dubbed : null,
+        episodesCount: Number.isFinite(r.episodes) ? r.episodes : null,
+        matchType: "anilist_id_field",
+        matchScore: 1,
+      };
+      cacheSet(cacheKey, data, SHOW_IDENTITY_TTL);
+      console.log(`[reanime] resolveSeries ${anilistId} — matched via anilist_id field: ${id}`);
+      return data;
+    }
+  }
+
   // Fast pass: AniList CDN cover URLs embed the AniList ID as bx{id}-*
   for (const [id, r] of candidates) {
     const coverId = extractAnilistIdFromCover(r.cover_image);
@@ -109,9 +140,7 @@ async function resolveSeries(anilistId, ctx = {}) {
     }
   }
 
-  // FIX: fetch detail for ALL candidates, not just ones without AniList covers.
-  // A candidate with a mismatched cover (bx99999) still needs its detail page
-  // checked — it might genuinely be our show with a wrong-looking cover.
+  // Fetch detail for ALL candidates
   const needsDetail = [...candidates.keys()];
   const details = await Promise.all(
     needsDetail.map(async (id) => ({ id, detail: await fetchAnimeDetail(id).catch(() => null) }))
