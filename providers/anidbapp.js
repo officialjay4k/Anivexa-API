@@ -9,58 +9,67 @@ import {
   stripTags,
 } from "../core/new-provider-utils.js";
 import { get, set, isFresh, SHOW_IDENTITY_TTL } from "../core/smartcache.js";
-import { execFile } from "child_process";
-import { promisify } from "util";
-
-const execFileAsync = promisify(execFile);
 
 const BASE = "https://anidb.app";
-const UA = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/137.0.0.0 Safari/537.36";
-const COOKIE_JAR = "/tmp/anidbapp_cookies.txt";
+const UA = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/151.0.0.0 Safari/537.36";
 
-const NAV_HEADERS = [
-  "Accept: text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,image/apng,*/*;q=0.8",
-  "Accept-Language: en-US,en;q=0.9",
-  "sec-ch-ua: \"Google Chrome\";v=\"137\", \"Chromium\";v=\"137\", \"Not/A)Brand\";v=\"24\"",
-  "sec-ch-ua-mobile: ?0",
-  "sec-ch-ua-platform: \"Windows\"",
-  "sec-fetch-dest: document",
-  "sec-fetch-mode: navigate",
-  "sec-fetch-site: none",
-  "sec-fetch-user: ?1",
-  "upgrade-insecure-requests: 1",
-];
+const NAV_HEADERS = {
+  "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,image/apng,*/*;q=0.8",
+  "Accept-Language": "en-US,en;q=0.9",
+  "sec-ch-ua": '"Google Chrome";v="151", "Chromium";v="151", "Not/A)Brand";v="24"',
+  "sec-ch-ua-mobile": "?0",
+  "sec-ch-ua-platform": '"Windows"',
+  "sec-fetch-dest": "document",
+  "sec-fetch-mode": "navigate",
+  "sec-fetch-site": "none",
+  "sec-fetch-user": "?1",
+  "upgrade-insecure-requests": "1",
+};
 
-const XHR_HEADERS = [
-  "Accept: application/json, text/html, */*;q=0.8",
-  "Accept-Language: en-US,en;q=0.9",
-  "sec-ch-ua: \"Google Chrome\";v=\"137\", \"Chromium\";v=\"137\", \"Not/A)Brand\";v=\"24\"",
-  "sec-ch-ua-mobile: ?0",
-  "sec-ch-ua-platform: \"Windows\"",
-  "sec-fetch-dest: empty",
-  "sec-fetch-mode: cors",
-  "sec-fetch-site: same-origin",
-  "X-Requested-With: XMLHttpRequest",
-];
+const XHR_HEADERS = {
+  "Accept": "application/json, text/html, */*;q=0.8",
+  "Accept-Language": "en-US,en;q=0.9",
+  "sec-ch-ua": '"Google Chrome";v="151", "Chromium";v="151", "Not/A)Brand";v="24"',
+  "sec-ch-ua-mobile": "?0",
+  "sec-ch-ua-platform": '"Windows"',
+  "sec-fetch-dest": "empty",
+  "sec-fetch-mode": "cors",
+  "sec-fetch-site": "same-origin",
+  "X-Requested-With": "XMLHttpRequest",
+};
 
-async function curlFetch(url, headers, extraArgs = []) {
-  const args = [
-    "-s",
-    "--compressed",
-    "-A", UA,
-    "-c", COOKIE_JAR,
-    "-b", COOKIE_JAR,
-    "-w", "\n__STATUS:%{http_code}",
-    ...headers.flatMap(h => ["-H", h]),
-    ...extraArgs,
-    url,
-  ];
-  const { stdout } = await execFileAsync("curl", args, { maxBuffer: 8 * 1024 * 1024 });
-  const sep = stdout.lastIndexOf("\n__STATUS:");
-  const status = sep >= 0 ? Number(stdout.slice(sep + 10)) : 0;
-  const body = sep >= 0 ? stdout.slice(0, sep) : stdout;
-  if (status < 200 || status >= 300) {
-    const err = new Error(`HTTP ${status} fetching ${url}`);
+// In-memory cookie jar (replaces the curl -c/-b file juggling).
+const cookieJar = new Map();
+
+function storeCookies(response) {
+  const values = typeof response.headers.getSetCookie === "function"
+    ? response.headers.getSetCookie()
+    : [response.headers.get("set-cookie")].filter(Boolean);
+  for (const raw of values) {
+    for (const part of String(raw).split(/,(?=[^;,]+=)/)) {
+      const pair = part.split(";")[0]?.trim();
+      const eq = pair?.indexOf("=");
+      if (eq > 0) cookieJar.set(pair.slice(0, eq), pair.slice(eq + 1));
+    }
+  }
+}
+
+function cookieHeader() {
+  return [...cookieJar].map(([k, v]) => `${k}=${v}`).join("; ");
+}
+
+async function nativeFetch(url, headers = {}) {
+  const cookie = cookieHeader();
+  const merged = {
+    "User-Agent": UA,
+    ...headers,
+    ...(cookie ? { Cookie: cookie } : {}),
+  };
+  const res = await fetch(url, { headers: merged });
+  storeCookies(res);
+  const body = await res.text();
+  if (!res.ok) {
+    const err = new Error(`HTTP ${res.status} fetching ${url} — body: ${String(body).slice(0, 200)}`);
     err.rawBody = body;
     throw err;
   }
@@ -68,13 +77,13 @@ async function curlFetch(url, headers, extraArgs = []) {
 }
 
 async function fetchAnidbHtml(url, referer) {
-  const headers = referer ? [...NAV_HEADERS, `Referer: ${referer}`] : NAV_HEADERS;
-  return curlFetch(url, headers);
+  const headers = referer ? { ...NAV_HEADERS, Referer: referer } : { ...NAV_HEADERS };
+  return nativeFetch(url, headers);
 }
 
 async function fetchXhr(url, referer) {
-  const headers = referer ? [...XHR_HEADERS, `Referer: ${referer}`] : XHR_HEADERS;
-  return curlFetch(url, headers);
+  const headers = referer ? { ...XHR_HEADERS, Referer: referer } : { ...XHR_HEADERS };
+  return nativeFetch(url, headers);
 }
 
 async function fetchJson(url, referer) {
@@ -264,7 +273,7 @@ function extractHls(html) {
 }
 
 async function streamsForEmbed(embedUrl, audio, language) {
-  const html = await fetchAnidbHtml(embedUrl, { Referer: `${BASE}/` }).catch(() => "");
+  const html = await fetchAnidbHtml(embedUrl, `${BASE}/`).catch(() => "");
   const hls = html ? extractHls(html) : null;
   const streams = [];
   if (hls) {
