@@ -15,33 +15,46 @@ import {
 
 const BASE     = "https://kaa.lt";
 const HLS_BASE = "https://hls.krussdomi.com/manifest";
-const UA       = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36";
-const H        = { "User-Agent": UA, Accept: "application/json" };
+const UA       = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/151.0.0.0 Safari/537.36";
+const H        = {
+  "User-Agent": UA,
+  "Accept": "application/json",
+  "Accept-Language": "en-US,en;q=0.9",
+  "Referer": `${BASE}/`,
+  "Origin": BASE,
+};
+
+async function kaaFetch(url, options = {}) {
+  const res = await fetch(url, {
+    ...options,
+    headers: { ...H, ...(options.headers || {}) },
+  });
+  const raw = await res.text();
+  if (!res.ok) {
+    const err = new Error(`KAA HTTP ${res.status}: ${url} — body: ${String(raw).slice(0, 200)}`);
+    err.rawBody = raw;
+    throw err;
+  }
+  try { return JSON.parse(raw); } catch (e) {
+    e.rawBody = raw;
+    throw e;
+  }
+}
 
 async function kaaSearch(query) {
-  const res = await fetch(`${BASE}/api/fsearch`, {
+  return kaaFetch(`${BASE}/api/fsearch`, {
     method: "POST",
-    headers: { ...H, "Content-Type": "application/json" },
+    headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ page: 1, query }),
-  });
-  if (!res.ok) throw new Error(`kaa fsearch HTTP ${res.status}`);
-  const data = await res.json();
-  return Array.isArray(data?.result) ? data.result : [];
+  }).then((data) => Array.isArray(data?.result) ? data.result : []);
 }
 
 async function kaaShowInfo(showSlug) {
-  const res = await fetch(`${BASE}/api/show/${showSlug}`, { headers: H });
-  if (!res.ok) throw new Error(`kaa show HTTP ${res.status}: ${showSlug}`);
-  return res.json();
+  return kaaFetch(`${BASE}/api/show/${showSlug}`);
 }
 
 async function kaaEpisodePage(showSlug, ep) {
-  const res = await fetch(
-    `${BASE}/api/show/${showSlug}/episodes?ep=${ep}&lang=ja-JP`,
-    { headers: H }
-  );
-  if (!res.ok) throw new Error(`kaa episodes HTTP ${res.status}`);
-  return res.json();
+  return kaaFetch(`${BASE}/api/show/${showSlug}/episodes?ep=${ep}&lang=ja-JP`);
 }
 
 async function kaaAllEpisodes(showSlug) {
@@ -65,12 +78,7 @@ async function kaaAllEpisodes(showSlug) {
 }
 
 async function kaaEpisodeServers(showSlug, fullEpSlug) {
-  const res = await fetch(
-    `${BASE}/api/show/${showSlug}/episode/${fullEpSlug}`,
-    { headers: H }
-  );
-  if (!res.ok) throw new Error(`kaa episode servers HTTP ${res.status}`);
-  return res.json();
+  return kaaFetch(`${BASE}/api/show/${showSlug}/episode/${fullEpSlug}`);
 }
 
 function buildKaaQueries(titles) {
@@ -141,7 +149,9 @@ async function resolveSeries(anilistId, ctx = {}) {
         for (const r of results) {
           if (!allCandidates.has(r.slug)) allCandidates.set(r.slug, r);
         }
-      } catch {}
+      } catch (err) {
+        console.log(`[kaa] search "${q}" failed: ${err.message}`);
+      }
     })
   );
 
@@ -312,7 +322,7 @@ export default {
       if (m) return await handleWatch(m[1], m[2], m[3]);
       return json({ error: "Not found" }, 404);
     } catch (err) {
-      return json({ error: err.message, stack: err.stack }, 500);
+      return json({ error: err.message, "Raw-ERROR": err.rawBody ?? null, stack: err.stack }, 500);
     }
   },
 };
