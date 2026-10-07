@@ -4,6 +4,8 @@ import { extractFlixcloud } from "../extractors/index.js";
 import { buildTitles } from '../core/new-provider-utils.js';
 import { get as cacheGet, set as cacheSet, isFresh as cacheIsFresh, SHOW_IDENTITY_TTL } from '../core/smartcache.js';
 
+const CF_PROXY = "https://cloudhub.itzjay4kyt.workers.dev";
+
 var BASE = "https://reanime.to";
 var FLIX = "https://flixcloud.cc";
 var ANIZIP2 = "https://api.ani.zip/mappings";
@@ -18,13 +20,35 @@ var H = {
 
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 
+// Route a fetch through the Cloudflare Worker proxy.
+// All requests to Cloudflare-protected upstreams (reanime.to, flixcloud.cc)
+// go through here so they leave from Cloudflare's edge instead of Railway.
+async function cfFetch(targetUrl, options = {}) {
+  const headers = options.headers || {};
+  const referer = headers["Referer"] || headers["referer"];
+  const ua      = headers["User-Agent"] || headers["user-agent"];
+
+  const params = new URLSearchParams({ url: targetUrl });
+  if (referer) params.set("referer", referer);
+  if (ua)      params.set("ua", ua);
+  const proxyUrl = `${CF_PROXY}/fetch?${params.toString()}`;
+
+  const proxyOptions = { method: options.method || "GET", headers: {} };
+  if (options.body) {
+    proxyOptions.body = options.body;
+    if (headers["Content-Type"]) proxyOptions.headers["Content-Type"] = headers["Content-Type"];
+  }
+  return fetch(proxyUrl, proxyOptions);
+}
+__name(cfFetch, "cfFetch");
+
 async function searchReanime(query, genre = null, attempt = 1) {
   const params = new URLSearchParams({ q: query, limit: 10 });
   if (genre) params.set("genre", genre);
 
   let data;
   try {
-    data = await fetch(`${BASE}/api/v1/search?${params}`, { headers: H }).then(async (r) => {
+    data = await cfFetch(`${BASE}/api/v1/search?${params}`, { headers: H }).then(async (r) => {
       const _raw = await r.text();
       if (!r.ok) {
         const _e = new Error(`reanime search ${r.status} — body: ${String(_raw).slice(0, 200)}`);
@@ -34,7 +58,6 @@ async function searchReanime(query, genre = null, attempt = 1) {
       try { return JSON.parse(_raw); } catch (_pe) { _pe.rawBody = _raw; throw _pe; }
     });
   } catch (err) {
-    // Network / HTTP / parse failure — retry up to 3 total attempts
     if (attempt < 3) {
       console.log(`[reanime] search "${query}" attempt ${attempt} failed (${err.message}), retrying...`);
       await sleep(400 * attempt);
@@ -45,7 +68,6 @@ async function searchReanime(query, genre = null, attempt = 1) {
 
   const results = Array.isArray(data?.results) ? data.results : [];
 
-  // Empty result on a real query — retry. Reanime's search is known to flake.
   if (results.length === 0 && attempt < 3) {
     console.log(`[reanime] search "${query}" returned empty (attempt ${attempt}), retrying...`);
     await sleep(400 * attempt);
@@ -57,7 +79,7 @@ async function searchReanime(query, genre = null, attempt = 1) {
 __name(searchReanime, "searchReanime");
 
 async function fetchAnimeDetail(animeId) {
-  const res = await fetch(`${BASE}/api/v1/anime/${animeId}`, { headers: H });
+  const res = await cfFetch(`${BASE}/api/v1/anime/${animeId}`, { headers: H });
   if (!res.ok) return null;
   return res.json().catch(() => null);
 }
@@ -140,13 +162,11 @@ async function resolveSeries(anilistId, ctx = {}) {
     }
   }
 
-  // Fetch detail for ALL candidates
   const needsDetail = [...candidates.keys()];
   const details = await Promise.all(
     needsDetail.map(async (id) => ({ id, detail: await fetchAnimeDetail(id).catch(() => null) }))
   );
 
-  // Match on anilist_id
   for (const { id, detail } of details) {
     if (detail?.anilist_id && Number(detail.anilist_id) === Number(anilistId)) {
       const data = {
@@ -166,7 +186,6 @@ async function resolveSeries(anilistId, ctx = {}) {
     }
   }
 
-  // Match on mal_id
   if (malId) {
     for (const { id, detail } of details) {
       const detailMal = detail?.mal_id;
@@ -189,7 +208,6 @@ async function resolveSeries(anilistId, ctx = {}) {
     }
   }
 
-  // Diagnostic before throwing
   console.log(`[reanime] resolveSeries ${anilistId} FAILED. Candidate titles:`, 
     [...candidates.values()].slice(0, 5).map(c => `${c.anime_id}:${c.title?.english || c.title?.romaji}`).join(' | '));
 
@@ -198,7 +216,7 @@ async function resolveSeries(anilistId, ctx = {}) {
 __name(resolveSeries, "resolveSeries");
 
 async function fetchEpisodesList(animeId, limit = 2000) {
-  const data = await fetch(`${BASE}/api/v1/anime/${animeId}/episodes?${new URLSearchParams({ limit })}`, { headers: H }).then(async (r) => {
+  const data = await cfFetch(`${BASE}/api/v1/anime/${animeId}/episodes?${new URLSearchParams({ limit })}`, { headers: H }).then(async (r) => {
     const _raw = await r.text();
     if (!r.ok) { const _e = new Error(`reanime episodes ${r.status}`); _e.rawBody = _raw; throw _e; }
     try { return JSON.parse(_raw); } catch (_pe) { _pe.rawBody = _raw; throw _pe; }
@@ -266,12 +284,12 @@ async function resolveStream3(anilistId, audio, ep) {
   const order = { "HD-2": 0, "HD-1": 1 };
   const byPrio = (arr) => arr.slice().sort((a, b) => (order[a.serverName] ?? 9) - (order[b.serverName] ?? 9));
   const [watchRes, flixRes] = await Promise.allSettled([
-    fetch(`${BASE}/api/watch/${slug}/${ep}`, { headers: H }).then(async (r) => {
+    cfFetch(`${BASE}/api/watch/${slug}/${ep}`, { headers: H }).then(async (r) => {
       const _raw = await r.text();
       if (!r.ok) { const _e = new Error(`watch ${r.status}`); _e.rawBody = _raw; throw _e; }
       try { return JSON.parse(_raw); } catch (_pe) { _pe.rawBody = _raw; throw _pe; }
     }),
-    fetch(`${BASE}/api/flix/${anilistId}/${ep}`, { headers: H }).then(async (r) => {
+    cfFetch(`${BASE}/api/flix/${anilistId}/${ep}`, { headers: H }).then(async (r) => {
       const _raw = await r.text();
       if (!r.ok) { const _e = new Error(`flix ${r.status}`); _e.rawBody = _raw; throw _e; }
       try { return JSON.parse(_raw); } catch (_pe) { _pe.rawBody = _raw; throw _pe; }
@@ -298,7 +316,7 @@ async function resolveStream3(anilistId, audio, ep) {
   });
   const decrypted = await Promise.all(uniqueServers.map(async (server, index) => {
     try {
-      const embedRes = await fetch(server.dataLink, { headers: { ...H, Referer: `${BASE}/` } });
+      const embedRes = await cfFetch(server.dataLink, { headers: { ...H, Referer: `${BASE}/` } });
       if (!embedRes.ok) throw new Error(`Embed fetch failed: ${embedRes.status}`);
       const stream = await extractFlixcloud(await embedRes.text(), { apiBase: FLIX, headers: H, referer: `${BASE}/` });
       return { server, stream, index };
