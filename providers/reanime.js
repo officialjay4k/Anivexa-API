@@ -20,9 +20,6 @@ var H = {
 
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 
-// Route a fetch through the Cloudflare Worker proxy.
-// All requests to Cloudflare-protected upstreams (reanime.to, flixcloud.cc)
-// go through here so they leave from Cloudflare's edge instead of Railway.
 async function cfFetch(targetUrl, options = {}) {
   const headers = options.headers || {};
   const referer = headers["Referer"] || headers["referer"];
@@ -120,8 +117,6 @@ async function resolveSeries(anilistId, ctx = {}) {
 
   console.log(`[reanime] resolveSeries ${anilistId} — ${candidates.size} unique candidates`);
 
-  // Fastest pass: the search API already returns the AniList ID as a direct
-  // field on every result. Trust it before doing any cover-URL archaeology.
   for (const [id, r] of candidates) {
     if (Number(r.anilist_id) === Number(anilistId)) {
       const data = {
@@ -141,7 +136,6 @@ async function resolveSeries(anilistId, ctx = {}) {
     }
   }
 
-  // Fast pass: AniList CDN cover URLs embed the AniList ID as bx{id}-*
   for (const [id, r] of candidates) {
     const coverId = extractAnilistIdFromCover(r.cover_image);
     if (coverId && coverId === Number(anilistId)) {
@@ -318,7 +312,12 @@ async function resolveStream3(anilistId, audio, ep) {
     try {
       const embedRes = await cfFetch(server.dataLink, { headers: { ...H, Referer: `${BASE}/` } });
       if (!embedRes.ok) throw new Error(`Embed fetch failed: ${embedRes.status}`);
-      const stream = await extractFlixcloud(await embedRes.text(), { apiBase: FLIX, headers: H, referer: `${BASE}/` });
+      const stream = await extractFlixcloud(await embedRes.text(), {
+        apiBase: FLIX,
+        headers: H,
+        referer: `${BASE}/`,
+        fetchImpl: cfFetch
+      });
       return { server, stream, index };
     } catch (error) {
       return { server, error: error.message, index };
