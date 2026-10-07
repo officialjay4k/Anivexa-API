@@ -87,7 +87,8 @@ const FLIXCLOUD_HOSTS = [
   "rundowncdn.top",
   "lunarcdn.top",
   "sirencdn.top",
-  "blazecdn.top"
+  "blazecdn.top",
+  "orbitcdn.top"
 ];
 
 const DEFAULT_USER_AGENT = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36";
@@ -226,7 +227,6 @@ async function handleFlixProxy(req, res, parsedUrl) {
     const hostname = (() => { try { return new URL(targetUrl).hostname; } catch { return ''; } })();
     let text = bodyBuffer.toString("utf8").trim();
 
-    // Decrypt only if the source is a Flixcloud-family host AND we have a key.
     if (key && isFlixcloudFamily(hostname)) {
       text = decodeIfEncrypted(text, key);
     }
@@ -250,9 +250,6 @@ async function handleFlixProxy(req, res, parsedUrl) {
       const trimmed = line.trim();
       if (!trimmed) return line;
 
-      // Tag lines: rewrite URI="..." attribute if present.
-      // This is what makes audio renditions, AES keys, and fMP4 init maps
-      // go through the proxy instead of hitting the CDN directly.
       if (trimmed.startsWith("#")) {
         const uriMatch = trimmed.match(/URI="([^"]+)"/);
         if (!uriMatch) return line;
@@ -268,7 +265,6 @@ async function handleFlixProxy(req, res, parsedUrl) {
         return line.replace(`URI="${originalUri}"`, `URI="${newUri}"`);
       }
 
-      // Bare URI line: variant playlist (master) or segment (media playlist)
       const absUrl = new URL(trimmed, targetUrl).toString();
       const type   = isMaster ? null : "segment";
       return buildProxyUrl(absUrl, type);
@@ -287,9 +283,6 @@ async function handleFlixProxy(req, res, parsedUrl) {
 
 // ---------------------------------------------------------------------------
 // /proxy/subtitle.ass (or .ssa, .srt, .vtt) — subtitle passthrough
-//
-// The extension in the PATH is critical for the libass plugin's sniffer.
-// Don't change to an exact-match route without understanding why.
 // ---------------------------------------------------------------------------
 async function handleSubtitleProxy(req, res, parsedUrl) {
   const targetUrl = parsedUrl.searchParams.get("url");
@@ -322,10 +315,6 @@ async function handleSubtitleProxy(req, res, parsedUrl) {
 
 // ---------------------------------------------------------------------------
 // /proxy/reanime-static — libass worker + wasm proxy
-//
-// Serves the worker script as JS and the wasm binary with the correct
-// application/wasm Content-Type (upstream doesn't set it, which breaks
-// stream-compilation in the browser).
 // ---------------------------------------------------------------------------
 async function handleReanimeStaticProxy(req, res, parsedUrl) {
   const subPath = parsedUrl.searchParams.get("path");
@@ -360,9 +349,6 @@ async function handleReanimeStaticProxy(req, res, parsedUrl) {
 
 // ---------------------------------------------------------------------------
 // /proxy/introdb — IntroDB segments CORS bypass
-//
-// IntroDB doesn't send Access-Control-Allow-Origin so the browser refuses
-// to let our JS read it. We fetch server-side and re-serve with CORS.
 // ---------------------------------------------------------------------------
 async function handleIntroDbProxy(req, res, parsedUrl) {
   const imdbId  = parsedUrl.searchParams.get("imdb_id");
@@ -404,9 +390,6 @@ async function handleIntroDbProxy(req, res, parsedUrl) {
 
 // ---------------------------------------------------------------------------
 // /proxy/raw — generic passthrough with upstream headers
-//
-// Used for: fetching embed pages to scrape font lists, proxying font files,
-// and debugging arbitrary upstream responses.
 // ---------------------------------------------------------------------------
 async function handleRawProxy(req, res, parsedUrl) {
   const targetUrl = parsedUrl.searchParams.get("url");
@@ -462,7 +445,6 @@ async function nodeToRequest(req) {
 // Main HTTP server — routes to static files, proxies, or the Worker
 // ---------------------------------------------------------------------------
 const server = http.createServer(async (req, res) => {
-  // CORS preflight
   if (req.method === "OPTIONS") {
     res.writeHead(204, {
       "Access-Control-Allow-Origin": "*",
@@ -476,38 +458,31 @@ const server = http.createServer(async (req, res) => {
   const parsedUrl = new URL(req.url, "http://" + host);
   const pathname  = parsedUrl.pathname;
 
-  // 1. Static files
   const staticEntry = STATIC[pathname];
   if (req.method === "GET" && staticEntry) {
     return serveStatic(res, staticEntry);
   }
 
-  // 2. HLS manifest + segment proxy
   if (req.method === "GET" && pathname === "/proxy/flix-stream") {
     return handleFlixProxy(req, res, parsedUrl);
   }
 
-  // 3. Subtitle proxy — regex route accepts .ass/.ssa/.srt/.vtt suffix
   if (req.method === "GET" && /^\/proxy\/subtitle(\.(ass|ssa|srt|vtt))?$/.test(pathname)) {
     return handleSubtitleProxy(req, res, parsedUrl);
   }
 
-  // 4. libass worker + wasm proxy
   if (req.method === "GET" && pathname === "/proxy/reanime-static") {
     return handleReanimeStaticProxy(req, res, parsedUrl);
   }
 
-  // 5. IntroDB CORS bypass
   if (req.method === "GET" && pathname === "/proxy/introdb") {
     return handleIntroDbProxy(req, res, parsedUrl);
   }
 
-  // 6. Generic raw passthrough
   if (req.method === "GET" && pathname === "/proxy/raw") {
     return handleRawProxy(req, res, parsedUrl);
   }
 
-  // 7. Everything else → Anivexa Worker
   try {
     const request  = await nodeToRequest(req);
     const response = await worker.fetch(request, {});
