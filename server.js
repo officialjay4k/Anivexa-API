@@ -74,23 +74,32 @@ function decodeIfEncrypted(raw, key) {
 //      streams get their correct Referer — the Worker tells us what to send.
 //   2. Otherwise fall back to a hostname whitelist. Flixcloud-family hosts
 //      get the Flixcloud Referer, everything else gets browser UA only.
+//
+// If explicitUserAgent is supplied, it overrides the hardcoded UA. Mkissa's
+// CDN rejects the default Chrome/120 UA — its payload declares Chrome/151,
+// so we forward whatever the provider told us to use.
 // ---------------------------------------------------------------------------
 const FLIXCLOUD_HOSTS = [
   "flixcloud.cc",
   "fallencdn.top",
   "glaciercdn.top",
   "vortexcdn.top",
-  "rundowncdn.top"
+  "rundowncdn.top",
+  "lunarcdn.top",
+  "sirencdn.top",
+  "blazecdn.top"
 ];
+
+const DEFAULT_USER_AGENT = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36";
 
 function isFlixcloudFamily(hostname) {
   const h = hostname.toLowerCase();
   return FLIXCLOUD_HOSTS.some(domain => h === domain || h.endsWith("." + domain));
 }
 
-function headersForUpstream(targetUrl, explicitReferer) {
+function headersForUpstream(targetUrl, explicitReferer, explicitUserAgent) {
   const baseHeaders = {
-    "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
+    "User-Agent": explicitUserAgent || DEFAULT_USER_AGENT,
     "Accept": "*/*"
   };
 
@@ -118,8 +127,8 @@ function headersForUpstream(targetUrl, explicitReferer) {
   return baseHeaders;
 }
 
-async function fetchUpstream(url, explicitReferer) {
-  return await fetch(url, { headers: headersForUpstream(url, explicitReferer) });
+async function fetchUpstream(url, explicitReferer, explicitUserAgent) {
+  return await fetch(url, { headers: headersForUpstream(url, explicitReferer, explicitUserAgent) });
 }
 
 // ---------------------------------------------------------------------------
@@ -164,11 +173,12 @@ function transformSegmentBuffer(bodyBuffer) {
 //   key      (optional) — playlist decryption key (Flixcloud family only)
 //   type     (optional) — "segment" | "mp4" | unset (playlist)
 //   referer  (optional) — explicit Referer to send; overrides whitelist
+//   ua       (optional) — explicit User-Agent to send; overrides default
 //
 // Behavior:
 //   - Binary payloads (segment/mp4) — transform & serve
 //   - Playlists — decrypt if needed, then rewrite every URI through the proxy
-//   - Every rewritten URI inherits key + referer so the whole chain stays
+//   - Every rewritten URI inherits key + referer + ua so the whole chain stays
 //     authenticated as it walks through nested manifests and segments
 // ---------------------------------------------------------------------------
 async function handleFlixProxy(req, res, parsedUrl) {
@@ -176,6 +186,7 @@ async function handleFlixProxy(req, res, parsedUrl) {
   const key       = parsedUrl.searchParams.get("key");
   const typeParam = parsedUrl.searchParams.get("type");
   const referer   = parsedUrl.searchParams.get("referer");
+  const userAgent = parsedUrl.searchParams.get("ua");
 
   if (!targetUrl) {
     res.writeHead(400, { "Content-Type": "text/plain", "Access-Control-Allow-Origin": "*" });
@@ -183,11 +194,11 @@ async function handleFlixProxy(req, res, parsedUrl) {
   }
 
   try {
-    const response = await fetchUpstream(targetUrl, referer);
+    const response = await fetchUpstream(targetUrl, referer, userAgent);
 
     if (!response.ok) {
       const hostname = (() => { try { return new URL(targetUrl).hostname; } catch { return '?'; } })();
-      console.log(`[Proxy] Upstream ${response.status} from ${hostname} (${typeParam || 'playlist'})${referer ? ` ref=${referer}` : ''}`);
+      console.log(`[Proxy] Upstream ${response.status} from ${hostname} (${typeParam || 'playlist'})${referer ? ` ref=${referer}` : ''}${userAgent ? ` ua=${userAgent.slice(0, 40)}...` : ''}`);
       res.writeHead(response.status, { "Content-Type": "text/plain", "Access-Control-Allow-Origin": "*" });
       return res.end(`Upstream HTTP error: ${response.status}`);
     }
@@ -226,9 +237,10 @@ async function handleFlixProxy(req, res, parsedUrl) {
 
     const buildProxyUrl = (absUrl, type) => {
       let u = proxyBase + "?url=" + encodeURIComponent(absUrl);
-      if (key)     u += "&key=" + encodeURIComponent(key);
-      if (referer) u += "&referer=" + encodeURIComponent(referer);
-      if (type)    u += "&type=" + type;
+      if (key)       u += "&key=" + encodeURIComponent(key);
+      if (referer)   u += "&referer=" + encodeURIComponent(referer);
+      if (userAgent) u += "&ua=" + encodeURIComponent(userAgent);
+      if (type)      u += "&type=" + type;
       return u;
     };
 
@@ -282,6 +294,7 @@ async function handleFlixProxy(req, res, parsedUrl) {
 async function handleSubtitleProxy(req, res, parsedUrl) {
   const targetUrl = parsedUrl.searchParams.get("url");
   const referer   = parsedUrl.searchParams.get("referer");
+  const userAgent = parsedUrl.searchParams.get("ua");
 
   if (!targetUrl) {
     res.writeHead(400, { "Access-Control-Allow-Origin": "*" });
@@ -289,7 +302,7 @@ async function handleSubtitleProxy(req, res, parsedUrl) {
   }
 
   try {
-    const r = await fetchUpstream(targetUrl, referer);
+    const r = await fetchUpstream(targetUrl, referer, userAgent);
     if (!r.ok) {
       res.writeHead(r.status, { "Access-Control-Allow-Origin": "*" });
       return res.end("Upstream " + r.status);
@@ -398,6 +411,7 @@ async function handleIntroDbProxy(req, res, parsedUrl) {
 async function handleRawProxy(req, res, parsedUrl) {
   const targetUrl = parsedUrl.searchParams.get("url");
   const referer   = parsedUrl.searchParams.get("referer");
+  const userAgent = parsedUrl.searchParams.get("ua");
 
   if (!targetUrl) {
     res.writeHead(400, { "Access-Control-Allow-Origin": "*" });
@@ -405,7 +419,7 @@ async function handleRawProxy(req, res, parsedUrl) {
   }
 
   try {
-    const r = await fetchUpstream(targetUrl, referer);
+    const r = await fetchUpstream(targetUrl, referer, userAgent);
     if (!r.ok) {
       res.writeHead(r.status, { "Access-Control-Allow-Origin": "*" });
       return res.end("Upstream " + r.status);
