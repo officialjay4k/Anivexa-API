@@ -68,12 +68,13 @@ async function request(url, options = {}) {
     headers: {
       "User-Agent": UA,
       "Accept-Language": "en-US,en;q=0.9",
+      "Referer": `${BASE}/`,
       ...options.headers,
     },
   });
   const raw = await response.text();
   if (!response.ok) {
-    const error = new Error(`AniZone HTTP ${response.status}: ${url}`);
+    const error = new Error(`AniZone HTTP ${response.status}: ${url} — body: ${String(raw).slice(0, 200)}`);
     error.rawBody = raw;
     throw error;
   }
@@ -85,6 +86,7 @@ async function fetchPage(path) {
     headers: {
       "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
       "Referer": `${BASE}/`,
+      "Origin": BASE,
     },
   });
 }
