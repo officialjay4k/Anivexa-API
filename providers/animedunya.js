@@ -1,9 +1,9 @@
-import child_process from "node:child_process";
 import { json, episodeMeta } from "../core/new-provider-utils.js";
 import { getMedia } from "../core/anilist.js";
 import { get as cacheGet, set as cacheSet, isFresh, SHOW_IDENTITY_TTL } from "../core/smartcache.js";
 
 const BASE = "https://anime-dunya.com";
+const UA = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/151.0.0.0 Safari/537.36";
 
 async function resolveMalId(anilistId) {
   const cacheKey = `np:animedunya:${anilistId}`;
@@ -17,9 +17,23 @@ async function resolveMalId(anilistId) {
   return media.idMal;
 }
 
-function fetchHtml(url) {
-  const cmd = `curl -s -L -A "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36" -H "Accept: text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,image/apng,*/*;q=0.8" -H "Accept-Language: en-US,en;q=0.9" "${url}"`;
-  return child_process.execSync(cmd, { encoding: "utf-8", maxBuffer: 10 * 1024 * 1024 });
+async function fetchHtml(url) {
+  const res = await fetch(url, {
+    headers: {
+      "User-Agent": UA,
+      "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,image/apng,*/*;q=0.8",
+      "Accept-Language": "en-US,en;q=0.9",
+      "Referer": `${BASE}/`,
+      "Origin": BASE,
+    },
+  });
+  const raw = await res.text();
+  if (!res.ok) {
+    const err = new Error(`AnimeDunya HTTP ${res.status}: ${url} — body: ${String(raw).slice(0, 200)}`);
+    err.rawBody = raw;
+    throw err;
+  }
+  return raw;
 }
 
 function extractEpisodesList(html) {
@@ -79,7 +93,7 @@ function extractStream(html) {
 
 export async function getEpisodes(anilistId, ctx = {}) {
   const malId = await resolveMalId(anilistId);
-  const html = fetchHtml(`${BASE}/en/anime/${malId}`);
+  const html = await fetchHtml(`${BASE}/en/anime/${malId}`);
   if (!html) throw new Error("AnimeDunya: episodes fetch failed");
 
   let cdnBase = "https://cdn.anime-dunya.com/thumbnail/";
@@ -129,7 +143,7 @@ export async function getEpisodes(anilistId, ctx = {}) {
 
 async function handleWatch(anilistId, audio, epNum) {
   const malId = await resolveMalId(anilistId);
-  const html = fetchHtml(`${BASE}/en/play/${malId}/${epNum}`);
+  const html = await fetchHtml(`${BASE}/en/play/${malId}/${epNum}`);
   if (!html) return json({ error: "AnimeDunya watch fetch failed" }, 500);
 
   const streamData = extractStream(html);
@@ -156,7 +170,6 @@ async function handleWatch(anilistId, audio, epNum) {
 
   return json({
     anilistId: Number(anilistId),
-    malId,
     episode: Number(epNum),
     audio,
     streams
