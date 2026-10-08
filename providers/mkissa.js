@@ -3,6 +3,7 @@ import { wreqFetch } from "../core/wreq.js";
 
 const __name = (fn, _) => fn;
 
+const CF_PROXY = "https://cloudhub.itzjay4kyt.workers.dev";
 const UA4 = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/151.0.0.0 Safari/537.36";
 const REFERER = "https://mkissa.to";
 const API = "https://api.mkissa.net";
@@ -330,7 +331,7 @@ function validEpisodeQuery(query) {
 __name(validEpisodeQuery, "validEpisodeQuery");
 
 function evalEpisodeQueryChunk(chunk) {
-  const operation = /\bepisode\s*\(\s*showId\s*:\s*\$showId\s*translationType\s*:\s*\$translationType\s*episodeString\s*:\s*\$episodeString\s*\)/g;
+  const operation = /\bepisode\s*\(\s*showId\s*:\s*\$showId\s+translationType\s*:\s*\$translationType\s+episodeString\s*:\s*\$episodeString\s*\)/g;
   const operationInExpression = new RegExp(operation.source);
   for (const match of chunk.matchAll(operation)) {
     const statement = declarationStatementAt(chunk, match.index);
@@ -488,18 +489,18 @@ function evalCryptoChunk(chunk) {
 }
 __name(evalCryptoChunk, "evalCryptoChunk");
 
+// Route discovery fetches through the Cloudflare Worker so Railway's IP
+// isn't blocked by Cloudflare on mkissa.to or cdn.mkissa.net.
 async function fetchText(url, headers = {}) {
   const ac = new AbortController();
   const timer = setTimeout(() => ac.abort(), FETCH_TIMEOUT_MS);
   try {
-    const res = await sessionFetch(url, {
-      signal: ac.signal,
-      headers: {
-        "Referer": `${REFERER}/`,
-        ...headers
-      }
-    });
-    if (!res.ok) throw new Error(`Fetch ${res.status}: ${url}`);
+    const referer = headers["Referer"] || `${REFERER}/`;
+    const ua = headers["User-Agent"] || UA4;
+    const params = new URLSearchParams({ url, referer, ua });
+    const proxyUrl = `${CF_PROXY}/fetch?${params.toString()}`;
+    const res = await fetch(proxyUrl, { signal: ac.signal });
+    if (!res.ok) throw new Error(`CF fetch ${res.status}: ${url}`);
     return res.text();
   } finally {
     clearTimeout(timer);
