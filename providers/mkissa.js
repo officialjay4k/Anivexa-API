@@ -496,38 +496,48 @@ function evalCryptoChunk(chunk) {
 }
 __name(evalCryptoChunk, "evalCryptoChunk");
 
-// Diagnostic: when the parser fails, dump context around each crypto keyword
-// so we can see the obfuscation structure in Railway logs.
-function dumpCryptoContext(text, shortName) {
-  const keywords = ["saltMul", "bootPrefix", "maskParts", "x-aa-boot", "aaReq", "client-crypto", "partB"];
-  const WINDOW_BEFORE = 1500;
-  const WINDOW_AFTER = 2500;
-  for (const kw of keywords) {
-    const idx = text.indexOf(kw);
-    if (idx < 0) {
-      debug(`  [dump] "${kw}": not present`);
-      continue;
+// Find and dump the FULL string table. The table is an array declaration
+// that ends with a function like `function NAME(){const e=[...];return NAME=function(){return e},NAME()}`.
+// We find the LAST such function before the config, extract its array, and print it.
+function dumpStringTable(text) {
+  // Find all `function XXX(){const YYY=[` patterns
+  const patterns = [...text.matchAll(/function\s+([A-Za-z_$][\w$]*)\s*\(\)\s*\{\s*(?:const|let|var)\s+([A-Za-z_$][\w$]*)\s*=\s*\[/g)];
+  debug(`  [table] Found ${patterns.length} table-function candidates`);
+  for (const m of patterns) {
+    const tableStart = m.index;
+    // Find the closing of the array
+    let depth = 1;
+    let i = text.indexOf("[", tableStart) + 1;
+    let inStr = false;
+    let strCh = "";
+    let escaped = false;
+    for (; i < text.length && depth > 0; i++) {
+      const c = text[i];
+      if (escaped) { escaped = false; continue; }
+      if (c === "\\") { escaped = true; continue; }
+      if (inStr) {
+        if (c === strCh) inStr = false;
+        continue;
+      }
+      if (c === '"' || c === "'" || c === "`") { inStr = true; strCh = c; continue; }
+      if (c === "[") depth++;
+      else if (c === "]") depth--;
     }
-    const start = Math.max(0, idx - WINDOW_BEFORE);
-    const end = Math.min(text.length, idx + WINDOW_AFTER);
-    debug(`  [dump] "${kw}" at offset ${idx} — slice [${start}..${end}] of ${text.length}`);
-    debug(`  -------------------- BEGIN ${kw} --------------------`);
-    debug(text.slice(start, end));
-    debug(`  -------------------- END ${kw} --------------------`);
-  }
-  // Also try the old-crypto-start regex
-  const oldRe = /const\s+[A-Za-z_$][\w$]*\s*=[^;]{0,180}\?"\d+":"",\s*[A-Za-z_$][\w$]*=\[/;
-  const m = oldRe.exec(text);
-  if (m) {
-    debug(`  [dump] oldCrypto regex matched at offset ${m.index}`);
-    debug(`  -------------------- BEGIN oldCryptoRegex --------------------`);
-    debug(text.slice(m.index, Math.min(text.length, m.index + 1500)));
-    debug(`  -------------------- END oldCryptoRegex --------------------`);
-  } else {
-    debug(`  [dump] oldCrypto regex did NOT match`);
+    const arrayText = text.slice(tableStart, i);
+    // Only care about tables with many short strings
+    const quoteCount = (arrayText.match(/["']/g) || []).length / 2;
+    if (quoteCount < 20) continue;
+    debug(`  [table] Candidate ${m[1]} at offset ${tableStart}, ${arrayText.length} chars, ~${quoteCount} strings`);
+    if (arrayText.length < 20000) {
+      debug(`  [table] BEGIN ${m[1]}`);
+      debug(arrayText);
+      debug(`  [table] END ${m[1]}`);
+    } else {
+      debug(`  [table] ${m[1]} too big to dump (${arrayText.length} chars)`);
+    }
   }
 }
-__name(dumpCryptoContext, "dumpCryptoContext");
+__name(dumpStringTable, "dumpStringTable");
 
 async function fetchText(url, headers = {}) {
   const ac = new AbortController();
@@ -607,6 +617,7 @@ async function discoverCryptoConfig(force = false) {
     const seen = new Set();
     let cryptoAttempts = 0;
     let keywordHits = 0;
+    let dumpedTable = false;
     while (queue.length && seen.size < DISCOVERY_LIMIT) {
       const batch = queue.splice(0, DISCOVERY_CONCURRENCY).filter((url) => {
         if (seen.has(url)) return false;
@@ -642,8 +653,11 @@ async function discoverCryptoConfig(force = false) {
           cryptoConfigCache = { ...config, appUrl, sourceUrl: item.url };
           return cryptoConfigCache;
         } else {
-          debug(`discoverCryptoConfig: evalCryptoChunk returned null for ${shortName} — dumping context`);
-          dumpCryptoContext(item.text, shortName);
+          debug(`discoverCryptoConfig: evalCryptoChunk returned null for ${shortName}`);
+          if (!dumpedTable && /saltMul/.test(item.text)) {
+            dumpedTable = true;
+            dumpStringTable(item.text);
+          }
         }
       }
     }
