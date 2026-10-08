@@ -19,11 +19,13 @@ const AA_REQ_MS = 300000;
 const WATCH_MEMORY_TTL = 3 * 60 * 60 * 1000;
 const DISCOVERY_CONCURRENCY = 16;
 const DISCOVERY_LIMIT = 600;
-const FETCH_TIMEOUT_MS = 10000;
+const FETCH_TIMEOUT_MS = 20000;
 const EXTRACT_TIMEOUT_MS = 5000;
 const MKISSA_WREQ_BROWSER = process.env.MKISSA_WREQ_BROWSER || "chrome_149";
 const MKISSA_WREQ_OS = process.env.MKISSA_WREQ_OS || "windows";
 const TMDB_TOKEN = "eyJhbGciOiJIUzI1NiJ9.eyJhdWQiOiJlYjdkMWM0ZTgwMGUzM2FiMmE3Y2I3NDA5YmM4NjQ2YSIsIm5iZiI6MTc3OTUzMDcxOS40MzIsInN1YiI6IjZhMTE3YmRmYTlhNjNlYmFiOWUzYjc4YyIsInNjb3BlcyI6WyJhcGlfcmVhZCJdLCJ2ZXJzaW9uIjoxfQ.Z9pa96oJEyicf6wAoaKGKJd9ldapeiOdktoJd4xcgLo";
+
+const DEBUG_MKISSA = true;
 
 const HEX_TABLE = {
   "79": "A", "7a": "B", "7b": "C", "7c": "D", "7d": "E", "7e": "F", "7f": "G",
@@ -43,6 +45,11 @@ let cryptoConfigCache = null;
 let episodeQueryCache = null;
 const sessionCookies = new Map();
 const watchMemoryCache = new Map();
+
+function debug(msg) {
+  if (DEBUG_MKISSA) console.log(`[mkissa-debug] ${msg}`);
+}
+__name(debug, "debug");
 
 function decodeHexUrl(hex) {
   let out = "";
@@ -489,8 +496,6 @@ function evalCryptoChunk(chunk) {
 }
 __name(evalCryptoChunk, "evalCryptoChunk");
 
-// Route discovery fetches through the Cloudflare Worker so Railway's IP
-// isn't blocked by Cloudflare on mkissa.to or cdn.mkissa.net.
 async function fetchText(url, headers = {}) {
   const ac = new AbortController();
   const timer = setTimeout(() => ac.abort(), FETCH_TIMEOUT_MS);
@@ -499,9 +504,24 @@ async function fetchText(url, headers = {}) {
     const ua = headers["User-Agent"] || UA4;
     const params = new URLSearchParams({ url, referer, ua });
     const proxyUrl = `${CF_PROXY}/fetch?${params.toString()}`;
-    const res = await fetch(proxyUrl, { signal: ac.signal });
-    if (!res.ok) throw new Error(`CF fetch ${res.status}: ${url}`);
-    return res.text();
+    const shortUrl = url.length > 90 ? url.slice(0, 90) + "…" : url;
+    try {
+      const res = await fetch(proxyUrl, { signal: ac.signal });
+      if (!res.ok) {
+        debug(`fetchText FAIL ${res.status} on ${shortUrl}`);
+        throw new Error(`CF fetch ${res.status}: ${url}`);
+      }
+      const text = await res.text();
+      debug(`fetchText OK ${res.status} ${text.length}b ${shortUrl}`);
+      return text;
+    } catch (err) {
+      if (err.name === "AbortError") {
+        debug(`fetchText ABORT after ${FETCH_TIMEOUT_MS}ms on ${shortUrl}`);
+      } else {
+        debug(`fetchText ERROR ${err.message} on ${shortUrl}`);
+      }
+      throw err;
+    }
   } finally {
     clearTimeout(timer);
   }
@@ -523,7 +543,12 @@ __name(fetchWithTimeout, "fetchWithTimeout");
 
 function appEntryUrl(html) {
   const entry = html.match(/(?:import\(|src=)["']([^"']+\/_app\/immutable\/entry\/app\.[^"']+\.js)["']/)?.[1];
-  return entry ? new URL(entry, REFERER).toString() : null;
+  if (!entry) {
+    debug(`appEntryUrl: no match in ${html.length}b of HTML. First 300 chars: ${html.slice(0, 300)}`);
+    return null;
+  }
+  debug(`appEntryUrl: matched "${entry}"`);
+  return new URL(entry, REFERER).toString();
 }
 __name(appEntryUrl, "appEntryUrl");
 
@@ -531,6 +556,7 @@ async function discoverCryptoConfig(force = false) {
   try {
     const entryUrl = new URL(`${REFERER}/`);
     if (force) entryUrl.searchParams.set("_mkissa", String(Date.now()));
+    debug(`discoverCryptoConfig: fetching homepage ${entryUrl}`);
     const html = await fetchText(entryUrl, {
       Accept: "text/html,*/*",
       "Cache-Control": "no-cache",
@@ -538,20 +564,28 @@ async function discoverCryptoConfig(force = false) {
     });
     const appUrl = appEntryUrl(html);
     if (!appUrl) throw new Error("MKissa app entry not found");
-    if (!force && cryptoConfigCache?.appUrl === appUrl) return cryptoConfigCache;
+    if (!force && cryptoConfigCache?.appUrl === appUrl) {
+      debug(`discoverCryptoConfig: using cached config for appUrl`);
+      return cryptoConfigCache;
+    }
+    debug(`discoverCryptoConfig: fetching app entry ${appUrl}`);
     const app = await fetchText(appUrl, { Accept: "application/javascript,*/*" });
     const queue = [appUrl];
     const seen = new Set();
+    let cryptoAttempts = 0;
+    let keywordHits = 0;
     while (queue.length && seen.size < DISCOVERY_LIMIT) {
       const batch = queue.splice(0, DISCOVERY_CONCURRENCY).filter((url) => {
         if (seen.has(url)) return false;
         seen.add(url);
         return true;
       });
+      debug(`discoverCryptoConfig: batch of ${batch.length} (seen=${seen.size}, queue=${queue.length})`);
       const chunks = await Promise.all(batch.map(async (url) => {
         try {
           return { url, text: url === appUrl ? app : await fetchText(url, { Accept: "application/javascript,*/*" }) };
-        } catch {
+        } catch (err) {
+          debug(`discoverCryptoConfig: chunk fetch failed for ${url}: ${err.message}`);
           return null;
         }
       }));
@@ -565,13 +599,21 @@ async function discoverCryptoConfig(force = false) {
           if (!seen.has(next)) queue.push(next);
         }
         if (!/client-crypto|x-aa-boot|aaReq|partB/.test(item.text)) continue;
+        keywordHits++;
+        cryptoAttempts++;
+        const shortName = item.url.split("/").pop();
+        debug(`discoverCryptoConfig: crypto keyword hit in ${shortName} (attempt ${cryptoAttempts})`);
         const config = evalCryptoChunk(item.text);
         if (config) {
+          debug(`discoverCryptoConfig: SUCCESS — buildId=${config.buildId}, scheme=${config.scheme}, sourceUrl=${item.url}`);
           cryptoConfigCache = { ...config, appUrl, sourceUrl: item.url };
           return cryptoConfigCache;
+        } else {
+          debug(`discoverCryptoConfig: evalCryptoChunk returned null for ${shortName}`);
         }
       }
     }
+    debug(`discoverCryptoConfig: BFS exhausted. seen=${seen.size}, queue=${queue.length}, keywordHits=${keywordHits}`);
     throw new Error("MKissa crypto chunk not found");
   } catch (error) {
     cryptoConfigCache = null;
