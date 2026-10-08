@@ -19,7 +19,7 @@ const AA_REQ_MS = 300000;
 const WATCH_MEMORY_TTL = 3 * 60 * 60 * 1000;
 const DISCOVERY_CONCURRENCY = 16;
 const DISCOVERY_LIMIT = 600;
-const FETCH_TIMEOUT_MS = 20000;
+const FETCH_TIMEOUT_MS = 30000;
 const EXTRACT_TIMEOUT_MS = 5000;
 const MKISSA_WREQ_BROWSER = process.env.MKISSA_WREQ_BROWSER || "chrome_149";
 const MKISSA_WREQ_OS = process.env.MKISSA_WREQ_OS || "windows";
@@ -496,6 +496,39 @@ function evalCryptoChunk(chunk) {
 }
 __name(evalCryptoChunk, "evalCryptoChunk");
 
+// Diagnostic: when the parser fails, dump context around each crypto keyword
+// so we can see the obfuscation structure in Railway logs.
+function dumpCryptoContext(text, shortName) {
+  const keywords = ["saltMul", "bootPrefix", "maskParts", "x-aa-boot", "aaReq", "client-crypto", "partB"];
+  const WINDOW_BEFORE = 1500;
+  const WINDOW_AFTER = 2500;
+  for (const kw of keywords) {
+    const idx = text.indexOf(kw);
+    if (idx < 0) {
+      debug(`  [dump] "${kw}": not present`);
+      continue;
+    }
+    const start = Math.max(0, idx - WINDOW_BEFORE);
+    const end = Math.min(text.length, idx + WINDOW_AFTER);
+    debug(`  [dump] "${kw}" at offset ${idx} — slice [${start}..${end}] of ${text.length}`);
+    debug(`  -------------------- BEGIN ${kw} --------------------`);
+    debug(text.slice(start, end));
+    debug(`  -------------------- END ${kw} --------------------`);
+  }
+  // Also try the old-crypto-start regex
+  const oldRe = /const\s+[A-Za-z_$][\w$]*\s*=[^;]{0,180}\?"\d+":"",\s*[A-Za-z_$][\w$]*=\[/;
+  const m = oldRe.exec(text);
+  if (m) {
+    debug(`  [dump] oldCrypto regex matched at offset ${m.index}`);
+    debug(`  -------------------- BEGIN oldCryptoRegex --------------------`);
+    debug(text.slice(m.index, Math.min(text.length, m.index + 1500)));
+    debug(`  -------------------- END oldCryptoRegex --------------------`);
+  } else {
+    debug(`  [dump] oldCrypto regex did NOT match`);
+  }
+}
+__name(dumpCryptoContext, "dumpCryptoContext");
+
 async function fetchText(url, headers = {}) {
   const ac = new AbortController();
   const timer = setTimeout(() => ac.abort(), FETCH_TIMEOUT_MS);
@@ -602,14 +635,15 @@ async function discoverCryptoConfig(force = false) {
         keywordHits++;
         cryptoAttempts++;
         const shortName = item.url.split("/").pop();
-        debug(`discoverCryptoConfig: crypto keyword hit in ${shortName} (attempt ${cryptoAttempts})`);
+        debug(`discoverCryptoConfig: crypto keyword hit in ${shortName} (attempt ${cryptoAttempts}, size ${item.text.length}b)`);
         const config = evalCryptoChunk(item.text);
         if (config) {
           debug(`discoverCryptoConfig: SUCCESS — buildId=${config.buildId}, scheme=${config.scheme}, sourceUrl=${item.url}`);
           cryptoConfigCache = { ...config, appUrl, sourceUrl: item.url };
           return cryptoConfigCache;
         } else {
-          debug(`discoverCryptoConfig: evalCryptoChunk returned null for ${shortName}`);
+          debug(`discoverCryptoConfig: evalCryptoChunk returned null for ${shortName} — dumping context`);
+          dumpCryptoContext(item.text, shortName);
         }
       }
     }
