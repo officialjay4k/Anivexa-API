@@ -5,7 +5,6 @@ import {
   decodeEntities,
   episodeMeta,
   expectedCount,
-  fetchHtml,
   findTopSlugs,
   getPrequelOffset,
   json,
@@ -13,23 +12,64 @@ import {
 } from "../core/new-provider-utils.js";
 import { get, set, isFresh, SHOW_IDENTITY_TTL } from "../core/smartcache.js";
 
+const CF_PROXY = "https://cloudhub.itzjay4kyt.workers.dev";
 const BASE = "https://animenosub.to";
-const UA = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/149.0.0.0 Safari/537.36";
+const UA = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/151.0.0.0 Safari/537.36";
+
+async function cfFetch(targetUrl, options = {}) {
+  const headers = options.headers || {};
+  const referer = headers["Referer"] || headers["referer"];
+  const ua      = headers["User-Agent"] || headers["user-agent"];
+
+  const params = new URLSearchParams({ url: targetUrl });
+  if (referer) params.set("referer", referer);
+  if (ua)      params.set("ua", ua);
+  const proxyUrl = `${CF_PROXY}/fetch?${params.toString()}`;
+
+  const proxyOptions = { method: options.method || "GET", headers: {} };
+  if (options.body) {
+    proxyOptions.body = options.body;
+    if (headers["Content-Type"]) proxyOptions.headers["Content-Type"] = headers["Content-Type"];
+  }
+  return fetch(proxyUrl, proxyOptions);
+}
+
+// Local fetchHtml that routes through the CF Worker. Replaces the
+// import from new-provider-utils.js, which uses native fetch.
+async function fetchHtml(url, headers = {}) {
+  const res = await cfFetch(url, { headers: { "User-Agent": UA, ...headers } });
+  const raw = await res.text();
+  if (!res.ok) {
+    const err = new Error(`animenosub HTTP ${res.status}: ${url} — body: ${String(raw).slice(0, 200)}`);
+    err.rawBody = raw;
+    throw err;
+  }
+  return raw;
+}
 
 async function search(query) {
-  const res = await fetch(`${BASE}/wp-admin/admin-ajax.php`, {
+  const res = await cfFetch(`${BASE}/wp-admin/admin-ajax.php`, {
     method: "POST",
     headers: {
       "Content-Type": "application/x-www-form-urlencoded; charset=UTF-8",
-      "X-Requested-With": "XMLHttpRequest",
-      "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/149.0.0.0 Safari/537.36",
-      Origin: BASE,
-      Referer: `${BASE}/`,
+      "User-Agent": UA,
+      "Referer": `${BASE}/`,
     },
     body: `action=ts_ac_do_search&ts_ac_query=${encodeURIComponent(query)}`,
   });
-  if (!res.ok) throw new Error(`animenosub search HTTP ${res.status}`);
-  const data = await res.json();
+  const raw = await res.text();
+  if (!res.ok) {
+    const err = new Error(`animenosub search HTTP ${res.status} — body: ${String(raw).slice(0, 200)}`);
+    err.rawBody = raw;
+    throw err;
+  }
+  let data;
+  try { data = JSON.parse(raw); }
+  catch (e) {
+    const err = new Error(`animenosub search JSON parse: ${e.message} — body: ${String(raw).slice(0, 200)}`);
+    err.rawBody = raw;
+    throw err;
+  }
   const results = [];
   for (const item of data?.anime?.[0]?.all ?? []) {
     const slug = item.post_link?.match(/\/anime\/([^/]+)\/?$/)?.[1];
