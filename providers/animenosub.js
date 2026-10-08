@@ -34,8 +34,6 @@ async function cfFetch(targetUrl, options = {}) {
   return fetch(proxyUrl, proxyOptions);
 }
 
-// Local fetchHtml that routes through the CF Worker. Replaces the
-// import from new-provider-utils.js, which uses native fetch.
 async function fetchHtml(url, headers = {}) {
   const res = await cfFetch(url, { headers: { "User-Agent": UA, ...headers } });
   const raw = await res.text();
@@ -48,6 +46,7 @@ async function fetchHtml(url, headers = {}) {
 }
 
 async function search(query) {
+  console.log(`[animenosub] search("${query}") starting…`);
   const res = await cfFetch(`${BASE}/wp-admin/admin-ajax.php`, {
     method: "POST",
     headers: {
@@ -58,15 +57,16 @@ async function search(query) {
     body: `action=ts_ac_do_search&ts_ac_query=${encodeURIComponent(query)}`,
   });
   const raw = await res.text();
+  console.log(`[animenosub] search("${query}") → HTTP ${res.status}, ${raw.length} bytes`);
   if (!res.ok) {
-    const err = new Error(`animenosub search HTTP ${res.status} — body: ${String(raw).slice(0, 200)}`);
+    const err = new Error(`animenosub search HTTP ${res.status} — body: ${String(raw).slice(0, 300)}`);
     err.rawBody = raw;
     throw err;
   }
   let data;
   try { data = JSON.parse(raw); }
   catch (e) {
-    const err = new Error(`animenosub search JSON parse: ${e.message} — body: ${String(raw).slice(0, 200)}`);
+    const err = new Error(`animenosub search JSON parse: ${e.message} — body: ${String(raw).slice(0, 300)}`);
     err.rawBody = raw;
     throw err;
   }
@@ -76,11 +76,14 @@ async function search(query) {
     if (!slug) continue;
     results.push({ slug, text: item.post_title ?? slug.replace(/-/g, " ") });
   }
+  console.log(`[animenosub] search("${query}") → parsed ${results.length} results, first: ${results[0]?.slug || "—"}`);
   return results;
 }
 
 async function scrapeSeries(slug) {
+  console.log(`[animenosub] scrapeSeries("${slug}") starting…`);
   const html = await fetchHtml(`${BASE}/anime/${slug}/`, { Referer: BASE });
+  console.log(`[animenosub] scrapeSeries("${slug}") → ${html.length} bytes of HTML`);
   const isSlugDub = /-dub$/.test(slug) || /(?:^|[-\s])dub(?:$|[-\s])/i.test(slug);
   const episodes = [];
   const seen = new Set();
@@ -101,6 +104,7 @@ async function scrapeSeries(slug) {
     episodes.push({ number, title: /^movie$/i.test(label) ? "Movie" : `Episode ${number}`, epUrl, hasSub: !isDub, hasDub: isDub });
   }
   episodes.sort((a, b) => a.number - b.number);
+  console.log(`[animenosub] scrapeSeries("${slug}") → parsed ${episodes.length} episodes`);
   return episodes;
 }
 
@@ -147,7 +151,9 @@ async function resolveSeries(anilistId, ctx = {}) {
 
   const media = ctx.media ?? await getMedia(anilistId);
   const titles = buildTitles(media, ctx.anizip);
+  console.log(`[animenosub] resolveSeries ${anilistId} — trying ${titles.length} titles`);
   const candidates = await findTopSlugs(titles, search);
+  console.log(`[animenosub] resolveSeries ${anilistId} — ${candidates.length} candidates after scoring`);
   const expected = expectedCount(media, ctx.anizip);
   const offset = await getPrequelOffset(anilistId).catch(() => 0);
   const selected = await selectSeries(candidates, scrapeSeries, expected, media?.status, offset);
