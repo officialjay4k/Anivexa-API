@@ -12,7 +12,7 @@ import {
 } from "../core/new-provider-utils.js";
 import { get, set, isFresh, SHOW_IDENTITY_TTL } from "../core/smartcache.js";
 
-const CF_PROXY = "https://cloudhub.itzjay4kyt.workers.dev";
+const CF_PROXY = "https://cloudhub.4kun.top";
 const BASE = "https://animenosub.to";
 const UA = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/151.0.0.0 Safari/537.36";
 
