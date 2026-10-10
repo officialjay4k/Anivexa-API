@@ -4,7 +4,7 @@ import { extractFlixcloud } from "../extractors/index.js";
 import { buildTitles } from '../core/new-provider-utils.js';
 import { get as cacheGet, set as cacheSet, isFresh as cacheIsFresh, SHOW_IDENTITY_TTL } from '../core/smartcache.js';
 
-const CF_PROXY = "https://cloudhub.itzjay4kyt.workers.dev";
+const CF_PROXY = "https://cloudhub.4kun.top";
 
 var BASE = "https://reanime.to";
 var FLIX = "https://flixcloud.cc";
