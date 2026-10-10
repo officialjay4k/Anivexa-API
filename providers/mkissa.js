@@ -496,16 +496,11 @@ function evalCryptoChunk(chunk) {
 }
 __name(evalCryptoChunk, "evalCryptoChunk");
 
-// Find and dump the FULL string table. The table is an array declaration
-// that ends with a function like `function NAME(){const e=[...];return NAME=function(){return e},NAME()}`.
-// We find the LAST such function before the config, extract its array, and print it.
 function dumpStringTable(text) {
-  // Find all `function XXX(){const YYY=[` patterns
   const patterns = [...text.matchAll(/function\s+([A-Za-z_$][\w$]*)\s*\(\)\s*\{\s*(?:const|let|var)\s+([A-Za-z_$][\w$]*)\s*=\s*\[/g)];
   debug(`  [table] Found ${patterns.length} table-function candidates`);
   for (const m of patterns) {
     const tableStart = m.index;
-    // Find the closing of the array
     let depth = 1;
     let i = text.indexOf("[", tableStart) + 1;
     let inStr = false;
@@ -524,11 +519,10 @@ function dumpStringTable(text) {
       else if (c === "]") depth--;
     }
     const arrayText = text.slice(tableStart, i);
-    // Only care about tables with many short strings
     const quoteCount = (arrayText.match(/["']/g) || []).length / 2;
     if (quoteCount < 20) continue;
     debug(`  [table] Candidate ${m[1]} at offset ${tableStart}, ${arrayText.length} chars, ~${quoteCount} strings`);
-    if (arrayText.length < 20000) {
+    if (arrayText.length < 30000) {
       debug(`  [table] BEGIN ${m[1]}`);
       debug(arrayText);
       debug(`  [table] END ${m[1]}`);
