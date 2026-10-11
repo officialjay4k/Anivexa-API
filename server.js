@@ -157,7 +157,6 @@ async function handleFlixProxy(req, res, parsedUrl) {
   }
 
   try {
-    // Forward the client's Range header (important for MP4 seeking).
     const extra = {};
     if (req.headers["range"]) extra["Range"] = req.headers["range"];
 
@@ -175,7 +174,6 @@ async function handleFlixProxy(req, res, parsedUrl) {
     // ---- Binary payloads ----
     if (typeParam === "segment" || typeParam === "mp4") {
       if (typeParam === "mp4") {
-        // Pass through upstream range/status headers so the browser can seek.
         const outHeaders = {
           "Access-Control-Allow-Origin": "*",
           "Content-Type": "video/mp4",
@@ -188,7 +186,6 @@ async function handleFlixProxy(req, res, parsedUrl) {
         res.writeHead(response.status === 206 ? 206 : 200, outHeaders);
         return res.end(bodyBuffer);
       }
-      // segment
       const out = transformSegmentBuffer(bodyBuffer);
       res.writeHead(200, {
         "Access-Control-Allow-Origin": "*",
@@ -203,6 +200,20 @@ async function handleFlixProxy(req, res, parsedUrl) {
 
     if (key && isFlixcloudFamily(hostname)) {
       text = decodeIfEncrypted(text, key);
+    }
+
+    // Some flixcloud masters declare #EXT-X-VERSION:3 while using #EXT-X-MEDIA
+    // (which is a v4 feature). hls.js skips those media tags at lower versions,
+    // so the English audio track never appears. Bump version when needed.
+    if (/#EXT-X-MEDIA/i.test(text)) {
+      const verMatch = text.match(/#EXT-X-VERSION:(\d+)/);
+      if (verMatch) {
+        const n = parseInt(verMatch[1], 10);
+        if (n < 4) {
+          text = text.replace(/#EXT-X-VERSION:\d+/, "#EXT-X-VERSION:4");
+          console.log(`[Proxy] Bumped manifest version ${n} → 4 (#EXT-X-MEDIA present)`);
+        }
+      }
     }
 
     const host      = req.headers["host"] ?? "localhost:" + PORT;
