@@ -9,9 +9,6 @@ const PORT  = Number(process.env.PORT) || 4000;
 const BASE  = process.env.BASE_PATH ?? "";
 const __dir = dirname(fileURLToPath(import.meta.url));
 
-// ---------------------------------------------------------------------------
-// Static file map — served by this Node process, not by the Worker
-// ---------------------------------------------------------------------------
 const STATIC = {
   "/":          { file: "docs/landing.html", mime: "text/html" },
   "/docs":      { file: "docs/index.html",   mime: "text/html" },
@@ -20,17 +17,11 @@ const STATIC = {
   "/logo.svg":  { file: "docs/logo.svg",     mime: "image/svg+xml" },
 };
 
-// ---------------------------------------------------------------------------
-// Flixcloud segment XOR key (16 bytes) — applied after stripping fake header
-// ---------------------------------------------------------------------------
 const flixImageSegmentXorKey = Uint8Array.from([
   157, 42, 241, 71, 179, 142, 92, 112,
   166, 25, 228, 59, 216, 98, 15, 197
 ]);
 
-// ---------------------------------------------------------------------------
-// Static file server
-// ---------------------------------------------------------------------------
 function serveStatic(res, entry) {
   try {
     const body = readFileSync(join(__dir, entry.file));
@@ -46,9 +37,6 @@ function serveStatic(res, entry) {
   }
 }
 
-// ---------------------------------------------------------------------------
-// Manifest decryption: Base64 decode then repeating-key XOR
-// ---------------------------------------------------------------------------
 function decodeIfEncrypted(raw, key) {
   if (!key) return raw;
   if (raw.startsWith("#EXTM3U")) return raw;
@@ -65,20 +53,6 @@ function decodeIfEncrypted(raw, key) {
   }
 }
 
-// ---------------------------------------------------------------------------
-// Upstream headers.
-//
-// Priority:
-//   1. If explicitReferer was supplied (from the payload), use it. Origin
-//      is derived from the referer's origin. This is how KAA and Senshi
-//      streams get their correct Referer — the Worker tells us what to send.
-//   2. Otherwise fall back to a hostname whitelist. Flixcloud-family hosts
-//      get the Flixcloud Referer, everything else gets browser UA only.
-//
-// If explicitUserAgent is supplied, it overrides the hardcoded UA. Mkissa's
-// CDN rejects the default Chrome/120 UA — its payload declares Chrome/151,
-// so we forward whatever the provider told us to use.
-// ---------------------------------------------------------------------------
 const FLIXCLOUD_HOSTS = [
   "flixcloud.cc",
   "fallencdn.top",
@@ -130,14 +104,16 @@ function headersForUpstream(targetUrl, explicitReferer, explicitUserAgent) {
   return baseHeaders;
 }
 
-async function fetchUpstream(url, explicitReferer, explicitUserAgent) {
-  return await fetch(url, { headers: headersForUpstream(url, explicitReferer, explicitUserAgent) });
+async function fetchUpstream(url, explicitReferer, explicitUserAgent, extraHeaders) {
+  const headers = headersForUpstream(url, explicitReferer, explicitUserAgent);
+  if (extraHeaders) {
+    for (const [k, v] of Object.entries(extraHeaders)) {
+      if (v != null) headers[k] = v;
+    }
+  }
+  return await fetch(url, { headers });
 }
 
-// ---------------------------------------------------------------------------
-// Segment transform: detect fake WebP/PNG magic, strip it, XOR if needed.
-// Only applies to type=segment. MP4s pass through raw.
-// ---------------------------------------------------------------------------
 function transformSegmentBuffer(bodyBuffer) {
   let offset   = 0;
   let needsXor = false;
@@ -168,22 +144,6 @@ function transformSegmentBuffer(bodyBuffer) {
   return out;
 }
 
-// ---------------------------------------------------------------------------
-// /proxy/flix-stream — HLS manifest + segment proxy
-//
-// Query params:
-//   url      (required) — upstream URL to fetch
-//   key      (optional) — playlist decryption key (Flixcloud family only)
-//   type     (optional) — "segment" | "mp4" | unset (playlist)
-//   referer  (optional) — explicit Referer to send; overrides whitelist
-//   ua       (optional) — explicit User-Agent to send; overrides default
-//
-// Behavior:
-//   - Binary payloads (segment/mp4) — transform & serve
-//   - Playlists — decrypt if needed, then rewrite every URI through the proxy
-//   - Every rewritten URI inherits key + referer + ua so the whole chain stays
-//     authenticated as it walks through nested manifests and segments
-// ---------------------------------------------------------------------------
 async function handleFlixProxy(req, res, parsedUrl) {
   const targetUrl = parsedUrl.searchParams.get("url");
   const key       = parsedUrl.searchParams.get("key");
@@ -197,11 +157,15 @@ async function handleFlixProxy(req, res, parsedUrl) {
   }
 
   try {
-    const response = await fetchUpstream(targetUrl, referer, userAgent);
+    // Forward the client's Range header (important for MP4 seeking).
+    const extra = {};
+    if (req.headers["range"]) extra["Range"] = req.headers["range"];
 
-    if (!response.ok) {
+    const response = await fetchUpstream(targetUrl, referer, userAgent, extra);
+
+    if (!response.ok && response.status !== 206) {
       const hostname = (() => { try { return new URL(targetUrl).hostname; } catch { return '?'; } })();
-      console.log(`[Proxy] Upstream ${response.status} from ${hostname} (${typeParam || 'playlist'})${referer ? ` ref=${referer}` : ''}${userAgent ? ` ua=${userAgent.slice(0, 40)}...` : ''}`);
+      console.log(`[Proxy] Upstream ${response.status} from ${hostname} (${typeParam || 'playlist'})${referer ? ` ref=${referer}` : ''}`);
       res.writeHead(response.status, { "Content-Type": "text/plain", "Access-Control-Allow-Origin": "*" });
       return res.end(`Upstream HTTP error: ${response.status}`);
     }
@@ -210,17 +174,25 @@ async function handleFlixProxy(req, res, parsedUrl) {
 
     // ---- Binary payloads ----
     if (typeParam === "segment" || typeParam === "mp4") {
-      let out, ct;
       if (typeParam === "mp4") {
-        out = bodyBuffer;
-        ct  = "video/mp4";
-      } else {
-        out = transformSegmentBuffer(bodyBuffer);
-        ct  = "video/mp2t";
+        // Pass through upstream range/status headers so the browser can seek.
+        const outHeaders = {
+          "Access-Control-Allow-Origin": "*",
+          "Content-Type": "video/mp4",
+          "Content-Length": String(bodyBuffer.length),
+          "Accept-Ranges": response.headers.get("accept-ranges") || "bytes",
+          "Cache-Control": "no-cache"
+        };
+        const upstreamCR = response.headers.get("content-range");
+        if (upstreamCR) outHeaders["Content-Range"] = upstreamCR;
+        res.writeHead(response.status === 206 ? 206 : 200, outHeaders);
+        return res.end(bodyBuffer);
       }
+      // segment
+      const out = transformSegmentBuffer(bodyBuffer);
       res.writeHead(200, {
         "Access-Control-Allow-Origin": "*",
-        "Content-Type": ct
+        "Content-Type": "video/mp2t"
       });
       return res.end(out);
     }
@@ -283,9 +255,6 @@ async function handleFlixProxy(req, res, parsedUrl) {
   }
 }
 
-// ---------------------------------------------------------------------------
-// /proxy/subtitle.ass (or .ssa, .srt, .vtt) — subtitle passthrough
-// ---------------------------------------------------------------------------
 async function handleSubtitleProxy(req, res, parsedUrl) {
   const targetUrl = parsedUrl.searchParams.get("url");
   const referer   = parsedUrl.searchParams.get("referer");
@@ -315,9 +284,6 @@ async function handleSubtitleProxy(req, res, parsedUrl) {
   }
 }
 
-// ---------------------------------------------------------------------------
-// /proxy/reanime-static — libass worker + wasm proxy
-// ---------------------------------------------------------------------------
 async function handleReanimeStaticProxy(req, res, parsedUrl) {
   const subPath = parsedUrl.searchParams.get("path");
   if (!subPath) {
@@ -349,9 +315,6 @@ async function handleReanimeStaticProxy(req, res, parsedUrl) {
   }
 }
 
-// ---------------------------------------------------------------------------
-// /proxy/introdb — IntroDB segments CORS bypass
-// ---------------------------------------------------------------------------
 async function handleIntroDbProxy(req, res, parsedUrl) {
   const imdbId  = parsedUrl.searchParams.get("imdb_id");
   const season  = parsedUrl.searchParams.get("season");
@@ -390,9 +353,6 @@ async function handleIntroDbProxy(req, res, parsedUrl) {
   }
 }
 
-// ---------------------------------------------------------------------------
-// /proxy/raw — generic passthrough with upstream headers
-// ---------------------------------------------------------------------------
 async function handleRawProxy(req, res, parsedUrl) {
   const targetUrl = parsedUrl.searchParams.get("url");
   const referer   = parsedUrl.searchParams.get("referer");
@@ -404,18 +364,25 @@ async function handleRawProxy(req, res, parsedUrl) {
   }
 
   try {
-    const r = await fetchUpstream(targetUrl, referer, userAgent);
-    if (!r.ok) {
+    const extra = {};
+    if (req.headers["range"]) extra["Range"] = req.headers["range"];
+    const r = await fetchUpstream(targetUrl, referer, userAgent, extra);
+    if (!r.ok && r.status !== 206) {
       res.writeHead(r.status, { "Access-Control-Allow-Origin": "*" });
       return res.end("Upstream " + r.status);
     }
     const body = Buffer.from(await r.arrayBuffer());
     const ct   = r.headers.get("content-type") || "application/octet-stream";
-    res.writeHead(200, {
+    const outHeaders = {
       "Access-Control-Allow-Origin": "*",
       "Content-Type": ct,
       "Cache-Control": "public, max-age=3600"
-    });
+    };
+    const cr = r.headers.get("content-range");
+    if (cr) outHeaders["Content-Range"] = cr;
+    const ar = r.headers.get("accept-ranges");
+    if (ar) outHeaders["Accept-Ranges"] = ar;
+    res.writeHead(r.status === 206 ? 206 : 200, outHeaders);
     return res.end(body);
   } catch (e) {
     res.writeHead(500, { "Access-Control-Allow-Origin": "*" });
@@ -423,9 +390,6 @@ async function handleRawProxy(req, res, parsedUrl) {
   }
 }
 
-// ---------------------------------------------------------------------------
-// Convert Node request → Fetch API Request (for the Worker)
-// ---------------------------------------------------------------------------
 async function nodeToRequest(req) {
   const host     = req.headers["host"] ?? "localhost:" + PORT;
   const stripped = BASE && req.url.startsWith(BASE) ? req.url.slice(BASE.length) || "/" : req.url;
@@ -443,15 +407,13 @@ async function nodeToRequest(req) {
   });
 }
 
-// ---------------------------------------------------------------------------
-// Main HTTP server — routes to static files, proxies, or the Worker
-// ---------------------------------------------------------------------------
 const server = http.createServer(async (req, res) => {
   if (req.method === "OPTIONS") {
     res.writeHead(204, {
       "Access-Control-Allow-Origin": "*",
       "Access-Control-Allow-Methods": "GET, POST, OPTIONS",
-      "Access-Control-Allow-Headers": "Content-Type"
+      "Access-Control-Allow-Headers": "Content-Type, Range",
+      "Access-Control-Expose-Headers": "Content-Range, Accept-Ranges, Content-Length"
     });
     return res.end();
   }
