@@ -1,6 +1,7 @@
 // ============================================================
 // Cloud Hub — home.js
 // Hero carousel, continue watching, latest eps, trending sidebar.
+// Uses TMDB for backdrops + clear logos, AniList as fallback.
 // ============================================================
 
 const ANILIST_GRAPHQL = CH.ANILIST_GRAPHQL;
@@ -11,7 +12,6 @@ let heroSlides = [];
 let heroIndex = 0;
 let heroTimer = null;
 
-// ---------- AniList helper ----------
 async function anilistQuery(query, variables = {}) {
   const res = await fetch(ANILIST_GRAPHQL, {
     method: 'POST',
@@ -56,13 +56,13 @@ const LATEST_QUERY = `
           coverImage { extraLarge large }
           format
           averageScore
+          seasonYear
         }
       }
     }
   }
 `;
 
-// ---------- Helpers ----------
 function titleOf(media) {
   return media?.title?.english || media?.title?.romaji || 'Untitled';
 }
@@ -86,8 +86,8 @@ function cleanDescription(desc) {
 }
 
 // ---------- Hero carousel ----------
-function renderHero(mediaList) {
-  const slides = (mediaList || []).filter(m => m.bannerImage).slice(0, HERO_COUNT);
+async function renderHero(mediaList) {
+  const slides = (mediaList || []).slice(0, HERO_COUNT);
   if (!slides.length) return;
   heroSlides = slides;
 
@@ -96,10 +96,23 @@ function renderHero(mediaList) {
   viewport.innerHTML = '';
   dots.innerHTML = '';
 
+  // Kick off TMDB lookups in parallel (they cache, so it's fast on repeat)
+  const backdrops = await Promise.all(
+    slides.map(m => tmdbLookup(titleOf(m), m.seasonYear).catch(() => null))
+  );
+
   slides.forEach((m, i) => {
+    const tmdb = backdrops[i];
+    const bgUrl = tmdb?.backdropUrl || m.bannerImage || m.coverImage?.extraLarge || m.coverImage?.large;
+
     const slide = document.createElement('div');
     slide.className = 'home-hero__slide' + (i === 0 ? ' is-active' : '');
-    slide.style.backgroundImage = `url('${m.bannerImage}')`;
+    if (bgUrl) {
+      slide.style.backgroundImage = `url('${bgUrl}')`;
+      // TMDB backdrops are properly composed at center; AniList banners
+      // tend to have the subject higher, so nudge up.
+      slide.style.backgroundPosition = tmdb?.backdropUrl ? 'center center' : 'center 25%';
+    }
 
     const desc = cleanDescription(m.description).slice(0, 220);
     const metaBits = [];
@@ -108,9 +121,13 @@ function renderHero(mediaList) {
     if (m.seasonYear) metaBits.push(`<span>${m.seasonYear}</span>`);
     if (m.genres?.length) metaBits.push(`<span>${m.genres.slice(0, 2).join(' · ')}</span>`);
 
+    const titleHtml = tmdb?.logoUrl
+      ? `<img class="home-hero__title-logo" src="${chEscapeHtml(tmdb.logoUrl)}" alt="${chEscapeHtml(titleOf(m))}" onerror="this.outerHTML='<h1 class=&quot;home-hero__title&quot;>${chEscapeHtml(titleOf(m))}</h1>'">`
+      : `<h1 class="home-hero__title">${chEscapeHtml(titleOf(m))}</h1>`;
+
     slide.innerHTML = `
       <div class="home-hero__content">
-        <h1 class="home-hero__title">${chEscapeHtml(titleOf(m))}</h1>
+        ${titleHtml}
         <div class="home-hero__meta">${metaBits.join('')}</div>
         ${desc ? `<p class="home-hero__desc">${chEscapeHtml(desc)}</p>` : ''}
         <div class="home-hero__cta">
@@ -199,7 +216,7 @@ function renderContinue() {
 }
 
 // ---------- Latest Episodes ----------
-function renderLatest(schedules) {
+async function renderLatest(schedules) {
   const grid = document.getElementById('latestGrid');
   grid.innerHTML = '';
 
@@ -208,7 +225,6 @@ function renderLatest(schedules) {
     return;
   }
 
-  // Dedupe by media id, keeping the most recent airing.
   const seen = new Set();
   const items = [];
   for (const s of schedules) {
@@ -219,11 +235,22 @@ function renderLatest(schedules) {
     if (items.length >= 12) break;
   }
 
-  for (const s of items) {
+  // TMDB logos in parallel
+  const logos = await Promise.all(
+    items.map(s => tmdbLookup(titleOf(s.media), s.media.seasonYear).catch(() => null))
+  );
+
+  items.forEach((s, i) => {
     const m = s.media;
+    const tmdb = logos[i];
     const card = document.createElement('a');
     card.className = 'home-card';
     card.href = `/preview?id=${m.id}`;
+
+    const titleBlock = tmdb?.logoUrl
+      ? `<img class="home-card__title-logo" src="${chEscapeHtml(tmdb.logoUrl)}" alt="${chEscapeHtml(titleOf(m))}" loading="lazy" onerror="this.outerHTML='<div class=&quot;home-card__title&quot;>${chEscapeHtml(titleOf(m))}</div>'">`
+      : `<div class="home-card__title">${chEscapeHtml(titleOf(m))}</div>`;
+
     card.innerHTML = `
       <div class="home-card__thumb">
         <img src="${chEscapeHtml(m.coverImage?.extraLarge || m.coverImage?.large || '')}"
@@ -231,15 +258,15 @@ function renderLatest(schedules) {
         <div class="home-card__badge">EP ${s.episode}</div>
         ${m.averageScore ? `<div class="home-card__score">★ ${m.averageScore}</div>` : ''}
       </div>
-      <div class="home-card__title">${chEscapeHtml(titleOf(m))}</div>
+      ${titleBlock}
       <div class="home-card__meta">${formatFormat(m.format)} · ${chFormatTimeAgo(s.airingAt)}</div>
     `;
     grid.appendChild(card);
-  }
+  });
 }
 
 // ---------- Top Trending (sidebar) ----------
-function renderTrending(mediaList) {
+async function renderTrending(mediaList) {
   const wrap = document.getElementById('trendingList');
   wrap.innerHTML = '';
 
@@ -248,7 +275,13 @@ function renderTrending(mediaList) {
     return;
   }
 
-  mediaList.slice(0, 10).forEach((m, i) => {
+  const items = mediaList.slice(0, 10);
+  const logos = await Promise.all(
+    items.map(m => tmdbLookup(titleOf(m), m.seasonYear).catch(() => null))
+  );
+
+  items.forEach((m, i) => {
+    const tmdb = logos[i];
     const row = document.createElement('a');
     row.className = 'home-trend-item';
     row.href = `/preview?id=${m.id}`;
@@ -258,6 +291,7 @@ function renderTrending(mediaList) {
     if (m.format) metaBits.push(`<span>${formatFormat(m.format)}</span>`);
     if (m.nextAiringEpisode?.episode) metaBits.push(`<span>EP ${m.nextAiringEpisode.episode - 1}</span>`);
 
+    // Trending list uses text titles for compactness, not clear logos.
     row.innerHTML = `
       <div class="home-trend-item__rank">${i + 1}</div>
       <div style="min-width:0;">
@@ -273,7 +307,6 @@ function renderTrending(mediaList) {
 async function initHome() {
   renderContinue();
 
-  // Trending + hero (same data source)
   try {
     const trending = await anilistQuery(TRENDING_QUERY, { page: 1 });
     const media = trending?.Page?.media || [];
@@ -287,7 +320,6 @@ async function initHome() {
     if (trending) trending.innerHTML = '<div class="home-empty">Could not load.</div>';
   }
 
-  // Latest episodes
   try {
     const now = Math.floor(Date.now() / 1000);
     const weekAgo = now - 7 * 86400;
@@ -299,7 +331,6 @@ async function initHome() {
     if (grid) grid.innerHTML = '<div class="home-empty">Could not load latest episodes.</div>';
   }
 
-  // Pause hero on hover
   const hero = document.getElementById('homeHero');
   if (hero) {
     hero.addEventListener('mouseenter', stopHeroRotation);
