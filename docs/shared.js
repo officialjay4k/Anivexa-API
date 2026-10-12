@@ -1,6 +1,5 @@
 // ============================================================
 // Cloud Hub — shared.js
-// Header + footer injection, shared storage keys, tiny helpers.
 // ============================================================
 
 const CH = {
@@ -34,6 +33,14 @@ function chFormatTimeAgo(unixSec) {
   if (diff < 3600) return `${Math.floor(diff / 60)}m ago`;
   if (diff < 86400) return `${Math.floor(diff / 3600)}h ago`;
   return `${Math.floor(diff / 86400)}d ago`;
+}
+
+function chFormatTimeUntil(unixSec) {
+  const diff = unixSec - Math.floor(Date.now() / 1000);
+  if (diff <= 0) return 'now';
+  if (diff < 3600) return `in ${Math.floor(diff / 60)}m`;
+  if (diff < 86400) return `in ${Math.floor(diff / 3600)}h`;
+  return `in ${Math.floor(diff / 86400)}d`;
 }
 
 function chIsSignedIn() {
@@ -107,11 +114,9 @@ function mountFooter() {
     <footer class="ch-footer">
       <div class="ch-motif-strip"></div>
       <div class="ch-container ch-footer__inner">
-        <div class="ch-footer__col" style="flex:2; min-width:220px;">
-          <img src="/logo.png" alt="Cloud Hub" style="height:56px; margin-bottom:12px;">
-          <p class="text-muted" style="font-size:13px; max-width:280px; margin:0;">
-            A quiet, high-performance anime portal. No clutter. No trackers. Just the shows.
-          </p>
+        <div class="ch-footer__brand">
+          <img src="/logo.png" alt="Cloud Hub">
+          <p>A quiet, high-performance anime portal. No clutter. No trackers. Just the shows.</p>
         </div>
         <div class="ch-footer__col">
           <h4>Browse</h4>
@@ -131,8 +136,14 @@ function mountFooter() {
         </div>
       </div>
       <div class="ch-container ch-footer__bottom">
-        <span>© 2026 Cloud Hub</span>
-        <span>Not affiliated with any studio or distributor.</span>
+        <div class="ch-footer__madeby">
+          <span>Made by</span>
+          <img src="/4kun-logo.png" alt="4Kun"
+               onerror="this.outerHTML='<span style=&quot;font-weight:800;color:#4ab8e6&quot;>4Kun</span>'">
+        </div>
+        <div class="ch-footer__legal">
+          © 2026 Cloud Hub · Not affiliated with any studio or distributor.
+        </div>
       </div>
     </footer>
   `;
