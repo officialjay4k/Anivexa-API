@@ -1,6 +1,5 @@
 /* ============================================================
    Cloud Hub — shared.css
-   Theme: Akatsuki — transparent red on deep black, cream rim.
    ============================================================ */
 
 @import url('https://fonts.googleapis.com/css2?family=M+PLUS+Rounded+1c:wght@400;500;700;800;900&display=swap');
@@ -46,8 +45,8 @@
   --ease: cubic-bezier(0.2, 0.7, 0.2, 1);
   --dur: 180ms;
 
-  --max-w: 1400px;
-  --header-h: 72px;
+  --max-w: 1320px;
+  --header-h: 84px;
 
   --shadow-sm:  0 2px 8px rgba(0,0,0,0.5);
   --shadow-md:  0 8px 24px rgba(0,0,0,0.65);
@@ -124,9 +123,10 @@ h4 { font-size: 16px; }
   width: 100%;
   max-width: var(--max-w);
   margin-inline: auto;
-  padding-inline: var(--s-5);
+  padding-inline: var(--s-6);
 }
-@media (max-width: 720px) { .ch-container { padding-inline: var(--s-4); } }
+@media (max-width: 900px) { .ch-container { padding-inline: var(--s-5); } }
+@media (max-width: 600px) { .ch-container { padding-inline: var(--s-4); } }
 
 .ch-flex     { display: flex; }
 .ch-flex-col { display: flex; flex-direction: column; }
@@ -226,7 +226,7 @@ h4 { font-size: 16px; }
 }
 
 .ch-btn--lg { padding: 14px 28px; font-size: 15px; }
-.ch-btn--sm { padding: 6px 12px; font-size: 12px; }
+.ch-btn--sm { padding: 7px 14px; font-size: 13px; }
 
 .ch-input {
   width: 100%;
@@ -276,11 +276,11 @@ h4 { font-size: 16px; }
 }
 .ch-search input {
   flex: 1;
-  padding: 12px 14px;
+  padding: 11px 14px;
   background: transparent;
   border: none;
   outline: none;
-  font-size: 15px;
+  font-size: 14px;
   color: var(--ch-fg);
   min-width: 0;
 }
@@ -369,59 +369,80 @@ h4 { font-size: 16px; }
 }
 .ch-section-link:hover { color: var(--ch-red-bright); }
 
+/* Header — bigger logo, constrained search */
 .ch-header {
   position: sticky;
   top: 0;
   z-index: 100;
-  height: var(--header-h);
-  background: rgba(5, 2, 3, 0.78);
+  background: rgba(5, 2, 3, 0.82);
   backdrop-filter: blur(20px) saturate(1.1);
   -webkit-backdrop-filter: blur(20px) saturate(1.1);
   border-bottom: 1px solid var(--ch-glass-stroke);
 }
 .ch-header__inner {
-  height: 100%;
   display: flex;
   align-items: center;
-  gap: var(--s-5);
+  gap: var(--s-6);
+  padding-block: var(--s-3);
+  min-height: var(--header-h);
 }
 .ch-header__logo {
   display: flex;
   align-items: center;
   flex-shrink: 0;
-  height: 44px;
 }
 .ch-header__logo img,
 .ch-header__logo svg {
-  height: 44px;
+  height: 64px;
   width: auto;
-  filter: drop-shadow(0 0 12px rgba(179, 19, 31, 0.35));
+  filter: drop-shadow(0 0 14px rgba(179, 19, 31, 0.4));
+}
+@media (max-width: 900px) {
+  .ch-header__logo img,
+  .ch-header__logo svg { height: 48px; }
+}
+@media (max-width: 600px) {
+  .ch-header__logo img,
+  .ch-header__logo svg { height: 40px; }
 }
 
-.ch-header__search { flex: 1; max-width: 520px; }
+.ch-header__search {
+  flex: 1 1 auto;
+  min-width: 0;
+  max-width: 520px;
+}
 
 .ch-header__nav {
   display: flex;
   align-items: center;
-  gap: var(--s-3);
+  gap: var(--s-2);
   margin-left: auto;
+  flex-shrink: 0;
 }
 .ch-header__link {
-  padding: 8px 12px;
+  padding: 8px 14px;
   font-size: 14px;
   font-weight: 600;
   color: var(--ch-fg-dim);
   border-radius: var(--r-md);
   transition: color var(--dur) var(--ease), background var(--dur) var(--ease);
+  white-space: nowrap;
 }
 .ch-header__link:hover { color: var(--ch-white); }
 .ch-header__link.is-active {
   color: var(--ch-white);
   background: var(--ch-red-soft);
 }
+@media (max-width: 720px) {
+  .ch-header__link { padding: 6px 8px; font-size: 13px; }
+}
+@media (max-width: 520px) {
+  .ch-header__link:not(.is-active) { display: none; }
+}
+
 .ch-header__avatar {
-  width: 36px;
-  height: 36px;
+  width: 40px;
+  height: 40px;
   border-radius: 50%;
   background: var(--ch-bg-3);
   border: 1px solid var(--ch-border);
@@ -429,6 +450,7 @@ h4 { font-size: 16px; }
   display: flex;
   align-items: center;
   justify-content: center;
+  flex-shrink: 0;
   transition: border-color var(--dur) var(--ease), box-shadow var(--dur) var(--ease);
 }
 .ch-header__avatar:hover {
