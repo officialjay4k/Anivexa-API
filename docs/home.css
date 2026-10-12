@@ -1,0 +1,367 @@
+/* ============================================================
+   Cloud Hub — home.css
+   Layout: hero carousel, main column, trending sidebar.
+   ============================================================ */
+
+.home-main {
+  padding-block: var(--s-5) var(--s-8);
+}
+
+/* ---------- Hero carousel ---------- */
+.home-hero {
+  position: relative;
+  width: 100%;
+  height: 500px;
+  border-radius: var(--r-lg);
+  overflow: hidden;
+  border: 1px solid var(--ch-border-soft);
+  margin-bottom: var(--s-6);
+  background: var(--ch-bg-2);
+}
+@media (max-width: 900px) { .home-hero { height: 420px; } }
+@media (max-width: 600px) { .home-hero { height: 380px; } }
+
+.home-hero__viewport {
+  position: absolute;
+  inset: 0;
+}
+
+.home-hero__slide {
+  position: absolute;
+  inset: 0;
+  background-size: cover;
+  background-position: center 25%;
+  opacity: 0;
+  transition: opacity 600ms var(--ease);
+  display: flex;
+  align-items: flex-end;
+  pointer-events: none;
+}
+.home-hero__slide.is-active {
+  opacity: 1;
+  pointer-events: auto;
+}
+
+.home-hero__slide::before {
+  content: '';
+  position: absolute;
+  inset: 0;
+  background:
+    linear-gradient(180deg, transparent 20%, rgba(5,2,3,0.92) 100%),
+    linear-gradient(90deg, rgba(5,2,3,0.9) 0%, rgba(5,2,3,0.3) 50%, transparent 80%);
+}
+
+.home-hero__content {
+  position: relative;
+  z-index: 2;
+  padding: var(--s-6);
+  max-width: 640px;
+}
+@media (max-width: 600px) {
+  .home-hero__content { padding: var(--s-4); }
+}
+
+.home-hero__title {
+  font-size: 42px;
+  font-weight: 900;
+  letter-spacing: -0.02em;
+  line-height: 1.05;
+  margin-bottom: var(--s-3);
+  color: var(--ch-white);
+  text-shadow: 0 4px 24px rgba(0,0,0,0.6);
+}
+@media (max-width: 900px) { .home-hero__title { font-size: 32px; } }
+@media (max-width: 600px) { .home-hero__title { font-size: 24px; } }
+
+.home-hero__meta {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--s-3);
+  font-size: 13px;
+  color: var(--ch-fg-muted);
+  margin-bottom: var(--s-4);
+}
+.home-hero__meta .text-cream {
+  color: var(--ch-cream);
+  font-weight: 700;
+}
+
+.home-hero__desc {
+  font-size: 14px;
+  line-height: 1.55;
+  color: var(--ch-fg-dim);
+  margin: 0 0 var(--s-4) 0;
+  display: -webkit-box;
+  -webkit-line-clamp: 3;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+  max-width: 520px;
+}
+@media (max-width: 600px) { .home-hero__desc { display: none; } }
+
+.home-hero__cta {
+  display: flex;
+  gap: var(--s-3);
+  flex-wrap: wrap;
+}
+
+.home-hero__dots {
+  position: absolute;
+  bottom: var(--s-4);
+  right: var(--s-4);
+  display: flex;
+  gap: 6px;
+  z-index: 3;
+}
+@media (max-width: 600px) {
+  .home-hero__dots { bottom: var(--s-3); right: var(--s-3); }
+}
+
+.home-hero__dot {
+  width: 22px;
+  height: 4px;
+  border-radius: 2px;
+  background: rgba(246, 244, 245, 0.35);
+  transition: background var(--dur) var(--ease), width var(--dur) var(--ease);
+  cursor: pointer;
+  padding: 0;
+  border: none;
+}
+.home-hero__dot:hover { background: rgba(246, 244, 245, 0.6); }
+.home-hero__dot.is-active {
+  background: var(--ch-red-bright);
+  width: 34px;
+  box-shadow: 0 0 12px var(--ch-red-glow);
+}
+
+/* ---------- Layout: main + sidebar ---------- */
+.home-layout {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 340px;
+  gap: var(--s-6);
+  align-items: start;
+}
+@media (max-width: 1050px) {
+  .home-layout { grid-template-columns: 1fr; }
+}
+
+.home-primary { min-width: 0; }
+
+.home-section { margin-bottom: var(--s-6); }
+.home-section:last-child { margin-bottom: 0; }
+
+/* ---------- Cards ---------- */
+.home-card {
+  display: flex;
+  flex-direction: column;
+  gap: var(--s-2);
+  cursor: pointer;
+  text-decoration: none;
+  color: inherit;
+  transition: transform var(--dur) var(--ease);
+}
+.home-card:hover { transform: translateY(-3px); }
+
+.home-card__thumb {
+  position: relative;
+  aspect-ratio: 2 / 3;
+  border-radius: var(--r-md);
+  overflow: hidden;
+  background: var(--ch-bg-2);
+  border: 1px solid var(--ch-border-soft);
+  transition: border-color var(--dur) var(--ease),
+              box-shadow var(--dur) var(--ease);
+}
+.home-card:hover .home-card__thumb {
+  border-color: var(--ch-border-hi);
+  box-shadow: var(--shadow-md), var(--shadow-red);
+}
+
+.home-card__thumb img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  display: block;
+}
+
+.home-card__badge {
+  position: absolute;
+  top: 8px;
+  left: 8px;
+  padding: 3px 8px;
+  font-size: 10px;
+  font-weight: 800;
+  letter-spacing: 0.08em;
+  border-radius: var(--r-sm);
+  background: rgba(5, 2, 3, 0.82);
+  backdrop-filter: blur(8px);
+  -webkit-backdrop-filter: blur(8px);
+  color: var(--ch-white);
+  text-transform: uppercase;
+}
+
+.home-card__score {
+  position: absolute;
+  bottom: 8px;
+  left: 8px;
+  padding: 3px 8px;
+  font-size: 11px;
+  font-weight: 800;
+  border-radius: var(--r-sm);
+  background: rgba(5, 2, 3, 0.82);
+  backdrop-filter: blur(8px);
+  -webkit-backdrop-filter: blur(8px);
+  color: var(--ch-cream);
+}
+
+.home-card__progress {
+  position: absolute;
+  left: 0; right: 0; bottom: 0;
+  height: 3px;
+  background: rgba(5, 2, 3, 0.7);
+}
+.home-card__progress-fill {
+  height: 100%;
+  background: var(--ch-red-bright);
+  box-shadow: 0 0 8px var(--ch-red-glow);
+  transition: width 300ms var(--ease);
+}
+
+.home-card__title {
+  font-size: 13px;
+  font-weight: 700;
+  line-height: 1.3;
+  color: var(--ch-white);
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+}
+
+.home-card__meta {
+  font-size: 11px;
+  color: var(--ch-fg-muted);
+}
+
+/* ---------- Continue Watching: horizontal scroll ---------- */
+.home-row {
+  display: grid;
+  grid-auto-flow: column;
+  grid-auto-columns: 190px;
+  gap: var(--s-4);
+  overflow-x: auto;
+  overflow-y: hidden;
+  padding-bottom: var(--s-3);
+  scroll-snap-type: x mandatory;
+  scrollbar-width: thin;
+}
+.home-row > * { scroll-snap-align: start; }
+@media (max-width: 600px) {
+  .home-row { grid-auto-columns: 150px; }
+}
+
+/* ---------- Latest Episodes grid ---------- */
+.home-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(160px, 1fr));
+  gap: var(--s-4);
+}
+@media (max-width: 600px) {
+  .home-grid { grid-template-columns: repeat(2, 1fr); }
+}
+
+/* ---------- Trending sidebar list ---------- */
+.home-trending {
+  display: flex;
+  flex-direction: column;
+  gap: var(--s-2);
+}
+
+.home-trend-item {
+  display: grid;
+  grid-template-columns: 40px minmax(0, 1fr);
+  gap: var(--s-3);
+  padding: var(--s-3);
+  background: var(--ch-glass);
+  border: 1px solid var(--ch-glass-stroke);
+  border-radius: var(--r-md);
+  cursor: pointer;
+  text-decoration: none;
+  color: inherit;
+  align-items: center;
+  transition: background var(--dur) var(--ease),
+              border-color var(--dur) var(--ease),
+              transform var(--dur) var(--ease);
+}
+.home-trend-item:hover {
+  background: var(--ch-red-soft);
+  border-color: var(--ch-border);
+  transform: translateX(3px);
+}
+
+.home-trend-item__rank {
+  font-size: 24px;
+  font-weight: 900;
+  line-height: 1;
+  text-align: center;
+  color: var(--ch-red);
+  text-shadow: 0 0 14px var(--ch-red-glow);
+  font-variant-numeric: tabular-nums;
+}
+.home-trend-item:nth-child(1) .home-trend-item__rank,
+.home-trend-item:nth-child(2) .home-trend-item__rank,
+.home-trend-item:nth-child(3) .home-trend-item__rank {
+  color: var(--ch-cream);
+  text-shadow: 0 0 14px var(--ch-cream-soft);
+}
+
+.home-trend-item__title {
+  font-size: 14px;
+  font-weight: 700;
+  color: var(--ch-white);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.home-trend-item__meta {
+  display: flex;
+  gap: var(--s-3);
+  font-size: 11px;
+  color: var(--ch-fg-muted);
+  margin-top: 2px;
+}
+.home-trend-item__score {
+  color: var(--ch-cream);
+  font-weight: 700;
+}
+
+/* ---------- Skeletons ---------- */
+.home-skeleton {
+  aspect-ratio: 2 / 3;
+  border-radius: var(--r-md);
+  background: linear-gradient(90deg,
+    var(--ch-bg-2) 0%,
+    var(--ch-bg-3) 50%,
+    var(--ch-bg-2) 100%);
+  background-size: 200% 100%;
+  animation: home-shimmer 1.4s linear infinite;
+}
+.home-skeleton--row {
+  aspect-ratio: auto;
+  height: 64px;
+}
+@keyframes home-shimmer {
+  from { background-position: 200% 0; }
+  to   { background-position: -200% 0; }
+}
+
+/* ---------- Empty state ---------- */
+.home-empty {
+  padding: var(--s-5);
+  text-align: center;
+  color: var(--ch-fg-muted);
+  font-size: 13px;
+  border: 1px dashed var(--ch-border-soft);
+  border-radius: var(--r-md);
+}
