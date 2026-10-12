@@ -1,0 +1,72 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Cloud Hub — Home</title>
+  <link rel="icon" type="image/png" href="/favicon.png">
+  <link rel="apple-touch-icon" href="/apple-touch-icon.png">
+  <link rel="stylesheet" href="/shared.css">
+  <link rel="stylesheet" href="/home.css">
+</head>
+<body>
+
+  <div id="ch-header-mount"></div>
+
+  <main class="home-main">
+    <div class="ch-container">
+
+      <section class="home-hero" id="homeHero">
+        <div class="home-hero__viewport" id="heroViewport"></div>
+        <div class="home-hero__dots" id="heroDots"></div>
+      </section>
+
+      <div class="home-layout">
+
+        <div class="home-primary">
+
+          <section class="home-section" id="continueSection" hidden>
+            <header class="ch-section-head">
+              <h2 class="ch-section-title">Continue Watching</h2>
+            </header>
+            <div class="home-row" id="continueRow"></div>
+          </section>
+
+          <section class="home-section" id="latestSection">
+            <header class="ch-section-head">
+              <h2 class="ch-section-title">Latest Episodes</h2>
+            </header>
+            <div class="home-grid" id="latestGrid">
+              <div class="home-skeleton"></div>
+              <div class="home-skeleton"></div>
+              <div class="home-skeleton"></div>
+              <div class="home-skeleton"></div>
+            </div>
+          </section>
+
+        </div>
+
+        <aside class="home-sidebar">
+          <section class="home-section" id="trending">
+            <header class="ch-section-head">
+              <h2 class="ch-section-title">Top Trending</h2>
+            </header>
+            <div class="home-trending" id="trendingList">
+              <div class="home-skeleton home-skeleton--row"></div>
+              <div class="home-skeleton home-skeleton--row"></div>
+              <div class="home-skeleton home-skeleton--row"></div>
+            </div>
+          </section>
+        </aside>
+
+      </div>
+
+    </div>
+  </main>
+
+  <div id="ch-footer-mount"></div>
+
+  <script src="/shared.js"></script>
+  <script src="/home.js"></script>
+</body>
+</html>
