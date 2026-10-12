@@ -6,7 +6,7 @@ const TMDB_API_KEY = 'c369a47ceeb50fba4557e4da9ac9390b';
 
 const TMDB_BASE = 'https://api.themoviedb.org/3';
 const TMDB_IMG  = 'https://image.tmdb.org/t/p';
-const TMDB_CACHE_KEY = 'ch_tmdb_cache_v2';
+const TMDB_CACHE_KEY = 'ch_tmdb_cache_v3';
 const TMDB_CACHE_TTL_MS = 7 * 24 * 60 * 60 * 1000;
 
 let tmdbCache = (() => {
