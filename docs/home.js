@@ -9,6 +9,7 @@ const HERO_COUNT = 5;
 let heroSlides = [];
 let heroIndex = 0;
 let heroTimer = null;
+let heroTmdbCache = [];
 
 async function anilistQuery(query, variables = {}) {
   const res = await fetch(ANILIST_GRAPHQL, {
@@ -22,10 +23,11 @@ async function anilistQuery(query, variables = {}) {
   return json.data;
 }
 
-const TRENDING_QUERY = `
-  query($page: Int) {
-    Page(page: $page, perPage: 24) {
-      media(type: ANIME, sort: TRENDING_DESC, isAdult: false) {
+// Spotlight = currently airing, highest trending
+const SPOTLIGHT_QUERY = `
+  query {
+    Page(page: 1, perPage: 12) {
+      media(type: ANIME, status: RELEASING, sort: TRENDING_DESC, isAdult: false) {
         id
         title { romaji english }
         coverImage { extraLarge large }
@@ -36,6 +38,24 @@ const TRENDING_QUERY = `
         seasonYear
         averageScore
         genres
+      }
+    }
+  }
+`;
+
+// Recent: recently aired episodes of POPULAR airing shows
+const LATEST_QUERY = `
+  query {
+    Page(page: 1, perPage: 30) {
+      media(type: ANIME, status: RELEASING, sort: POPULARITY_DESC, isAdult: false) {
+        id
+        title { romaji english }
+        coverImage { extraLarge large }
+        format
+        averageScore
+        seasonYear
+        episodes
+        nextAiringEpisode { episode airingAt }
       }
     }
   }
@@ -56,36 +76,18 @@ const POPULAR_QUERY = `
   }
 `;
 
-const AIRING_QUERY = `
+// Schedule: POPULAR currently-airing shows, sorted by next airing time
+const SCHEDULE_QUERY = `
   query {
-    Page(page: 1, perPage: 18) {
+    Page(page: 1, perPage: 40) {
       media(type: ANIME, status: RELEASING, sort: POPULARITY_DESC, isAdult: false) {
         id
         title { romaji english }
         coverImage { extraLarge large }
+        bannerImage
         format
         averageScore
-        seasonYear
-        episodes
-        nextAiringEpisode { episode airingAt }
-      }
-    }
-  }
-`;
-
-const SCHEDULE_QUERY = `
-  query($from: Int) {
-    Page(page: 1, perPage: 12) {
-      airingSchedules(airingAt_greater: $from, sort: TIME) {
-        episode
-        airingAt
-        media {
-          id
-          title { romaji english }
-          coverImage { extraLarge large }
-          bannerImage
-          format
-        }
+        nextAiringEpisode { episode airingAt timeUntilAiring }
       }
     }
   }
@@ -120,20 +122,19 @@ async function renderHero(mediaList) {
   heroSlides = slides;
 
   const slidesWrap = document.getElementById('heroSlides');
-  const featuredWrap = document.getElementById('heroFeatured');
+  const featuredRow = document.getElementById('heroFeaturedRow');
   const dots = document.getElementById('heroDots');
   slidesWrap.innerHTML = '';
-  featuredWrap.innerHTML = '';
+  featuredRow.innerHTML = '';
   dots.innerHTML = '';
 
-  // Parallel TMDB lookups
-  const tmdbResults = await Promise.all(
+  heroTmdbCache = await Promise.all(
     slides.map(m => tmdbLookup(titleOf(m), m.seasonYear).catch(() => null))
   );
 
   // Background slides
   slides.forEach((m, i) => {
-    const tmdb = tmdbResults[i];
+    const tmdb = heroTmdbCache[i];
     const bgUrl = tmdb?.backdropUrl || m.bannerImage || m.coverImage?.extraLarge || m.coverImage?.large;
     const slide = document.createElement('div');
     slide.className = 'home-hero__slide' + (i === 0 ? ' is-active' : '');
@@ -141,24 +142,15 @@ async function renderHero(mediaList) {
     slidesWrap.appendChild(slide);
   });
 
-  // Featured mini-cards (right side)
-  featuredWrap.innerHTML = `
-    <div class="home-hero__featured-label">Featured Anime</div>
-    <div class="home-hero__featured-grid" id="heroFeaturedGrid"></div>
-  `;
-  const featGrid = document.getElementById('heroFeaturedGrid');
-
+  // Featured cover row (bottom-right) — AniList covers, no text
   slides.forEach((m, i) => {
+    const cover = m.coverImage?.extraLarge || m.coverImage?.large || '';
     const card = document.createElement('div');
     card.className = 'home-hero__featured-card' + (i === 0 ? ' is-current' : '');
     card.dataset.index = i;
-    const cover = m.coverImage?.extraLarge || m.coverImage?.large || '';
-    card.innerHTML = `
-      <img src="${chEscapeHtml(cover)}" alt="${chEscapeHtml(titleOf(m))}" loading="lazy">
-      <div class="home-hero__featured-card__name">${chEscapeHtml(titleOf(m))}</div>
-    `;
+    card.innerHTML = `<img src="${chEscapeHtml(cover)}" alt="${chEscapeHtml(titleOf(m))}" loading="lazy">`;
     card.addEventListener('click', () => goToSlide(i));
-    featGrid.appendChild(card);
+    featuredRow.appendChild(card);
   });
 
   // Dots
@@ -170,16 +162,15 @@ async function renderHero(mediaList) {
     dots.appendChild(dot);
   });
 
-  // Render spotlight for slide 0
   heroIndex = 0;
-  renderSpotlight(0, tmdbResults);
+  renderSpotlight(0);
   startHeroRotation();
 }
 
-function renderSpotlight(i, tmdbResults) {
+function renderSpotlight(i) {
   const m = heroSlides[i];
   if (!m) return;
-  const tmdb = tmdbResults?.[i] || null;
+  const tmdb = heroTmdbCache?.[i] || null;
   const spot = document.getElementById('heroSpotlight');
 
   const desc = cleanDescription(m.description).slice(0, 280);
@@ -196,7 +187,10 @@ function renderSpotlight(i, tmdbResults) {
     : `<h1 class="home-hero__title">${chEscapeHtml(titleOf(m))}</h1>`;
 
   spot.innerHTML = `
-    <div class="home-hero__eyebrow">#${i + 1} Spotlight</div>
+    <div class="home-hero__eyebrow">
+      <span class="home-hero__eyebrow-rank">#${i + 1}</span>
+      <span class="home-hero__eyebrow-label">Spotlight</span>
+    </div>
     ${titleHtml}
     <div class="home-hero__meta">${meta.join('<span class="sep">·</span>')}</div>
     ${desc ? `<p class="home-hero__desc">${chEscapeHtml(desc)}</p>` : ''}
@@ -210,7 +204,6 @@ function renderSpotlight(i, tmdbResults) {
   `;
 }
 
-let heroTmdbCache = [];
 function goToSlide(i) {
   const slidesEls = document.querySelectorAll('.home-hero__slide');
   const dots = document.querySelectorAll('.home-hero__dot');
@@ -223,7 +216,7 @@ function goToSlide(i) {
   slidesEls[heroIndex].classList.add('is-active');
   dots[heroIndex]?.classList.add('is-active');
   cards[heroIndex]?.classList.add('is-current');
-  renderSpotlight(heroIndex, heroTmdbCache);
+  renderSpotlight(heroIndex);
 }
 
 function startHeroRotation() {
@@ -270,9 +263,26 @@ function renderContinue() {
     `;
     row.appendChild(card);
   }
+  detectTitleOverflow(row);
 }
 
-// ---------- Grid renderer (Latest + Popular) ----------
+// ---------- Title overflow detector ----------
+function detectTitleOverflow(root) {
+  if (!root) return;
+  requestAnimationFrame(() => {
+    root.querySelectorAll('.home-card__title-text').forEach(el => {
+      el.classList.remove('is-overflowing');
+      el.style.removeProperty('--overflow-px');
+      const overflow = el.scrollWidth - el.clientWidth;
+      if (overflow > 2) {
+        el.classList.add('is-overflowing');
+        el.style.setProperty('--overflow-px', `-${overflow}px`);
+      }
+    });
+  });
+}
+
+// ---------- Grid renderer ----------
 async function renderMediaGrid(gridEl, items, opts = {}) {
   gridEl.innerHTML = '';
   if (!items?.length) {
@@ -320,29 +330,37 @@ async function renderMediaGrid(gridEl, items, opts = {}) {
     `;
     gridEl.appendChild(card);
   });
+
+  detectTitleOverflow(gridEl);
 }
 
 // ---------- Schedule ----------
-function renderSchedule(schedules) {
+function renderSchedule(mediaList) {
   const wrap = document.getElementById('scheduleList');
   wrap.innerHTML = '';
 
-  if (!schedules?.length) {
+  if (!mediaList?.length) {
     wrap.innerHTML = '<div class="home-empty">No upcoming episodes.</div>';
     return;
   }
 
-  const seen = new Set();
-  const items = [];
-  for (const s of schedules) {
-    const id = s.media?.id;
-    if (!id || seen.has(id)) continue;
-    seen.add(id);
-    items.push(s);
-    if (items.length >= 8) break;
+  // Only items with a scheduled next episode, sorted by airing time ascending.
+  const upcoming = mediaList
+    .filter(m => m.nextAiringEpisode?.airingAt)
+    .map(m => ({
+      media: m,
+      episode: m.nextAiringEpisode.episode,
+      airingAt: m.nextAiringEpisode.airingAt
+    }))
+    .sort((a, b) => a.airingAt - b.airingAt)
+    .slice(0, 8);
+
+  if (!upcoming.length) {
+    wrap.innerHTML = '<div class="home-empty">No upcoming episodes.</div>';
+    return;
   }
 
-  for (const s of items) {
+  for (const s of upcoming) {
     const m = s.media;
     const bg = m.bannerImage || m.coverImage?.extraLarge || m.coverImage?.large || '';
     const card = document.createElement('a');
@@ -352,9 +370,15 @@ function renderSchedule(schedules) {
       <div class="schedule-card__bg" style="background-image:url('${chEscapeHtml(bg)}')"></div>
       <div class="schedule-card__scrim"></div>
       <div class="schedule-card__content">
-        <div class="schedule-card__when">${chFormatTimeUntil(s.airingAt)} · EP ${s.episode}</div>
+        <div class="schedule-card__when">
+          <span class="schedule-card__when-dot"></span>
+          ${chFormatTimeUntil(s.airingAt)} · EP ${s.episode}
+        </div>
         <div class="schedule-card__title">${chEscapeHtml(titleOf(m))}</div>
-        <div class="schedule-card__meta">${formatFormat(m.format)}</div>
+        <div class="schedule-card__meta">${formatFormat(m.format)}${m.averageScore ? ' · ★ ' + m.averageScore : ''}</div>
+      </div>
+      <div class="schedule-card__play" aria-hidden="true">
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor"><polygon points="6 4 20 12 6 20"></polygon></svg>
       </div>
     `;
     wrap.appendChild(card);
@@ -365,22 +389,23 @@ function renderSchedule(schedules) {
 async function initHome() {
   renderContinue();
 
-  // Hero + trending sidebar (from same trending fetch)
+  // Spotlight (hero)
   try {
-    const trending = await anilistQuery(TRENDING_QUERY, { page: 1 });
-    const media = trending?.Page?.media || [];
-    const t = await Promise.all(media.slice(0, HERO_COUNT).map(m => tmdbLookup(titleOf(m), m.seasonYear).catch(() => null)));
-    heroTmdbCache = t;
+    const spot = await anilistQuery(SPOTLIGHT_QUERY);
+    const media = spot?.Page?.media || [];
     await renderHero(media);
   } catch (err) {
-    console.error('Trending fetch failed:', err);
+    console.error('Spotlight fetch failed:', err);
   }
 
-  // Latest (popular currently airing)
+  // Latest (popular currently airing shows)
   try {
-    const airing = await anilistQuery(AIRING_QUERY);
-    const items = (airing?.Page?.media || []).filter(m => m.nextAiringEpisode);
-    renderMediaGrid(document.getElementById('latestGrid'), items.slice(0, 12), { latestEp: true });
+    const latest = await anilistQuery(LATEST_QUERY);
+    const items = (latest?.Page?.media || [])
+      .filter(m => m.nextAiringEpisode)
+      .sort((a, b) => (b.nextAiringEpisode?.airingAt || 0) - (a.nextAiringEpisode?.airingAt || 0))
+      .slice(0, 12);
+    renderMediaGrid(document.getElementById('latestGrid'), items, { latestEp: true });
   } catch (err) {
     console.error('Latest fetch failed:', err);
     document.getElementById('latestGrid').innerHTML = '<div class="home-empty">Could not load.</div>';
@@ -396,11 +421,10 @@ async function initHome() {
     document.getElementById('popularGrid').innerHTML = '<div class="home-empty">Could not load.</div>';
   }
 
-  // Schedule (upcoming)
+  // Schedule (popular currently-airing shows, sorted by next airing)
   try {
-    const now = Math.floor(Date.now() / 1000);
-    const schedule = await anilistQuery(SCHEDULE_QUERY, { from: now });
-    renderSchedule(schedule?.Page?.airingSchedules || []);
+    const sched = await anilistQuery(SCHEDULE_QUERY);
+    renderSchedule(sched?.Page?.media || []);
   } catch (err) {
     console.error('Schedule fetch failed:', err);
     document.getElementById('scheduleList').innerHTML = '<div class="home-empty">Could not load.</div>';
@@ -416,6 +440,13 @@ async function initHome() {
     hero.addEventListener('mouseenter', stopHeroRotation);
     hero.addEventListener('mouseleave', startHeroRotation);
   }
+
+  // Re-detect overflow on resize
+  window.addEventListener('resize', () => {
+    detectTitleOverflow(document.getElementById('continueRow'));
+    detectTitleOverflow(document.getElementById('latestGrid'));
+    detectTitleOverflow(document.getElementById('popularGrid'));
+  });
 }
 
 document.addEventListener('DOMContentLoaded', initHome);
