@@ -137,9 +137,10 @@ function mountFooter() {
       </div>
       <div class="ch-container ch-footer__bottom">
         <div class="ch-footer__madeby">
-          <span>Made by</span>
-          <img src="/4kun-logo.png" alt="4Kun"
-               onerror="this.outerHTML='<span style=&quot;font-weight:800;color:#4ab8e6&quot;>4Kun</span>'">
+          <span class="ch-footer__madeby-label">Made by</span>
+          <span class="ch-madeby-brand">
+            <span class="g">4</span><span class="b">Kun</span>
+          </span>
         </div>
         <div class="ch-footer__legal">
           © 2026 Cloud Hub · Not affiliated with any studio or distributor.
