@@ -5,7 +5,7 @@
 // ============================================================
 
 // ⬇⬇ PASTE YOUR TMDB API KEY HERE ⬇⬇
-const TMDB_API_KEY = '';
+const TMDB_API_KEY = 'c369a47ceeb50fba4557e4da9ac9390b';
 // ⬆⬆ (get it from themoviedb.org → Settings → API) ⬆⬆
 
 const TMDB_BASE = 'https://api.themoviedb.org/3';
