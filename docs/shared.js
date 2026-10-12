@@ -1,7 +1,6 @@
 // ============================================================
 // Cloud Hub — shared.js
 // Header + footer injection, shared storage keys, tiny helpers.
-// Loaded by every page except landing.
 // ============================================================
 
 const CH = {
@@ -37,12 +36,26 @@ function chFormatTimeAgo(unixSec) {
   return `${Math.floor(diff / 86400)}d ago`;
 }
 
+function chIsSignedIn() {
+  try {
+    const u = JSON.parse(localStorage.getItem(CH.STORAGE_USER) || 'null');
+    return !!(u && u.username);
+  } catch { return false; }
+}
+
 function mountHeader() {
   const mount = document.getElementById('ch-header-mount');
   if (!mount) return;
 
   const path = window.location.pathname;
   const active = (p) => path === p ? ' is-active' : '';
+  const signedIn = chIsSignedIn();
+
+  const authBlock = signedIn
+    ? `<a href="/settings" class="ch-header__avatar" aria-label="Profile">
+         <img src="/user-placeholder.png" alt="" onerror="this.style.display='none'">
+       </a>`
+    : `<a href="/settings" class="ch-btn ch-btn--primary ch-btn--sm">Sign In</a>`;
 
   mount.innerHTML = `
     <header class="ch-header">
@@ -66,9 +79,7 @@ function mountHeader() {
           <a href="/home" class="ch-header__link${active('/home')}">Home</a>
           <a href="/dashboard" class="ch-header__link${active('/dashboard')}">Dashboard</a>
           <a href="/settings" class="ch-header__link${active('/settings')}">Settings</a>
-          <a href="/settings" class="ch-header__avatar" aria-label="Profile">
-            <img src="/user-placeholder.png" alt="" onerror="this.style.display='none'">
-          </a>
+          ${authBlock}
         </nav>
       </div>
     </header>
@@ -77,7 +88,6 @@ function mountHeader() {
   const form = document.getElementById('chSearchForm');
   const input = document.getElementById('chSearchInput');
   if (form && input) {
-    // Prefill if q= is in URL
     const q = new URLSearchParams(location.search).get('q');
     if (q) input.value = q;
 
@@ -98,7 +108,7 @@ function mountFooter() {
       <div class="ch-motif-strip"></div>
       <div class="ch-container ch-footer__inner">
         <div class="ch-footer__col" style="flex:2; min-width:220px;">
-          <img src="/logo.png" alt="Cloud Hub" style="height:48px; margin-bottom:12px;">
+          <img src="/logo.png" alt="Cloud Hub" style="height:56px; margin-bottom:12px;">
           <p class="text-muted" style="font-size:13px; max-width:280px; margin:0;">
             A quiet, high-performance anime portal. No clutter. No trackers. Just the shows.
           </p>
