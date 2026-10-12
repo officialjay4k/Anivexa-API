@@ -1,0 +1,218 @@
+/* ============================================================
+   Cloud Hub — landing.css
+   Splash. No header. Full-bleed Akatsuki hero.
+   ============================================================ */
+
+.landing-body {
+  min-height: 100vh;
+  display: flex;
+  flex-direction: column;
+  position: relative;
+  overflow-x: hidden;
+}
+
+.landing-bg {
+  position: fixed;
+  inset: 0;
+  z-index: 0;
+  background-size: cover;
+  background-position: center;
+  background-repeat: no-repeat;
+  filter: brightness(0.75) saturate(1.05);
+  pointer-events: none;
+}
+
+.landing-bg-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 1;
+  pointer-events: none;
+  background:
+    radial-gradient(ellipse 70% 55% at 50% 40%, rgba(179, 19, 31, 0.22), transparent 70%),
+    radial-gradient(ellipse 100% 80% at 50% 100%, var(--ch-black) 0%, transparent 55%),
+    linear-gradient(180deg,
+      rgba(5, 2, 3, 0.65) 0%,
+      rgba(5, 2, 3, 0.35) 25%,
+      rgba(5, 2, 3, 0.35) 65%,
+      rgba(5, 2, 3, 0.85) 100%);
+}
+
+.landing-motif-top,
+.landing-motif-bottom {
+  position: relative;
+  z-index: 3;
+  flex-shrink: 0;
+}
+
+.landing-main {
+  position: relative;
+  z-index: 2;
+  flex: 1;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: var(--s-6) var(--s-5);
+}
+
+.landing-hero {
+  width: 100%;
+  max-width: 720px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  text-align: center;
+  gap: var(--s-5);
+}
+
+.landing-logo {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  margin-bottom: var(--s-2);
+  transition: transform var(--dur) var(--ease);
+}
+.landing-logo:hover { transform: scale(1.02); }
+.landing-logo img {
+  width: 100%;
+  max-width: 380px;
+  height: auto;
+  filter: drop-shadow(0 8px 40px rgba(179, 19, 31, 0.5));
+}
+
+.landing-tagline {
+  font-size: clamp(28px, 5.5vw, 48px);
+  font-weight: 900;
+  letter-spacing: -0.02em;
+  line-height: 1.1;
+  color: var(--ch-white);
+  margin: 0;
+}
+.landing-tagline .text-red {
+  color: var(--ch-red-bright);
+  text-shadow: 0 0 32px var(--ch-red-glow);
+}
+
+.landing-sub {
+  margin: 0;
+  font-size: 15px;
+  color: var(--ch-fg-muted);
+  max-width: 480px;
+  line-height: 1.6;
+}
+
+.landing-search {
+  display: flex;
+  width: 100%;
+  max-width: 620px;
+  gap: var(--s-2);
+  margin-top: var(--s-2);
+}
+.landing-search .ch-search { flex: 1; }
+
+.landing-suggestions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: center;
+  gap: var(--s-2);
+  margin-top: var(--s-1);
+  font-size: 13px;
+  color: var(--ch-fg-muted);
+  max-width: 640px;
+}
+.landing-suggestions__label { color: var(--ch-fg-subtle); }
+
+.landing-chip {
+  padding: 4px 12px;
+  font-size: 13px;
+  color: var(--ch-fg-muted);
+  border: 1px solid var(--ch-border-soft);
+  border-radius: var(--r-pill);
+  background: rgba(5, 2, 3, 0.4);
+  backdrop-filter: blur(8px);
+  -webkit-backdrop-filter: blur(8px);
+  transition: color var(--dur) var(--ease),
+              border-color var(--dur) var(--ease),
+              background var(--dur) var(--ease);
+}
+.landing-chip:hover {
+  color: var(--ch-white);
+  border-color: var(--ch-border-hi);
+  background: var(--ch-red-soft);
+}
+
+.landing-cta {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--s-3);
+  justify-content: center;
+  margin-top: var(--s-2);
+}
+
+.landing-badges {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: var(--s-4);
+  width: 100%;
+  max-width: 640px;
+  margin-top: var(--s-6);
+}
+@media (max-width: 640px) {
+  .landing-badges { grid-template-columns: 1fr; }
+}
+
+.landing-badge {
+  display: flex;
+  align-items: center;
+  gap: var(--s-3);
+  padding: var(--s-4);
+  background: var(--ch-glass);
+  border: 1px solid var(--ch-glass-stroke);
+  border-radius: var(--r-md);
+  backdrop-filter: blur(14px);
+  -webkit-backdrop-filter: blur(14px);
+  text-align: left;
+  transition: border-color var(--dur) var(--ease),
+              transform var(--dur) var(--ease),
+              box-shadow var(--dur) var(--ease);
+}
+.landing-badge:hover {
+  border-color: var(--ch-border);
+  transform: translateY(-2px);
+  box-shadow: var(--shadow-red);
+}
+
+.landing-badge__icon {
+  flex-shrink: 0;
+  width: 40px;
+  height: 40px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: var(--r-md);
+  background: var(--ch-red-soft);
+  border: 1px solid var(--ch-border);
+  color: var(--ch-red-bright);
+}
+
+.landing-badge__title {
+  font-size: 14px;
+  font-weight: 800;
+  color: var(--ch-white);
+  line-height: 1.2;
+}
+.landing-badge__sub {
+  font-size: 12px;
+  color: var(--ch-fg-muted);
+  line-height: 1.3;
+  margin-top: 2px;
+}
+
+@media (max-width: 720px) {
+  .landing-main { padding: var(--s-5) var(--s-4); }
+  .landing-hero { gap: var(--s-4); }
+  .landing-search { flex-direction: column; }
+  .landing-search .ch-btn { width: 100%; }
+  .landing-cta { flex-direction: column; width: 100%; }
+  .landing-cta .ch-btn { width: 100%; }
+}
