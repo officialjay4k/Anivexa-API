@@ -13,53 +13,75 @@
 
   <div id="ch-header-mount"></div>
 
+  <section class="home-hero" id="homeHero">
+    <div class="home-hero__slides" id="heroSlides"></div>
+    <div class="home-hero__scrim"></div>
+
+    <div class="home-hero__inner ch-container">
+      <div class="home-hero__spotlight" id="heroSpotlight"></div>
+      <aside class="home-hero__featured" id="heroFeatured"></aside>
+    </div>
+
+    <button class="home-hero__nav home-hero__nav--prev" id="heroPrev" aria-label="Previous slide">
+      <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="15 18 9 12 15 6"/></svg>
+    </button>
+    <button class="home-hero__nav home-hero__nav--next" id="heroNext" aria-label="Next slide">
+      <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="9 18 15 12 9 6"/></svg>
+    </button>
+
+    <div class="home-hero__dots" id="heroDots"></div>
+  </section>
+
   <main class="home-main">
-    <div class="ch-container">
+    <div class="ch-container home-layout">
 
-      <section class="home-hero" id="homeHero">
-        <div class="home-hero__viewport" id="heroViewport"></div>
-        <div class="home-hero__dots" id="heroDots"></div>
-      </section>
+      <div class="home-primary">
 
-      <div class="home-layout">
+        <section class="home-section" id="continueSection" hidden>
+          <header class="ch-section-head">
+            <h2 class="ch-section-title">Continue Watching</h2>
+          </header>
+          <div class="home-row" id="continueRow"></div>
+        </section>
 
-        <div class="home-primary">
+        <section class="home-section" id="latestSection">
+          <header class="ch-section-head">
+            <h2 class="ch-section-title">Latest Episodes</h2>
+          </header>
+          <div class="home-grid" id="latestGrid">
+            <div class="home-skeleton"></div>
+            <div class="home-skeleton"></div>
+            <div class="home-skeleton"></div>
+            <div class="home-skeleton"></div>
+          </div>
+        </section>
 
-          <section class="home-section" id="continueSection" hidden>
-            <header class="ch-section-head">
-              <h2 class="ch-section-title">Continue Watching</h2>
-            </header>
-            <div class="home-row" id="continueRow"></div>
-          </section>
-
-          <section class="home-section" id="latestSection">
-            <header class="ch-section-head">
-              <h2 class="ch-section-title">Latest Episodes</h2>
-            </header>
-            <div class="home-grid" id="latestGrid">
-              <div class="home-skeleton"></div>
-              <div class="home-skeleton"></div>
-              <div class="home-skeleton"></div>
-              <div class="home-skeleton"></div>
-            </div>
-          </section>
-
-        </div>
-
-        <aside class="home-sidebar">
-          <section class="home-section" id="trending">
-            <header class="ch-section-head">
-              <h2 class="ch-section-title">Top Trending</h2>
-            </header>
-            <div class="home-trending" id="trendingList">
-              <div class="home-skeleton home-skeleton--row"></div>
-              <div class="home-skeleton home-skeleton--row"></div>
-              <div class="home-skeleton home-skeleton--row"></div>
-            </div>
-          </section>
-        </aside>
+        <section class="home-section" id="popularSection">
+          <header class="ch-section-head">
+            <h2 class="ch-section-title">Popular Anime</h2>
+          </header>
+          <div class="home-grid" id="popularGrid">
+            <div class="home-skeleton"></div>
+            <div class="home-skeleton"></div>
+            <div class="home-skeleton"></div>
+            <div class="home-skeleton"></div>
+          </div>
+        </section>
 
       </div>
+
+      <aside class="home-sidebar">
+        <section class="home-section" id="schedule">
+          <header class="ch-section-head">
+            <h2 class="ch-section-title">Airing Soon</h2>
+          </header>
+          <div class="home-schedule" id="scheduleList">
+            <div class="home-skeleton home-skeleton--row"></div>
+            <div class="home-skeleton home-skeleton--row"></div>
+            <div class="home-skeleton home-skeleton--row"></div>
+          </div>
+        </section>
+      </aside>
 
     </div>
   </main>
