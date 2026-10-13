@@ -1,17 +1,13 @@
 // ============================================================
 // Cloud Hub — pipeline.js
 // Provider chain, flat work list, background fetch, subtitle
-// fallback escalation. Emits events that watch.js consumes:
-//   'stream'   → a stream is ready to mount ({ entry, ...})
-//   'status'   → { message, level }
-//   'audio'    → { sub: bool, dub: bool }
-//   'exhausted'→ all sources failed → iframe fallback
+// fallback escalation. Emits events for watch.js.
 // ============================================================
 
-const chPipeline = (() => {
+const chPipeline = (function () {
   const API_BASE = CH.API_BASE;
   const NOSTORE = { cache: 'no-store' };
-  const MAX_UNIQUE_FRAGMENT_ERRORS = 3; // exposed for player.js
+  const MAX_UNIQUE_FRAGMENT_ERRORS = 3;
   const SUBTITLE_WAIT_MS = 5000;
   const DEFAULT_PROVIDER = 'reanime';
   const PROVIDER_CHAIN = [
@@ -20,8 +16,12 @@ const chPipeline = (() => {
   ];
 
   const events = new EventTarget();
-  function on(type, handler) { events.addEventListener(type, e => handler(e.detail)); }
-  function emit(type, detail) { events.dispatchEvent(new CustomEvent(type, { detail })); }
+  function on(type, handler) {
+    events.addEventListener(type, function (e) { handler(e.detail); });
+  }
+  function emit(type, detail) {
+    events.dispatchEvent(new CustomEvent(type, { detail: detail }));
+  }
 
   const S = {
     anilistId: '',
@@ -37,8 +37,6 @@ const chPipeline = (() => {
     maxEp: 1,
     availability: { sub: false, dub: false },
     currentEntry: null,
-    currentStreamReferer: null,
-    currentStreamUa: null,
     aborted: false
   };
 
@@ -59,11 +57,11 @@ const chPipeline = (() => {
     S.aborted = false;
   }
 
-  function log(msg, level = 'info') {
-    emit('status', { message: msg, level });
+  function log(msg, level) {
+    level = level || 'info';
+    emit('status', { message: msg, level: level });
   }
 
-  // ---------- stream classification ----------
   function isMp4(stream) {
     const url = stream.url || '';
     if (stream.type === 'mp4') return true;
@@ -76,15 +74,17 @@ const chPipeline = (() => {
     if (streams.length) return streams;
     if (Array.isArray(watchData.sources)) {
       streams = watchData.sources
-        .filter(s => s.extractedUrl && s.extractedType)
-        .map(s => ({
-          server: s.name || 'unknown',
-          audio: 'sub',
-          url: s.extractedUrl,
-          type: s.extractedType === 'mp4' ? 'mp4' : 'hls',
-          referer: (s.headers && s.headers.Referer) || null,
-          userAgent: (s.headers && s.headers['User-Agent']) || null
-        }));
+        .filter(function (s) { return s.extractedUrl && s.extractedType; })
+        .map(function (s) {
+          return {
+            server: s.name || 'unknown',
+            audio: 'sub',
+            url: s.extractedUrl,
+            type: s.extractedType === 'mp4' ? 'mp4' : 'hls',
+            referer: (s.headers && s.headers.Referer) || null,
+            userAgent: (s.headers && s.headers['User-Agent']) || null
+          };
+        });
     }
     return streams;
   }
@@ -95,75 +95,75 @@ const chPipeline = (() => {
       const embeds = [];
       for (const s of watchData.sources) {
         if (!s.url) continue;
-        if (s.url.includes('apivtwo')) continue;
-        if (s.url.includes('allanime.day')) continue;
+        if (s.url.indexOf('apivtwo') !== -1) continue;
+        if (s.url.indexOf('allanime.day') !== -1) continue;
         embeds.push({ name: s.name || 'unknown', type: s.audio || 'sub', url: s.url });
       }
       if (embeds.length) watchData.embeds = embeds;
     }
   }
 
-  // ---------- fetch provider payload ----------
   async function fetchProvider(provider, anilistId, audio, ep) {
-    log(`Fetching episodes from ${provider} (${audio})…`);
+    log('Fetching episodes from ' + provider + ' (' + audio + ')…');
 
-    const epRes = await fetch(`${API_BASE}/episodes/${provider}/${anilistId}`, NOSTORE);
-    if (!epRes.ok) throw new Error(`episodes HTTP ${epRes.status}`);
+    const epRes = await fetch(API_BASE + '/episodes/' + provider + '/' + anilistId, NOSTORE);
+    if (!epRes.ok) throw new Error('episodes HTTP ' + epRes.status);
     const epRaw = await epRes.text();
-    if (epRaw.trim().startsWith('<')) throw new Error('episodes returned HTML');
+    if (epRaw.trim().charAt(0) === '<') throw new Error('episodes returned HTML');
     const epData = JSON.parse(epRaw);
     const providerData = epData[provider];
-    if (!providerData || providerData.error) throw new Error(providerData?.error || `${provider}: no data`);
+    if (!providerData || providerData.error) throw new Error((providerData && providerData.error) || (provider + ': no data'));
 
-    const subList = providerData.episodes?.sub || [];
-    const dubList = providerData.episodes?.dub || [];
+    const subList = (providerData.episodes && providerData.episodes.sub) || [];
+    const dubList = (providerData.episodes && providerData.episodes.dub) || [];
     if (subList.length && !S.availability.sub) S.availability.sub = true;
     if (dubList.length && !S.availability.dub) S.availability.dub = true;
     emit('audio', { sub: S.availability.sub, dub: S.availability.dub });
 
-    const list = providerData.episodes?.[audio] || [];
-    if (!list.length) throw new Error(`${provider}: no ${audio} episodes`);
+    const list = (providerData.episodes && providerData.episodes[audio]) || [];
+    if (!list.length) throw new Error(provider + ': no ' + audio + ' episodes');
 
-    const localMax = Math.max(0, ...list.map(e => Number(e.number) || 0));
+    const localMax = Math.max.apply(null, [0].concat(list.map(function (e) { return Number(e.number) || 0; })));
     if (localMax > S.maxEp) S.maxEp = localMax;
 
     const wantNum = Number(ep);
-    let entry = list.find(e => Number(e.number) === wantNum);
+    let entry = list.find(function (e) { return Number(e.number) === wantNum; });
     if (!entry) {
-      log(`${provider}: ep ${wantNum} not found, using first available`, 'warn');
+      log(provider + ': ep ' + wantNum + ' not found, using first available', 'warn');
       entry = list[0];
     }
     const epId = entry.id.split('/').pop();
-    log(`${provider}: using ep ${entry.number} (id ${epId})`);
+    log(provider + ': using ep ' + entry.number + ' (id ' + epId + ')');
 
-    const watchRes = await fetch(`${API_BASE}/watch/${provider}/${anilistId}/${audio}/${epId}`, NOSTORE);
-    if (!watchRes.ok) throw new Error(`watch HTTP ${watchRes.status}`);
+    const watchRes = await fetch(API_BASE + '/watch/' + provider + '/' + anilistId + '/' + audio + '/' + epId, NOSTORE);
+    if (!watchRes.ok) throw new Error('watch HTTP ' + watchRes.status);
     const watchRaw = await watchRes.text();
-    if (watchRaw.trim().startsWith('<')) throw new Error('watch returned HTML');
+    if (watchRaw.trim().charAt(0) === '<') throw new Error('watch returned HTML');
     const watchData = JSON.parse(watchRaw);
 
     const streams = normalizeStreams(watchData);
     normalizeEmbeds(watchData);
-    if (!streams.length) throw new Error(`${provider}: no streams`);
+    if (!streams.length) throw new Error(provider + ': no streams');
 
-    log(`${provider}: ${list.length} eps, ${streams.length} streams`);
-    return { watchData, streams };
+    log(provider + ': ' + list.length + ' eps, ' + streams.length + ' streams');
+    return { watchData: watchData, streams: streams };
   }
 
   function streamsToBuckets(provider, streams, watchData) {
     const hls = [], mp4 = [];
-    streams.forEach((s, i) => {
-      if (!s.url) continue;
-      const item = { provider, stream: s, watchData, isMp4: isMp4(s), streamIndex: i };
-      (item.isMp4 ? mp4 : hls).push(item);
+    streams.forEach(function (s, i) {
+      if (!s.url) return;
+      const item = { provider: provider, stream: s, watchData: watchData, isMp4: isMp4(s), streamIndex: i };
+      if (item.isMp4) mp4.push(item);
+      else hls.push(item);
     });
-    return { hls, mp4 };
+    return { hls: hls, mp4: mp4 };
   }
 
   function drainPending() {
     const total = S.pendingHls.length + S.pendingMp4.length;
     if (!total) return;
-    log(`Draining ${total} pending stream(s)`);
+    log('Draining ' + total + ' pending stream(s)');
     S.workList = S.workList.concat(S.pendingHls, S.pendingMp4);
     S.pendingHls = [];
     S.pendingMp4 = [];
@@ -175,41 +175,41 @@ const chPipeline = (() => {
       for (const p of providers) {
         if (gen !== S.gen || S.aborted) return;
         try {
-          const { watchData, streams } = await fetchProvider(p, S.anilistId, S.audio, S.ep);
+          const result = await fetchProvider(p, S.anilistId, S.audio, S.ep);
           if (gen !== S.gen || S.aborted) return;
-          const { hls, mp4 } = streamsToBuckets(p, streams, watchData);
-          S.pendingHls.push(...hls);
-          S.pendingMp4.push(...mp4);
-          log(`${p}: +${hls.length} HLS, +${mp4.length} MP4 (pending ${S.pendingHls.length + S.pendingMp4.length})`);
+          const buckets = streamsToBuckets(p, result.streams, result.watchData);
+          S.pendingHls.push.apply(S.pendingHls, buckets.hls);
+          S.pendingMp4.push.apply(S.pendingMp4, buckets.mp4);
+          log(p + ': +' + buckets.hls.length + ' HLS, +' + buckets.mp4.length + ' MP4 (pending ' + (S.pendingHls.length + S.pendingMp4.length) + ')');
         } catch (err) {
-          log(`${p} failed: ${err.message}`, 'warn');
+          log(p + ' failed: ' + err.message, 'warn');
         }
       }
     } finally {
       if (gen === S.gen) {
         S.bgActive = false;
-        log(`Background fetch complete (${S.pendingHls.length + S.pendingMp4.length} pending)`);
+        log('Background fetch complete (' + (S.pendingHls.length + S.pendingMp4.length) + ' pending)');
       }
     }
   }
 
   function findNextSubsIndex(fromIndex) {
     for (let i = fromIndex; i < S.workList.length; i++) {
-      const { subs } = chSubs.fromWatchData(S.workList[i]?.watchData);
-      if (subs.length) return i;
+      const info = chSubs.fromWatchData(S.workList[i] && S.workList[i].watchData);
+      if (info.subs.length) return i;
     }
     return -1;
   }
 
   async function waitForSubsOrTimeout(index, gen) {
     if (!S.bgActive) return;
-    log(`No subs on ${S.workList[index].provider} — waiting up to ${SUBTITLE_WAIT_MS / 1000}s…`);
+    log('No subs on ' + S.workList[index].provider + ' — waiting up to ' + (SUBTITLE_WAIT_MS / 1000) + 's…');
     const deadline = Date.now() + SUBTITLE_WAIT_MS;
     while (Date.now() < deadline) {
       if (gen !== S.gen || S.aborted) return;
       if (findNextSubsIndex(index) >= 0) return;
       if (!S.bgActive) return;
-      await new Promise(r => setTimeout(r, 200));
+      await new Promise(function (r) { setTimeout(r, 200); });
     }
   }
 
@@ -223,86 +223,87 @@ const chPipeline = (() => {
         log('Waiting for background provider fetch…');
         const deadline = Date.now() + 8000;
         while (Date.now() < deadline && S.bgActive && (S.pendingHls.length + S.pendingMp4.length) === 0) {
-          await new Promise(r => setTimeout(r, 300));
+          await new Promise(function (r) { setTimeout(r, 300); });
         }
         if (S.pendingHls.length || S.pendingMp4.length) drainPending();
       }
     }
 
     if (index >= S.workList.length) {
-      log(`All ${S.workList.length} attempts exhausted`, 'error');
+      log('All ' + S.workList.length + ' attempts exhausted', 'error');
       emit('exhausted', {});
       return;
     }
 
     const entry = S.workList[index];
-    log(`[${index + 1}/${S.workList.length}] ${entry.provider}/${entry.stream.server} (${entry.isMp4 ? 'mp4' : 'hls'})`);
+    log('[' + (index + 1) + '/' + S.workList.length + '] ' + entry.provider + '/' + entry.stream.server + ' (' + (entry.isMp4 ? 'mp4' : 'hls') + ')');
 
-    const { subs } = chSubs.fromWatchData(entry.watchData);
-    if (!subs.length) {
+    const subInfo = chSubs.fromWatchData(entry.watchData);
+    if (!subInfo.subs.length) {
       await waitForSubsOrTimeout(index, S.gen);
       const subsIndex = findNextSubsIndex(index);
       if (subsIndex >= 0 && subsIndex !== index) {
-        log(`Escalating ${entry.provider} → ${S.workList[subsIndex].provider} for subtitles`);
+        log('Escalating ' + entry.provider + ' → ' + S.workList[subsIndex].provider + ' for subtitles');
         return tryWorkIndex(subsIndex);
       }
-      log(`Playing ${entry.provider} without subs`);
+      log('Playing ' + entry.provider + ' without subs');
     }
 
-    const { referer, userAgent } = chSubs.getStreamRefererUA(entry.stream);
+    const ru = chSubs.getStreamRefererUA(entry.stream);
     S.currentEntry = entry;
-    S.currentStreamReferer = referer;
-    S.currentStreamUa = userAgent;
 
     emit('stream', {
-      entry,
+      entry: entry,
       workIndex: index,
       workTotal: S.workList.length,
-      referer,
-      userAgent,
+      referer: ru.referer,
+      userAgent: ru.userAgent,
       anilistId: S.anilistId,
       ep: S.ep,
       audio: S.audio
     });
   }
 
-  async function start({ anilistId, ep, audio }) {
+  async function start(opts) {
+    const anilistId = opts.anilistId;
+    const ep = Number(opts.ep) || 1;
+    const audio = opts.audio || 'dub';
     if (!anilistId) return;
-    const chain = [DEFAULT_PROVIDER, ...PROVIDER_CHAIN.filter(p => p !== DEFAULT_PROVIDER)];
-    reset({ chain, anilistId, ep: Number(ep) || 1, audio: audio || 'dub' });
+
+    const chain = [DEFAULT_PROVIDER].concat(
+      PROVIDER_CHAIN.filter(function (p) { return p !== DEFAULT_PROVIDER; })
+    );
+    reset({ chain: chain, anilistId: anilistId, ep: ep, audio: audio });
     const myGen = S.gen;
-    S.aborted = false;
 
-    log(`Starting: id=${anilistId} ep=${S.ep} audio=${S.audio}`);
+    log('Starting: id=' + anilistId + ' ep=' + S.ep + ' audio=' + S.audio);
 
-    // First provider (foreground)
     let firstOk = false;
     try {
-      const { watchData, streams } = await fetchProvider(chain[0], anilistId, S.audio, S.ep);
-      const { hls, mp4 } = streamsToBuckets(chain[0], streams, watchData);
-      S.workList = [...hls, ...mp4];
+      const result = await fetchProvider(chain[0], anilistId, S.audio, S.ep);
+      const buckets = streamsToBuckets(chain[0], result.streams, result.watchData);
+      S.workList = buckets.hls.concat(buckets.mp4);
       if (S.workList.length) firstOk = true;
     } catch (err) {
-      log(`${chain[0]} failed: ${err.message}`, 'warn');
+      log(chain[0] + ' failed: ' + err.message, 'warn');
     }
 
-    // Fall through chain if first failed
     let resolvedAtIndex = 0;
     if (!firstOk) {
       for (let i = 1; i < chain.length; i++) {
         if (myGen !== S.gen) return;
         try {
-          const { watchData, streams } = await fetchProvider(chain[i], anilistId, S.audio, S.ep);
-          const { hls, mp4 } = streamsToBuckets(chain[i], streams, watchData);
-          S.workList = [...hls, ...mp4];
+          const result = await fetchProvider(chain[i], anilistId, S.audio, S.ep);
+          const buckets = streamsToBuckets(chain[i], result.streams, result.watchData);
+          S.workList = buckets.hls.concat(buckets.mp4);
           if (S.workList.length) {
             resolvedAtIndex = i;
             firstOk = true;
-            log(`Fallback: using ${chain[i]} (${S.workList.length} stream(s))`);
+            log('Fallback: using ' + chain[i] + ' (' + S.workList.length + ' stream(s))');
             break;
           }
         } catch (err) {
-          log(`${chain[i]} failed: ${err.message}`, 'warn');
+          log(chain[i] + ' failed: ' + err.message, 'warn');
         }
       }
     }
@@ -313,10 +314,9 @@ const chPipeline = (() => {
       return;
     }
 
-    // Background fetch the rest
     const remaining = chain.slice(resolvedAtIndex + 1);
     if (remaining.length) {
-      log(`Background fetch: ${remaining.join(', ')}`);
+      log('Background fetch: ' + remaining.join(', '));
       backgroundFetch(remaining, myGen);
     }
 
@@ -338,7 +338,7 @@ const chPipeline = (() => {
       workList: S.workList,
       workIndex: S.workIndex,
       maxEp: S.maxEp,
-      availability: { ...S.availability },
+      availability: { sub: S.availability.sub, dub: S.availability.dub },
       anilistId: S.anilistId,
       ep: S.ep,
       audio: S.audio
@@ -346,10 +346,13 @@ const chPipeline = (() => {
   }
 
   return {
-    on, emit,
-    start, stop, forceFailover,
-    getState,
-    MAX_UNIQUE_FRAGMENT_ERRORS,
-    isMp4
+    on: on,
+    emit: emit,
+    start: start,
+    stop: stop,
+    forceFailover: forceFailover,
+    getState: getState,
+    MAX_UNIQUE_FRAGMENT_ERRORS: MAX_UNIQUE_FRAGMENT_ERRORS,
+    isMp4: isMp4
   };
 })();
