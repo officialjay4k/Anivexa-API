@@ -341,4 +341,38 @@ async function initHome() {
   try {
     const popular = await anilistQuery(POPULAR_QUERY);
     const items = popular?.Page?.media || [];
-    renderMediaGrid(document.getElementById('popularGrid
+    renderMediaGrid(document.getElementById('popularGrid'), items.slice(0, 12));
+  } catch (err) {
+    console.error('Popular fetch failed:', err);
+    document.getElementById('popularGrid').innerHTML = '<div class="home-empty">Could not load.</div>';
+  }
+
+  try {
+    const sched = await anilistQuery(SCHEDULE_QUERY);
+    renderSchedule(sched?.Page?.media || []);
+  } catch (err) {
+    console.error('Schedule fetch failed:', err);
+    document.getElementById('scheduleList').innerHTML = '<div class="home-empty">Could not load.</div>';
+  }
+
+  // Global report button on home
+  if (typeof mountReportButton === 'function') mountReportButton('Global — Home page');
+
+  const hero = document.getElementById('homeHero');
+  const prev = document.getElementById('heroPrev');
+  const next = document.getElementById('heroNext');
+  if (prev) prev.addEventListener('click', () => goToSlide(heroIndex - 1));
+  if (next) next.addEventListener('click', () => goToSlide(heroIndex + 1));
+  if (hero) {
+    hero.addEventListener('mouseenter', stopHeroRotation);
+    hero.addEventListener('mouseleave', startHeroRotation);
+  }
+
+  window.addEventListener('resize', () => {
+    detectTitleOverflow(document.getElementById('continueRow'));
+    detectTitleOverflow(document.getElementById('latestGrid'));
+    detectTitleOverflow(document.getElementById('popularGrid'));
+  });
+}
+
+document.addEventListener('DOMContentLoaded', initHome);
