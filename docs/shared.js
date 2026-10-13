@@ -50,6 +50,38 @@ function chIsSignedIn() {
   } catch { return false; }
 }
 
+function chGetUser() {
+  try { return JSON.parse(localStorage.getItem(CH.STORAGE_USER) || 'null'); }
+  catch { return null; }
+}
+
+// ---------- Resume / watch-again helper ----------
+// Returns { label, href } given an anilistId.
+// Checks progress for any audio, latest episode saved.
+function chResumeInfo(anilistId) {
+  const fallback = { label: 'Watch Now', href: `/watch?id=${anilistId}&ep=1&audio=dub`, isResume: false, isRewatch: false };
+  if (!anilistId) return fallback;
+
+  let store = {};
+  try { store = JSON.parse(localStorage.getItem(CH.STORAGE_PROGRESS)) || {}; } catch {}
+
+  // Find most recent entry for this show
+  let latest = null;
+  for (const v of Object.values(store)) {
+    if (!v || String(v.anilistId) !== String(anilistId)) continue;
+    if (!latest || (v.updatedAt || 0) > (latest.updatedAt || 0)) latest = v;
+  }
+  if (!latest || !latest.currentTime || latest.currentTime < 5) return fallback;
+
+  const href = `/watch?id=${latest.anilistId}&ep=${latest.ep}&audio=${latest.audio || 'dub'}`;
+  const finished = latest.duration > 0 && latest.currentTime / latest.duration >= 0.92;
+  if (finished) {
+    return { label: 'Watch Again', href: `/watch?id=${latest.anilistId}&ep=1&audio=${latest.audio || 'dub'}`, isResume: false, isRewatch: true };
+  }
+  return { label: 'Resume Watching', href, isResume: true, isRewatch: false };
+}
+
+// ---------- Header ----------
 function mountHeader() {
   const mount = document.getElementById('ch-header-mount');
   if (!mount) return;
@@ -57,12 +89,43 @@ function mountHeader() {
   const path = window.location.pathname;
   const active = (p) => path === p ? ' is-active' : '';
   const signedIn = chIsSignedIn();
+  const user = chGetUser();
 
-  const authBlock = signedIn
-    ? `<a href="/settings" class="ch-header__avatar" aria-label="Profile">
-         <img src="/user-placeholder.png" alt="" onerror="this.style.display='none'">
-       </a>`
-    : `<a href="/settings" class="ch-btn ch-btn--primary ch-btn--sm">Sign In</a>`;
+  // Nav: Home, Dashboard. Settings is now inside PFP dropdown.
+  let navRight = '';
+  if (signedIn) {
+    const initial = (user?.username || 'U').charAt(0).toUpperCase();
+    navRight = `
+      <div class="ch-pfp-wrap" id="chPfpWrap">
+        <button type="button" class="ch-header__avatar" id="chPfpBtn" aria-label="Profile menu">
+          <img src="/user-placeholder.png" alt="" onerror="this.style.display='none'; this.parentNode.innerHTML='<span style=\\'font-weight:800;color:#fff\\'>${initial}</span>'">
+        </button>
+        <div class="ch-pfp-menu" id="chPfpMenu">
+          <div class="ch-pfp-menu__head">
+            <div class="ch-pfp-menu__name">${chEscapeHtml(user?.username || 'User')}</div>
+            <div class="ch-pfp-menu__sub">${chEscapeHtml(user?.email || 'Signed in')}</div>
+          </div>
+          <a href="/settings" class="ch-pfp-menu__item">
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09a1.65 1.65 0 0 0-1.08-1.51 1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09a1.65 1.65 0 0 0 1.51-1.08 1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1.08z"/></svg>
+            Settings
+          </a>
+          <a href="/dashboard" class="ch-pfp-menu__item">
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="7" height="7"/><rect x="14" y="3" width="7" height="7"/><rect x="14" y="14" width="7" height="7"/><rect x="3" y="14" width="7" height="7"/></svg>
+            Dashboard
+          </a>
+          <a href="/settings" class="ch-pfp-menu__item">
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/></svg>
+            Edit Profile
+          </a>
+          <button type="button" class="ch-pfp-menu__item ch-pfp-menu__item--danger" id="chLogout">
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"/><polyline points="16 17 21 12 16 7"/><line x1="21" y1="12" x2="9" y2="12"/></svg>
+            Log Out
+          </button>
+        </div>
+      </div>`;
+  } else {
+    navRight = `<a href="/settings" class="ch-btn ch-btn--primary ch-btn--sm">Sign In</a>`;
+  }
 
   mount.innerHTML = `
     <header class="ch-header">
@@ -92,21 +155,18 @@ function mountHeader() {
         <nav class="ch-header__nav">
           <a href="/home" class="ch-header__link${active('/home')}">Home</a>
           <a href="/dashboard" class="ch-header__link${active('/dashboard')}">Dashboard</a>
-          <a href="/settings" class="ch-header__link${active('/settings')}">Settings</a>
-          ${authBlock}
+          ${navRight}
         </nav>
       </div>
     </header>
   `;
 
+  // Search
   const form = document.getElementById('chSearchForm');
   const input = document.getElementById('chSearchInput');
-  const filterBtn = document.getElementById('chSearchFilter');
-
   if (form && input) {
     const q = new URLSearchParams(location.search).get('q');
     if (q) input.value = q;
-
     form.addEventListener('submit', (e) => {
       e.preventDefault();
       const v = input.value.trim();
@@ -115,19 +175,41 @@ function mountHeader() {
     });
   }
 
+  // Filter button
+  const filterBtn = document.getElementById('chSearchFilter');
   if (filterBtn) {
     filterBtn.addEventListener('click', (e) => {
       e.preventDefault();
-      // TODO: open filter panel — placeholder for now
       filterBtn.classList.toggle('is-active');
-      // Toast as a friendly "not built yet"
-      if (typeof showToast === 'function') {
-        showToast('Filters coming soon');
+      showToast('Filters coming soon');
+    });
+  }
+
+  // PFP dropdown
+  const pfpBtn = document.getElementById('chPfpBtn');
+  const pfpMenu = document.getElementById('chPfpMenu');
+  if (pfpBtn && pfpMenu) {
+    pfpBtn.addEventListener('click', (e) => {
+      e.stopPropagation();
+      pfpMenu.classList.toggle('is-open');
+    });
+    document.addEventListener('click', (e) => {
+      if (!pfpMenu.contains(e.target) && e.target !== pfpBtn) {
+        pfpMenu.classList.remove('is-open');
       }
+    });
+  }
+
+  const logout = document.getElementById('chLogout');
+  if (logout) {
+    logout.addEventListener('click', () => {
+      localStorage.removeItem(CH.STORAGE_USER);
+      window.location.reload();
     });
   }
 }
 
+// ---------- Footer ----------
 function mountFooter() {
   const mount = document.getElementById('ch-footer-mount');
   if (!mount) return;
@@ -171,8 +253,64 @@ function mountFooter() {
   `;
 }
 
-// Tiny toast helper — usable from any page
-function showToast(message, ms = 2000) {
+// ---------- Report button (global stub) ----------
+function mountReportButton(context) {
+  if (document.getElementById('chReportBtn')) return;
+  const btn = document.createElement('button');
+  btn.type = 'button';
+  btn.className = 'ch-report-btn';
+  btn.id = 'chReportBtn';
+  btn.innerHTML = `
+    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round">
+      <path d="M4 22V4a2 2 0 0 1 2-2h11l-1.5 4L17 10H6"/>
+    </svg>
+    <span>${context || 'Report Issue'}</span>
+  `;
+  btn.addEventListener('click', () => openReportModal(context));
+  document.body.appendChild(btn);
+}
+
+function openReportModal(context) {
+  let modal = document.getElementById('chReportModal');
+  if (!modal) {
+    modal = document.createElement('div');
+    modal.id = 'chReportModal';
+    modal.className = 'ch-report-modal';
+    modal.innerHTML = `
+      <div class="ch-report-modal__inner">
+        <h3 class="ch-report-modal__title">Report an Issue</h3>
+        <p class="ch-report-modal__sub" id="chReportSub">Tell us what's wrong. We read every report.</p>
+        <textarea class="ch-report-modal__textarea" id="chReportText" placeholder="Describe the issue..."></textarea>
+        <div class="ch-report-modal__actions">
+          <button type="button" class="ch-btn ch-btn--quiet ch-btn--sm" id="chReportCancel">Cancel</button>
+          <button type="button" class="ch-btn ch-btn--primary ch-btn--sm" id="chReportSubmit">Submit</button>
+        </div>
+      </div>
+    `;
+    document.body.appendChild(modal);
+
+    modal.addEventListener('click', (e) => {
+      if (e.target === modal) modal.classList.remove('is-open');
+    });
+    document.getElementById('chReportCancel').addEventListener('click', () => {
+      modal.classList.remove('is-open');
+    });
+    document.getElementById('chReportSubmit').addEventListener('click', () => {
+      const text = document.getElementById('chReportText').value.trim();
+      if (!text) { showToast('Please describe the issue'); return; }
+      modal.classList.remove('is-open');
+      document.getElementById('chReportText').value = '';
+      showToast('Thanks — report received');
+    });
+  }
+  document.getElementById('chReportSub').textContent = context
+    ? `Context: ${context}`
+    : 'Tell us what\'s wrong. We read every report.';
+  modal.classList.add('is-open');
+}
+
+// ---------- Toast ----------
+function showToast(message, ms = 2200) {
   const existing = document.querySelector('.ch-toast');
   if (existing) existing.remove();
   const el = document.createElement('div');
@@ -181,7 +319,10 @@ function showToast(message, ms = 2000) {
   document.body.appendChild(el);
   setTimeout(() => el.remove(), ms);
 }
+
 window.showToast = showToast;
+window.chResumeInfo = chResumeInfo;
+window.mountReportButton = mountReportButton;
 
 document.addEventListener('DOMContentLoaded', () => {
   mountHeader();
