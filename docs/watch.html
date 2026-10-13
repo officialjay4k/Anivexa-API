@@ -8,20 +8,19 @@
   <link rel="apple-touch-icon" href="/apple-touch-icon.png">
   <link rel="stylesheet" href="/shared.css">
   <link rel="stylesheet" href="/watch.css">
-  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/artplayer@5.4.0/dist/artplayer.css">
 </head>
 <body>
 
   <div id="ch-header-mount"></div>
 
   <main class="watch-main">
-    <div class="ch-container watch-layout">
+    <div class="ch-container">
 
-      <div class="watch-primary">
-
-        <div class="watch-player-wrap">
-          <div class="watch-player" id="watchPlayer">
-            <div class="watch-player__badge" id="watchBadge">Loading…</div>
+      <div class="watch-top">
+        <div class="watch-top__player">
+          <div class="watch-player-wrap">
+            <div class="watch-player" id="watchPlayer"></div>
+            <div class="watch-player-badge" id="watchBadge">Loading…</div>
           </div>
           <div class="watch-controls" id="watchControls">
             <button class="watch-toggle" id="btnAutoSkip" type="button">Auto Skip</button>
@@ -35,40 +34,52 @@
           </div>
         </div>
 
-        <section class="watch-info">
-          <h1 class="watch-title" id="watchTitle">Loading…</h1>
-          <div class="watch-meta" id="watchMeta"></div>
-          <div class="watch-actions">
-            <a href="#" class="ch-btn ch-btn--quiet ch-btn--sm" id="watchPreviewLink">View Details</a>
-            <button class="ch-btn ch-btn--ghost ch-btn--sm" id="watchWatchlistBtn" type="button">Add to List</button>
+        <aside class="watch-top__episodes">
+          <div class="watch-ep-head">
+            <h3 class="watch-ep-title">Episodes</h3>
+            <span class="watch-ep-count" id="watchEpCount">—</span>
           </div>
-        </section>
-
-        <section class="watch-comments">
-          <header class="watch-comments__head">
-            <h3 class="watch-comments__title">Comments</h3>
-            <span class="watch-comments__count">0</span>
-          </header>
-          <div class="watch-comments__empty">
-            <svg width="34" height="34" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round">
-              <path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"></path>
-            </svg>
-            <p>Comments are coming soon.</p>
-            <span>Sign in to be notified when they launch.</span>
+          <div class="watch-ep-body" id="watchEpList">
+            <div class="watch-ep-loading">Loading episodes…</div>
           </div>
-        </section>
-
+        </aside>
       </div>
 
-      <aside class="watch-sidebar">
-        <div class="watch-sidebar__head">
-          <h3 class="watch-sidebar__title">Episodes</h3>
-          <span class="watch-sidebar__count" id="watchEpCount">—</span>
+      <section class="watch-info">
+        <h1 class="watch-title" id="watchTitle">Loading…</h1>
+        <div class="watch-meta" id="watchMeta"></div>
+        <div class="watch-actions">
+          <a href="#" class="ch-btn ch-btn--quiet ch-btn--sm" id="watchPreviewLink">View Details</a>
+          <button class="ch-btn ch-btn--ghost ch-btn--sm" id="watchWatchlistBtn" type="button">Add to List</button>
         </div>
-        <div class="watch-sidebar__list" id="watchEpList">
-          <div class="watch-sidebar__loading">Loading…</div>
+      </section>
+
+      <div class="watch-bottom">
+        <div class="watch-bottom__main">
+          <section class="watch-comments">
+            <header class="watch-comments__head">
+              <h3 class="watch-comments__title">Comments</h3>
+              <span class="watch-comments__count">0</span>
+            </header>
+            <div class="watch-comments__empty">
+              <svg width="34" height="34" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round">
+                <path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"></path>
+              </svg>
+              <p>Comments are coming soon.</p>
+              <span>Sign in to be notified when they launch.</span>
+            </div>
+          </section>
         </div>
-      </aside>
+
+        <aside class="watch-bottom__similar">
+          <div class="watch-similar-head">
+            <h3 class="watch-similar-title">Similar Anime</h3>
+          </div>
+          <div class="watch-similar-list" id="watchSimilarList">
+            <div class="watch-similar-loading">Loading…</div>
+          </div>
+        </aside>
+      </div>
 
     </div>
   </main>
