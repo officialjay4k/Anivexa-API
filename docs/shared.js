@@ -80,6 +80,13 @@ function mountHeader() {
               </svg>
             </span>
             <input type="text" id="chSearchInput" placeholder="Search anime..." aria-label="Search anime">
+            <button type="button" class="ch-search__filter" id="chSearchFilter" aria-label="Filters" title="Filters">
+              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round">
+                <line x1="4" y1="6" x2="20" y2="6"></line>
+                <line x1="7" y1="12" x2="17" y2="12"></line>
+                <line x1="10" y1="18" x2="14" y2="18"></line>
+              </svg>
+            </button>
           </div>
         </form>
         <nav class="ch-header__nav">
@@ -94,6 +101,8 @@ function mountHeader() {
 
   const form = document.getElementById('chSearchForm');
   const input = document.getElementById('chSearchInput');
+  const filterBtn = document.getElementById('chSearchFilter');
+
   if (form && input) {
     const q = new URLSearchParams(location.search).get('q');
     if (q) input.value = q;
@@ -103,6 +112,18 @@ function mountHeader() {
       const v = input.value.trim();
       if (!v) return;
       window.location.href = `/home?q=${encodeURIComponent(v)}`;
+    });
+  }
+
+  if (filterBtn) {
+    filterBtn.addEventListener('click', (e) => {
+      e.preventDefault();
+      // TODO: open filter panel — placeholder for now
+      filterBtn.classList.toggle('is-active');
+      // Toast as a friendly "not built yet"
+      if (typeof showToast === 'function') {
+        showToast('Filters coming soon');
+      }
     });
   }
 }
@@ -138,9 +159,9 @@ function mountFooter() {
       <div class="ch-container ch-footer__bottom">
         <div class="ch-footer__madeby">
           <span class="ch-footer__madeby-label">Made by</span>
-          <span class="ch-madeby-brand">
+          <a class="ch-madeby-brand" href="https://4kun.top" target="_blank" rel="noopener noreferrer" aria-label="Visit 4Kun">
             <span class="g">4</span><span class="b">Kun</span>
-          </span>
+          </a>
         </div>
         <div class="ch-footer__legal">
           © 2026 Cloud Hub · Not affiliated with any studio or distributor.
@@ -149,6 +170,18 @@ function mountFooter() {
     </footer>
   `;
 }
+
+// Tiny toast helper — usable from any page
+function showToast(message, ms = 2000) {
+  const existing = document.querySelector('.ch-toast');
+  if (existing) existing.remove();
+  const el = document.createElement('div');
+  el.className = 'ch-toast';
+  el.textContent = message;
+  document.body.appendChild(el);
+  setTimeout(() => el.remove(), ms);
+}
+window.showToast = showToast;
 
 document.addEventListener('DOMContentLoaded', () => {
   mountHeader();
