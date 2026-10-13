@@ -1,17 +1,19 @@
 // ============================================================
 // Cloud Hub — player.js
-// Mounts Artplayer + hls.js for a given stream. Owns:
-//   - video element + hls instance
-//   - subtitle selector (CC menu)
-//   - skip intro/outro button + progress bar markers
-//   - preview tooltip on progress bar hover
-//   - rewind/forward 5s controls
-// Callbacks pass control back to watch.js for orchestration.
+// Mounts Artplayer + hls.js for a stream. Owns the CC menu,
+// skip button, progress markers, preview tooltip, +/- 5s.
 // ============================================================
 
-const chPlayer = (() => {
+const chPlayer = (function () {
   const FALLBACK_FONT_URL = 'https://cdn.jsdelivr.net/fontsource/fonts/roboto@latest/latin-400-normal.woff2';
-  const MAX_UNIQUE_FRAGMENT_ERRORS = chPipeline.MAX_UNIQUE_FRAGMENT_ERRORS;
+
+  // Read lazily so this file loads even if pipeline.js is late.
+  function getMaxFragmentErrors() {
+    if (typeof chPipeline !== 'undefined' && chPipeline && chPipeline.MAX_UNIQUE_FRAGMENT_ERRORS) {
+      return chPipeline.MAX_UNIQUE_FRAGMENT_ERRORS;
+    }
+    return 3;
+  }
 
   let art = null;
   let hls = null;
@@ -23,29 +25,27 @@ const chPlayer = (() => {
   let skipIntervals = { op: null, ed: null };
   let skipFired = { op: false, ed: false };
   let currentAudioPref = 'dub';
-  let currentSubtitlesOn = false;
   let settingsRef = null;
 
   const ICON_REW = '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="width:24px;height:24px;display:block;"><path d="M12 5V1L7 6l5 5V7"/><path d="M20 12a8 8 0 1 1-2.34-5.66"/><text x="12" y="16" text-anchor="middle" font-size="8" fill="currentColor" stroke="none" font-weight="700" font-family="system-ui">5</text></svg>';
   const ICON_FWD = '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="width:24px;height:24px;display:block;"><path d="M12 5V1l5 5-5 5V7"/><path d="M4 12a8 8 0 1 0 2.34-5.66"/><text x="12" y="16" text-anchor="middle" font-size="8" fill="currentColor" stroke="none" font-weight="700" font-family="system-ui">5</text></svg>';
 
-  // ---------- preview tooltip ----------
   function ensurePreviewTooltip() {
     let el = document.querySelector('.watch-preview-tip');
     if (el) return el;
     el = document.createElement('div');
     el.className = 'watch-preview-tip';
-    el.innerHTML = `<video muted playsinline preload="auto"></video><div class="watch-preview-tip__time">0:00</div>`;
+    el.innerHTML = '<video muted playsinline preload="auto"></video><div class="watch-preview-tip__time">0:00</div>';
     document.body.appendChild(el);
     return el;
   }
 
   function destroyPreview() {
-    if (previewHls) { try { previewHls.destroy(); } catch {} previewHls = null; }
+    if (previewHls) { try { previewHls.destroy(); } catch (e) {} previewHls = null; }
     const el = document.querySelector('.watch-preview-tip');
     if (el) {
       const v = el.querySelector('video');
-      try { v.pause(); v.removeAttribute('src'); v.load(); } catch {}
+      try { v.pause(); v.removeAttribute('src'); v.load(); } catch (e) {}
       el.style.display = 'none';
     }
   }
@@ -68,8 +68,8 @@ const chPlayer = (() => {
   }
 
   function onProgressMove(e) {
-    const progressEl = art?.template?.$progress;
-    if (!progressEl || !art?.duration || !isFinite(art.duration)) return;
+    const progressEl = art && art.template && art.template.$progress;
+    if (!progressEl || !art.duration || !isFinite(art.duration)) return;
     const rect = progressEl.getBoundingClientRect();
     const ratio = Math.max(0, Math.min(1, (e.clientX - rect.left) / rect.width));
     const t = ratio * art.duration;
@@ -82,7 +82,7 @@ const chPlayer = (() => {
     const now = Date.now();
     if (now - previewLastSeek > 80) {
       previewLastSeek = now;
-      try { video.currentTime = t; } catch {}
+      try { video.currentTime = t; } catch (e) {}
     }
     const tipW = 184;
     let left = rect.left + rect.width * ratio - tipW / 2;
@@ -95,21 +95,20 @@ const chPlayer = (() => {
   }
   function onProgressLeave() {
     if (previewHideTimer) clearTimeout(previewHideTimer);
-    previewHideTimer = setTimeout(() => {
+    previewHideTimer = setTimeout(function () {
       const tip = document.querySelector('.watch-preview-tip');
       if (tip) tip.style.display = 'none';
     }, 140);
   }
   function attachPreview() {
-    const progressEl = art?.template?.$progress;
+    const progressEl = art && art.template && art.template.$progress;
     if (!progressEl) return;
     progressEl.addEventListener('mousemove', onProgressMove);
     progressEl.addEventListener('mouseleave', onProgressLeave);
   }
 
-  // ---------- skip button ----------
   function mountSkipButton() {
-    const playerEl = art?.template?.$player;
+    const playerEl = art && art.template && art.template.$player;
     if (!playerEl) return;
     const old = playerEl.querySelector('.watch-skip-btn');
     if (old) old.remove();
@@ -121,19 +120,20 @@ const chPlayer = (() => {
   }
 
   function updateSkipButton() {
-    if (!art?.video) return;
+    if (!art || !art.video) return;
     const t = art.video.currentTime;
     const inOp = skipIntervals.op && t >= skipIntervals.op.startTime && t < skipIntervals.op.endTime;
     const inEd = skipIntervals.ed && t >= skipIntervals.ed.startTime && t < skipIntervals.ed.endTime;
     if (!inOp && !inEd) {
       if (skipBtn) skipBtn.style.display = 'none';
-      skipFired.op = false; skipFired.ed = false;
+      skipFired.op = false;
+      skipFired.ed = false;
       return;
     }
     const interval = inOp ? skipIntervals.op : skipIntervals.ed;
     const label = inOp ? 'Intro' : 'Outro';
     const key = inOp ? 'op' : 'ed';
-    const autoSkip = !!settingsRef?.autoSkip;
+    const autoSkip = !!(settingsRef && settingsRef.autoSkip);
     if (autoSkip) {
       if (!skipFired[key]) {
         skipFired[key] = true;
@@ -143,24 +143,23 @@ const chPlayer = (() => {
       return;
     }
     if (skipBtn) {
-      skipBtn.textContent = `Skip ${label} ➔`;
+      skipBtn.textContent = 'Skip ' + label + ' ➔';
       skipBtn.style.display = 'block';
-      skipBtn.onclick = (e) => {
+      skipBtn.onclick = function (e) {
         e.stopPropagation();
         art.currentTime = interval.endTime;
       };
     }
   }
 
-  // ---------- progress markers ----------
   function mountMarkers() {
-    if (!art?.template?.$progress) return;
+    if (!art || !art.template || !art.template.$progress) return;
     const inner = art.template.$progress.querySelector('.art-control-progress-inner');
     if (!inner) return;
-    inner.querySelectorAll('.watch-marker').forEach(el => el.remove());
+    inner.querySelectorAll('.watch-marker').forEach(function (el) { el.remove(); });
     if (!art.duration || !isFinite(art.duration)) return;
 
-    const add = (interval, label) => {
+    function add(interval, label) {
       if (!interval) return;
       const start = Math.max(0, interval.startTime);
       const end = Math.min(art.duration, interval.endTime);
@@ -172,8 +171,8 @@ const chPlayer = (() => {
       m.title = label;
       Object.assign(m.style, {
         position: 'absolute',
-        left: `${left}%`,
-        width: `${width}%`,
+        left: left + '%',
+        width: width + '%',
         top: '0',
         height: '100%',
         background: 'linear-gradient(90deg, #e50914, #ff2b3a)',
@@ -183,67 +182,57 @@ const chPlayer = (() => {
         zIndex: '25'
       });
       inner.appendChild(m);
-    };
+    }
     add(skipIntervals.op, 'Intro');
     add(skipIntervals.ed, 'Outro');
   }
 
-  // ---------- libass worker + wasm ----------
-  async function fetchAsBlobUrl(proxyUrl, { expectWasm = false, mimeType = 'application/javascript' } = {}) {
+  async function fetchAsBlobUrl(proxyUrl, opts) {
+    opts = opts || {};
     const res = await fetch(proxyUrl, { cache: 'no-store' });
-    if (!res.ok) throw new Error(`HTTP ${res.status}`);
+    if (!res.ok) throw new Error('HTTP ' + res.status);
     const buf = await res.arrayBuffer();
-    if (expectWasm) {
+    if (opts.expectWasm) {
       const head = new Uint8Array(buf.slice(0, 8));
       const isWasm = head[0] === 0x00 && head[1] === 0x61 && head[2] === 0x73 && head[3] === 0x6d;
       if (!isWasm) throw new Error('Not WASM');
     }
-    return URL.createObjectURL(new Blob([buf], { type: mimeType }));
+    return URL.createObjectURL(new Blob([buf], { type: opts.mimeType || 'application/javascript' }));
   }
 
   async function prepareLibassAssets(isMp4) {
     if (isMp4) return { wasmBlobUrl: null, workerBlobUrl: null };
-    let wasmBlobUrl = null, workerBlobUrl = null;
+    let wasmBlobUrl = null;
+    let workerBlobUrl = null;
     try {
-      wasmBlobUrl = await fetchAsBlobUrl(
-        chSubs.proxyStatic('subtitles-octopus-worker.wasm'),
-        { expectWasm: true, mimeType: 'application/wasm' }
-      );
-    } catch {}
+      wasmBlobUrl = await fetchAsBlobUrl(chSubs.proxyStatic('subtitles-octopus-worker.wasm'), {
+        expectWasm: true,
+        mimeType: 'application/wasm'
+      });
+    } catch (e) {}
     try {
       const wr = await fetch(chSubs.proxyStatic('subtitles-octopus-worker.js?v=1'), { cache: 'no-store' });
       if (wr.ok) {
         let wt = await wr.text();
         if (wasmBlobUrl) {
           wt = wt
-            .replace(/"subtitles-octopus-worker\.wasm"/g, `"${wasmBlobUrl}"`)
-            .replace(/'subtitles-octopus-worker\.wasm'/g, `'${wasmBlobUrl}'`)
+            .replace(/"subtitles-octopus-worker\.wasm"/g, '"' + wasmBlobUrl + '"')
+            .replace(/'subtitles-octopus-worker\.wasm'/g, "'" + wasmBlobUrl + "'")
             .replace(/subtitles-octopus-worker\.wasm/g, wasmBlobUrl);
         }
         workerBlobUrl = URL.createObjectURL(new Blob([wt], { type: 'application/javascript' }));
       }
-    } catch {}
-    return { wasmBlobUrl, workerBlobUrl };
+    } catch (e) {}
+    return { wasmBlobUrl: wasmBlobUrl, workerBlobUrl: workerBlobUrl };
   }
 
-  // ---------- main mount ----------
-  async function mount({
-    container, streamUrl, isMp4, watchData, fonts,
-    settings, // { autoSkip, autoPlay, subtitlesOn }
-    subtitlesOn, onSelectSubtitle,
-    resumeAt,
-    callbacks = {}
-  }) {
+  async function mount(opts) {
     unmount();
-    settingsRef = settings || {};
-    currentAudioPref = settings?.audio || 'dub';
-    currentSubtitlesOn = !!subtitlesOn;
+    settingsRef = opts.settings || {};
+    currentAudioPref = (opts.settings && opts.settings.audio) || 'dub';
+    const isMp4 = !!opts.isMp4;
 
-    const {
-      onReady, onPlaying, onTimeUpdate, onEnded, onError, onHlsFatal, onDestroy, onManifest
-    } = callbacks;
-
-    // libass assets
+    const callbacks = opts.callbacks || {};
     const { wasmBlobUrl, workerBlobUrl } = await prepareLibassAssets(isMp4);
 
     const libassOpts = {
@@ -252,23 +241,20 @@ const chPlayer = (() => {
       wasmUrl: wasmBlobUrl,
       legacyWorkerUrl: workerBlobUrl
     };
-    if (fonts && Object.keys(fonts).length > 0) {
-      libassOpts.availableFonts = fonts;
+    if (opts.fonts && Object.keys(opts.fonts).length) {
+      libassOpts.availableFonts = opts.fonts;
     }
 
-    // subtitle menu
-    const subInfo = chSubs.fromWatchData(watchData);
+    const subInfo = chSubs.fromWatchData(opts.watchData);
     const subMenu = chSubs.buildMenu(subInfo.subs, subInfo.referer, subInfo.userAgent, {
-      subtitlesOn
+      subtitlesOn: !!opts.subtitlesOn
     });
 
-    const doAutoplay = !!settings?.autoPlay;
-
     const artConfig = {
-      container,
-      url: streamUrl,
+      container: opts.container,
+      url: opts.streamUrl,
       type: isMp4 ? 'mp4' : 'm3u8',
-      autoplay: doAutoplay,
+      autoplay: !!(opts.settings && opts.settings.autoPlay),
       muted: false,
       volume: 1,
       setting: false,
@@ -289,8 +275,8 @@ const chPlayer = (() => {
           index: 11,
           html: ICON_REW,
           tooltip: 'Rewind 5s',
-          click: () => {
-            if (!art?.video) return;
+          click: function () {
+            if (!art || !art.video) return;
             art.video.currentTime = Math.max(0, art.video.currentTime - 5);
           }
         },
@@ -300,12 +286,10 @@ const chPlayer = (() => {
           index: 12,
           html: ICON_FWD,
           tooltip: 'Forward 5s',
-          click: () => {
-            if (!art?.video) return;
-            art.video.currentTime = Math.min(
-              (art.duration || art.video.duration || Infinity),
-              art.video.currentTime + 5
-            );
+          click: function () {
+            if (!art || !art.video) return;
+            const dur = art.duration || art.video.duration || Infinity;
+            art.video.currentTime = Math.min(dur, art.video.currentTime + 5);
           }
         },
         {
@@ -314,7 +298,7 @@ const chPlayer = (() => {
           html: 'CC',
           selector: subMenu,
           onSelect: function (item) {
-            if (typeof onSelectSubtitle === 'function') onSelectSubtitle(item);
+            if (typeof opts.onSelectSubtitle === 'function') opts.onSelectSubtitle(item);
             chSubs.applyToPlayer(art, item);
             return 'CC';
           }
@@ -329,7 +313,7 @@ const chPlayer = (() => {
             if (video.canPlayType('application/vnd.apple.mpegurl')) video.src = url;
             return;
           }
-          if (hls) { try { hls.destroy(); } catch {} hls = null; }
+          if (hls) { try { hls.destroy(); } catch (e) {} hls = null; }
           const myHls = new Hls({
             enableWorker: true,
             fragLoadingMaxRetry: 4,
@@ -341,70 +325,71 @@ const chPlayer = (() => {
           myHls.loadSource(url);
           myHls.attachMedia(video);
 
-          const applyAudioPreference = () => {
+          const applyAudioPreference = function () {
             const tracks = myHls.audioTracks || [];
             if (tracks.length < 2) return;
-            const sig = `${currentAudioPref}:${tracks.length}:${tracks.map(t => t.lang).join(',')}`;
+            const sig = currentAudioPref + ':' + tracks.length + ':' + tracks.map(function (t) { return t.lang; }).join(',');
             if (applyAudioPreference._sig === sig) return;
             applyAudioPreference._sig = sig;
 
             const wantDub = currentAudioPref === 'dub';
             const dubRe = /\b(dub|english|eng)\b/i;
             const subRe = /\b(japanese|jap|native|sub)\b/i;
-            let bestIdx = 0, bestScore = -Infinity;
+            let bestIdx = 0;
+            let bestScore = -Infinity;
             for (let i = 0; i < tracks.length; i++) {
               const t = tracks[i];
-              const label = `${t.name || ''} ${t.lang || ''}`;
+              const label = (t.name || '') + ' ' + (t.lang || '');
               const l = (t.lang || '').toLowerCase();
               let score = 0;
               if (wantDub) {
                 if (dubRe.test(label)) score += 10;
-                if (l === 'en' || l === 'eng' || l.startsWith('en-')) score += 8;
-                if (l === 'ja' || l === 'jpn' || l.startsWith('ja-')) score -= 30;
+                if (l === 'en' || l === 'eng' || l.indexOf('en-') === 0) score += 8;
+                if (l === 'ja' || l === 'jpn' || l.indexOf('ja-') === 0) score -= 30;
                 if (subRe.test(label)) score -= 10;
                 if (t.default) score += 1;
               } else {
                 if (subRe.test(label)) score += 10;
-                if (l === 'ja' || l === 'jpn' || l.startsWith('ja-')) score += 8;
-                if (l === 'en' || l === 'eng' || l.startsWith('en-')) score -= 30;
+                if (l === 'ja' || l === 'jpn' || l.indexOf('ja-') === 0) score += 8;
+                if (l === 'en' || l === 'eng' || l.indexOf('en-') === 0) score -= 30;
                 if (dubRe.test(label)) score -= 10;
                 if (t.default) score += 1;
               }
               if (score > bestScore) { bestScore = score; bestIdx = i; }
             }
-            try {
-              myHls.audioTrack = bestIdx;
-            } catch {}
+            try { myHls.audioTrack = bestIdx; } catch (e) {}
           };
 
-          myHls.on(Hls.Events.MANIFEST_PARSED, (e, data) => {
-            if (typeof onManifest === 'function') {
-              onManifest({
-                levels: data.levels?.length || 0,
-                audioTracks: myHls.audioTracks?.length || 0
+          myHls.on(Hls.Events.MANIFEST_PARSED, function (e, data) {
+            if (typeof callbacks.onManifest === 'function') {
+              callbacks.onManifest({
+                levels: (data.levels && data.levels.length) || 0,
+                audioTracks: (myHls.audioTracks && myHls.audioTracks.length) || 0
               });
             }
             applyAudioPreference();
           });
           myHls.on(Hls.Events.AUDIO_TRACKS_UPDATED, applyAudioPreference);
 
-          myHls.on(Hls.Events.ERROR, (e, data) => {
+          myHls.on(Hls.Events.ERROR, function (e, data) {
             if (myHls !== hls) return;
             if (data.fatal) {
-              const errStr = `${data.type}/${data.details}`;
-              try { myHls.destroy(); } catch {}
+              const errStr = data.type + '/' + data.details;
+              try { myHls.destroy(); } catch (ex) {}
               if (hls === myHls) hls = null;
-              if (typeof onHlsFatal === 'function') onHlsFatal(errStr);
+              if (typeof callbacks.onHlsFatal === 'function') callbacks.onHlsFatal(errStr);
               return;
             }
             if (data.frag && data.type === Hls.ErrorTypes.NETWORK_ERROR) {
               const u = data.frag.url || '';
               if (u && !failedFragments.has(u)) {
                 failedFragments.add(u);
-                if (failedFragments.size >= MAX_UNIQUE_FRAGMENT_ERRORS) {
-                  try { myHls.destroy(); } catch {}
+                if (failedFragments.size >= getMaxFragmentErrors()) {
+                  try { myHls.destroy(); } catch (ex) {}
                   if (hls === myHls) hls = null;
-                  if (typeof onHlsFatal === 'function') onHlsFatal(`${failedFragments.size} unique fragment failures`);
+                  if (typeof callbacks.onHlsFatal === 'function') {
+                    callbacks.onHlsFatal(failedFragments.size + ' unique fragment failures');
+                  }
                 }
               }
             }
@@ -413,8 +398,8 @@ const chPlayer = (() => {
       };
     }
 
-    if (subtitlesOn && subInfo.subs.length) {
-      const chosen = subInfo.subs.find(s => s.default) || subInfo.subs[0];
+    if (opts.subtitlesOn && subInfo.subs.length) {
+      const chosen = subInfo.subs.find(function (s) { return s.default; }) || subInfo.subs[0];
       if (chosen) {
         artConfig.subtitle = {
           url: chSubs.proxy(chSubs.url(chosen), subInfo.referer, subInfo.userAgent),
@@ -427,46 +412,46 @@ const chPlayer = (() => {
 
     artConfig.plugins = [artplayerPluginLibass(libassOpts)];
 
-    return await new Promise((resolve) => {
+    return await new Promise(function (resolve) {
       art = new Artplayer(artConfig);
 
-      art.on('ready', () => {
+      art.on('ready', function () {
         mountSkipButton();
         attachPreview();
-        initPreview(streamUrl, isMp4);
-        if (typeof onReady === 'function') onReady(art);
-        setTimeout(() => resolve({ art, destroy: unmount }), 200);
+        initPreview(opts.streamUrl, isMp4);
+        if (typeof callbacks.onReady === 'function') callbacks.onReady(art);
+        setTimeout(function () { resolve({ art: art, destroy: unmount }); }, 200);
       });
 
-      art.on('video:loadedmetadata', () => {
+      art.on('video:loadedmetadata', function () {
         mountMarkers();
-        if (resumeAt && resumeAt > 1) {
-          try { art.currentTime = resumeAt; } catch {}
+        if (opts.resumeAt && opts.resumeAt > 1) {
+          try { art.currentTime = opts.resumeAt; } catch (e) {}
         }
       });
 
-      art.on('video:timeupdate', () => {
+      art.on('video:timeupdate', function () {
         updateSkipButton();
-        if (typeof onTimeUpdate === 'function' && art?.video) {
-          onTimeUpdate(art.video.currentTime, art.video.duration);
+        if (typeof callbacks.onTimeUpdate === 'function' && art && art.video) {
+          callbacks.onTimeUpdate(art.video.currentTime, art.video.duration);
         }
       });
 
-      art.on('video:error', () => {
-        if (typeof onError === 'function') onError('video element error');
+      art.on('video:error', function () {
+        if (typeof callbacks.onError === 'function') callbacks.onError('video element error');
       });
 
-      art.on('video:playing', () => {
+      art.on('video:playing', function () {
         failedFragments = new Set();
-        if (typeof onPlaying === 'function') onPlaying(art);
+        if (typeof callbacks.onPlaying === 'function') callbacks.onPlaying(art);
       });
 
-      art.on('video:ended', () => {
-        if (typeof onEnded === 'function') onEnded();
+      art.on('video:ended', function () {
+        if (typeof callbacks.onEnded === 'function') callbacks.onEnded();
       });
 
-      art.on('destroy', () => {
-        if (typeof onDestroy === 'function') onDestroy();
+      art.on('destroy', function () {
+        if (typeof callbacks.onDestroy === 'function') callbacks.onDestroy();
       });
     });
   }
@@ -475,27 +460,24 @@ const chPlayer = (() => {
     skipIntervals = { op: op || null, ed: ed || null };
     skipFired = { op: false, ed: false };
   }
-
-  function setAudioPreference(audio) {
-    currentAudioPref = audio || 'dub';
-  }
-
-  function setSettings(s) {
-    settingsRef = s || {};
-  }
+  function setAudioPreference(audio) { currentAudioPref = audio || 'dub'; }
+  function setSettings(s) { settingsRef = s || {}; }
+  function getArt() { return art; }
 
   function unmount() {
     destroyPreview();
-    if (hls) { try { hls.destroy(); } catch {} hls = null; }
-    if (art) { try { art.destroy(true); } catch {} art = null; }
+    if (hls) { try { hls.destroy(); } catch (e) {} hls = null; }
+    if (art) { try { art.destroy(true); } catch (e) {} art = null; }
     skipBtn = null;
     failedFragments = new Set();
   }
 
-  function getArt() { return art; }
-
   return {
-    mount, unmount, getArt,
-    setSkipIntervals, setAudioPreference, setSettings
+    mount: mount,
+    unmount: unmount,
+    getArt: getArt,
+    setSkipIntervals: setSkipIntervals,
+    setAudioPreference: setAudioPreference,
+    setSettings: setSettings
   };
 })();
