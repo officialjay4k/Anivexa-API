@@ -6,26 +6,27 @@
   padding-block: var(--s-5) var(--s-8);
 }
 
-.watch-layout {
+/* ============================================================
+   Top: player + episodes sidebar (same height)
+   ============================================================ */
+.watch-top {
   display: grid;
-  grid-template-columns: minmax(0, 1fr) 300px;
-  gap: var(--s-5);
-  align-items: start;
+  grid-template-columns: minmax(0, 1fr) 340px;
+  gap: var(--s-4);
+  align-items: stretch;
 }
-@media (max-width: 1050px) {
-  .watch-layout { grid-template-columns: 1fr; }
+@media (max-width: 1000px) {
+  .watch-top { grid-template-columns: 1fr; }
 }
 
-.watch-primary { min-width: 0; }
-
-/* ---------- Player ---------- */
-.watch-player-wrap {
+.watch-top__player {
   display: flex;
   flex-direction: column;
   gap: var(--s-3);
+  min-width: 0;
 }
 
-.watch-player {
+.watch-player-wrap {
   position: relative;
   width: 100%;
   aspect-ratio: 16 / 9;
@@ -35,18 +36,14 @@
   border: 1px solid var(--ch-border-soft);
   box-shadow: 0 20px 60px rgba(0,0,0,0.7);
 }
-.watch-player .artplayer-app {
-  width: 100%;
-  height: 100%;
+.watch-player {
+  position: absolute;
+  inset: 0;
 }
-.watch-player iframe {
-  width: 100%;
-  height: 100%;
-  border: 0;
-  display: block;
-}
+.watch-player .artplayer-app { width: 100%; height: 100%; }
+.watch-player iframe { width: 100%; height: 100%; border: 0; display: block; }
 
-.watch-player__badge {
+.watch-player-badge {
   position: absolute;
   top: 12px;
   left: 12px;
@@ -64,35 +61,32 @@
   -webkit-backdrop-filter: blur(8px);
   pointer-events: none;
 }
-.watch-player__badge.provider-0 { background: rgba(179,19,31,0.9); }
-.watch-player__badge.provider-1 { background: rgba(150,10,50,0.9); }
-.watch-player__badge.provider-2 { background: rgba(200,20,60,0.9); }
-.watch-player__badge.provider-3 { background: rgba(120,0,30,0.9); }
-.watch-player__badge.provider-4 { background: rgba(180,40,20,0.9); }
-.watch-player__badge.mp4 { background: rgba(200,20,20,0.9); }
-.watch-player__badge.iframe { background: rgba(90,20,40,0.9); }
+.watch-player-badge.provider-0 { background: rgba(179,19,31,0.9); }
+.watch-player-badge.provider-1 { background: rgba(150,10,50,0.9); }
+.watch-player-badge.provider-2 { background: rgba(200,20,60,0.9); }
+.watch-player-badge.provider-3 { background: rgba(120,0,30,0.9); }
+.watch-player-badge.provider-4 { background: rgba(180,40,20,0.9); }
+.watch-player-badge.mp4 { background: rgba(200,20,20,0.9); }
+.watch-player-badge.iframe { background: rgba(90,20,40,0.9); }
 
-/* Controls row under player */
+/* controls row */
 .watch-controls {
   display: flex;
   flex-wrap: wrap;
   align-items: center;
   gap: var(--s-2);
 }
-
 .watch-controls__sep {
   width: 1px;
   height: 22px;
   background: var(--ch-glass-stroke);
   margin-inline: var(--s-1);
 }
-
 .watch-toggle {
   padding: 8px 16px;
   font-family: var(--font-ui);
   font-size: 13px;
   font-weight: 700;
-  letter-spacing: 0.02em;
   border-radius: var(--r-pill);
   background: rgba(60, 20, 25, 0.5);
   border: 1px solid rgba(179, 19, 31, 0.3);
@@ -127,21 +121,224 @@
   cursor: not-allowed;
   filter: grayscale(0.6);
 }
-.watch-toggle.watch-audio {
-  min-width: 62px;
-  text-align: center;
+.watch-toggle.watch-audio { min-width: 62px; text-align: center; }
+.watch-toggle.watch-audio.active { background: rgba(179, 19, 31, 0.6); }
+
+/* ============================================================
+   Episodes sidebar (beside player, matches height)
+   ============================================================ */
+.watch-top__episodes {
+  position: relative;
+  background: var(--ch-glass);
+  border: 1px solid var(--ch-glass-stroke);
+  border-radius: var(--r-md);
+  backdrop-filter: blur(14px);
+  -webkit-backdrop-filter: blur(14px);
+  overflow: hidden;
+  min-height: 280px;
 }
-.watch-toggle.watch-audio.active {
-  background: rgba(179, 19, 31, 0.6);
+@media (max-width: 1000px) {
+  .watch-top__episodes {
+    min-height: 0;
+    height: 300px;
+  }
 }
 
-/* ---------- Info under player ---------- */
+.watch-ep-head {
+  position: absolute;
+  top: 0; left: 0; right: 0;
+  height: 48px;
+  padding-inline: var(--s-4);
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  border-bottom: 1px solid var(--ch-glass-stroke);
+  background: linear-gradient(180deg, rgba(179,19,31,0.1), transparent);
+  z-index: 3;
+}
+.watch-ep-title {
+  margin: 0;
+  font-size: 12px;
+  font-weight: 800;
+  letter-spacing: 0.16em;
+  text-transform: uppercase;
+  color: var(--ch-red-bright);
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.watch-ep-title::before {
+  content: '';
+  width: 3px;
+  height: 14px;
+  background: var(--ch-red-bright);
+  border-radius: 2px;
+  box-shadow: 0 0 10px var(--ch-red-glow);
+}
+.watch-ep-count {
+  font-size: 12px;
+  font-weight: 700;
+  color: var(--ch-fg-muted);
+  font-variant-numeric: tabular-nums;
+}
+
+.watch-ep-body {
+  position: absolute;
+  top: 48px;
+  left: 0; right: 0; bottom: 0;
+  overflow-y: auto;
+  padding: var(--s-3);
+  scrollbar-width: thin;
+}
+.watch-ep-loading {
+  padding: var(--s-5) 0;
+  text-align: center;
+  color: var(--ch-fg-subtle);
+  font-size: 12px;
+}
+
+/* ---- Card layout (<=12 eps) ---- */
+.watch-ep-body.cards {
+  display: flex;
+  flex-direction: column;
+  gap: var(--s-2);
+}
+.watch-ep-card {
+  display: flex;
+  gap: var(--s-3);
+  padding: 8px;
+  background: rgba(28, 12, 16, 0.4);
+  border: 1px solid transparent;
+  border-radius: var(--r-sm);
+  cursor: pointer;
+  text-align: left;
+  font-family: inherit;
+  color: inherit;
+  transition: background 150ms var(--ease),
+              border-color 150ms var(--ease),
+              transform 180ms var(--ease-pop);
+  position: relative;
+}
+.watch-ep-card:hover {
+  background: rgba(179, 19, 31, 0.22);
+  border-color: var(--ch-red-bright);
+  transform: translateX(-2px);
+}
+.watch-ep-card.watched { opacity: 0.55; }
+.watch-ep-card.watched::after {
+  content: '';
+  position: absolute;
+  top: 10px;
+  right: 10px;
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: var(--ch-red-bright);
+  box-shadow: 0 0 8px var(--ch-red-bright);
+}
+.watch-ep-card.current {
+  background: rgba(179, 19, 31, 0.35);
+  border-color: var(--ch-red-bright);
+  box-shadow: 0 0 16px var(--ch-red-glow);
+}
+.watch-ep-card__thumb {
+  width: 96px;
+  aspect-ratio: 16 / 9;
+  background-size: cover;
+  background-position: center;
+  background-color: var(--ch-bg-2);
+  border-radius: 6px;
+  flex-shrink: 0;
+}
+.watch-ep-card__body {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  gap: 3px;
+}
+.watch-ep-card__num {
+  font-size: 11px;
+  font-weight: 800;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--ch-red-bright);
+}
+.watch-ep-card__title {
+  font-size: 13px;
+  font-weight: 700;
+  line-height: 1.25;
+  color: var(--ch-white);
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+}
+
+/* ---- Pill layout (>12 eps) ---- */
+.watch-ep-body.pills {
+  display: grid;
+  grid-template-columns: repeat(5, 1fr);
+  gap: 4px;
+  align-content: start;
+}
+@media (max-width: 600px) {
+  .watch-ep-body.pills { grid-template-columns: repeat(6, 1fr); }
+}
+.watch-ep-pill {
+  position: relative;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  height: 36px;
+  font-size: 12px;
+  font-weight: 700;
+  border-radius: var(--r-sm);
+  background: rgba(28, 12, 16, 0.6);
+  border: 1px solid transparent;
+  color: var(--ch-fg-dim);
+  cursor: pointer;
+  font-family: inherit;
+  font-variant-numeric: tabular-nums;
+  transition: background 120ms var(--ease),
+              color 120ms var(--ease),
+              border-color 120ms var(--ease),
+              transform 160ms var(--ease-pop);
+}
+.watch-ep-pill:hover {
+  background: rgba(179, 19, 31, 0.35);
+  border-color: var(--ch-red-bright);
+  color: #fff;
+  transform: translateY(-1px);
+  box-shadow: 0 0 12px var(--ch-red-glow);
+  z-index: 2;
+}
+.watch-ep-pill.watched { color: var(--ch-fg-subtle); background: rgba(28, 12, 16, 0.35); }
+.watch-ep-pill.watched::after {
+  content: '';
+  position: absolute;
+  width: 4px; height: 4px;
+  border-radius: 50%;
+  background: var(--ch-red-bright);
+  bottom: 4px;
+  box-shadow: 0 0 6px var(--ch-red-bright);
+}
+.watch-ep-pill.current {
+  background: linear-gradient(135deg, var(--ch-red-bright), var(--ch-red));
+  border-color: var(--ch-red-bright);
+  color: #fff;
+  box-shadow: 0 0 16px var(--ch-red-glow);
+}
+
+/* ============================================================
+   Info below player (full width)
+   ============================================================ */
 .watch-info {
   margin-top: var(--s-5);
   padding-bottom: var(--s-5);
   border-bottom: 1px solid var(--ch-glass-stroke);
 }
-
 .watch-title {
   font-size: 26px;
   font-weight: 900;
@@ -151,13 +348,11 @@
   margin-bottom: var(--s-2);
 }
 @media (max-width: 720px) { .watch-title { font-size: 20px; } }
-
 .watch-title__ep {
   color: var(--ch-red-bright);
   font-weight: 800;
   margin-right: 8px;
 }
-
 .watch-meta {
   display: flex;
   flex-wrap: wrap;
@@ -170,18 +365,29 @@
 }
 .watch-meta .sep { color: var(--ch-red); font-weight: 900; }
 .watch-meta .text-cream { color: var(--ch-cream); }
-
 .watch-actions {
   display: flex;
   gap: var(--s-2);
   flex-wrap: wrap;
 }
 
-/* ---------- Comments ---------- */
-.watch-comments {
+/* ============================================================
+   Bottom: comments + similar anime sidebar
+   ============================================================ */
+.watch-bottom {
   margin-top: var(--s-6);
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 340px;
+  gap: var(--s-5);
+  align-items: start;
+}
+@media (max-width: 1000px) {
+  .watch-bottom { grid-template-columns: 1fr; }
 }
 
+.watch-bottom__main { min-width: 0; }
+
+/* Comments */
 .watch-comments__head {
   display: flex;
   align-items: center;
@@ -199,8 +405,7 @@
 }
 .watch-comments__title::before {
   content: '';
-  width: 3px;
-  height: 18px;
+  width: 3px; height: 18px;
   background: var(--ch-red-bright);
   border-radius: 2px;
   box-shadow: 0 0 10px var(--ch-red-glow);
@@ -214,7 +419,6 @@
   border: 1px solid var(--ch-border);
   color: var(--ch-red-bright);
 }
-
 .watch-comments__empty {
   display: flex;
   flex-direction: column;
@@ -243,36 +447,11 @@
   color: var(--ch-fg-subtle);
 }
 
-/* ---------- Sidebar (episodes on the right) ---------- */
-.watch-sidebar {
-  position: sticky;
-  top: calc(var(--header-h) + 16px);
-  max-height: calc(100vh - var(--header-h) - 40px);
-  display: flex;
-  flex-direction: column;
-  background: var(--ch-glass);
-  border: 1px solid var(--ch-glass-stroke);
-  border-radius: var(--r-lg);
-  backdrop-filter: blur(14px);
-  -webkit-backdrop-filter: blur(14px);
-  overflow: hidden;
+/* Similar anime */
+.watch-similar-head {
+  margin-bottom: var(--s-3);
 }
-@media (max-width: 1050px) {
-  .watch-sidebar {
-    position: static;
-    max-height: 340px;
-  }
-}
-
-.watch-sidebar__head {
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-  padding: var(--s-4) var(--s-4) var(--s-3);
-  border-bottom: 1px solid var(--ch-glass-stroke);
-  background: linear-gradient(180deg, rgba(179,19,31,0.08), transparent);
-}
-.watch-sidebar__title {
+.watch-similar-title {
   margin: 0;
   font-size: 12px;
   font-weight: 800;
@@ -283,95 +462,85 @@
   align-items: center;
   gap: 8px;
 }
-.watch-sidebar__title::before {
+.watch-similar-title::before {
   content: '';
-  width: 3px;
-  height: 14px;
+  width: 3px; height: 14px;
   background: var(--ch-red-bright);
   border-radius: 2px;
   box-shadow: 0 0 10px var(--ch-red-glow);
 }
-.watch-sidebar__count {
-  font-size: 12px;
-  font-weight: 700;
-  color: var(--ch-fg-muted);
-  font-variant-numeric: tabular-nums;
+.watch-similar-list {
+  display: flex;
+  flex-direction: column;
+  gap: var(--s-2);
 }
-
-.watch-sidebar__list {
-  overflow-y: auto;
-  flex: 1;
-  padding: var(--s-2);
-  display: grid;
-  grid-template-columns: repeat(4, 1fr);
-  gap: 4px;
-  align-content: start;
-}
-.watch-sidebar__loading {
-  grid-column: 1 / -1;
-  padding: var(--s-5) 0;
+.watch-similar-loading {
+  padding: var(--s-5);
   text-align: center;
   color: var(--ch-fg-subtle);
   font-size: 12px;
 }
-
-/* Episode pill */
-.watch-ep {
-  position: relative;
+.watch-similar-item {
   display: flex;
-  align-items: center;
-  justify-content: center;
-  height: 34px;
-  font-size: 12px;
-  font-weight: 700;
-  border-radius: var(--r-sm);
-  background: rgba(28, 12, 16, 0.6);
+  gap: var(--s-3);
+  padding: 8px;
+  background: rgba(28, 12, 16, 0.5);
   border: 1px solid transparent;
-  color: var(--ch-fg-dim);
+  border-radius: var(--r-sm);
+  text-decoration: none;
+  color: inherit;
   cursor: pointer;
-  font-family: inherit;
-  font-variant-numeric: tabular-nums;
-  transition: background 120ms var(--ease),
-              color 120ms var(--ease),
-              border-color 120ms var(--ease),
-              transform 160ms var(--ease-pop);
+  transition: background 150ms var(--ease),
+              border-color 150ms var(--ease),
+              transform 180ms var(--ease-pop);
 }
-.watch-ep:hover {
-  background: rgba(179, 19, 31, 0.35);
-  border-color: var(--ch-red-bright);
-  color: #fff;
-  transform: translateY(-1px);
+.watch-similar-item:hover {
+  background: rgba(179, 19, 31, 0.18);
+  border-color: var(--ch-border-hi);
+  transform: translateX(-2px);
 }
-.watch-ep.watched {
-  color: var(--ch-fg-subtle);
-  background: rgba(28, 12, 16, 0.35);
+.watch-similar-item__thumb {
+  width: 56px;
+  height: 80px;
+  border-radius: 6px;
+  overflow: hidden;
+  background: var(--ch-bg-2);
+  flex-shrink: 0;
 }
-.watch-ep.watched::after {
-  content: '';
-  position: absolute;
-  width: 4px;
-  height: 4px;
-  border-radius: 50%;
-  background: var(--ch-red-bright);
-  bottom: 4px;
-  box-shadow: 0 0 6px var(--ch-red-bright);
+.watch-similar-item__thumb img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  display: block;
 }
-.watch-ep.current {
-  background: linear-gradient(135deg, var(--ch-red-bright), var(--ch-red));
-  border-color: var(--ch-red-bright);
-  color: #fff;
-  box-shadow: 0 0 16px var(--ch-red-glow);
+.watch-similar-item__body {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  gap: 4px;
+}
+.watch-similar-item__title {
+  font-size: 13px;
+  font-weight: 700;
+  line-height: 1.25;
+  color: var(--ch-white);
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+}
+.watch-similar-item__meta {
+  font-size: 11px;
+  color: var(--ch-fg-muted);
+}
+.watch-similar-item__score {
+  color: var(--ch-cream);
+  font-weight: 700;
 }
 
-/* ---------- Small screen ---------- */
-@media (max-width: 720px) {
-  .watch-controls { gap: 6px; }
-  .watch-toggle { padding: 7px 12px; font-size: 12px; }
-  .watch-controls__sep { display: none; }
-  .watch-sidebar__list { grid-template-columns: repeat(5, 1fr); }
-}
-
-/* ---------- Preview tooltip on progress bar (from Artplayer) ---------- */
+/* ---------- Preview tooltip (from player.js) ---------- */
 .watch-preview-tip {
   position: fixed;
   display: none;
@@ -398,10 +567,9 @@
   color: #fff;
   padding: 3px 0 1px;
   font-variant-numeric: tabular-nums;
-  letter-spacing: .3px;
 }
 
-/* ---------- Skip overlay button (from player.js) ---------- */
+/* ---------- Skip button (from player.js) ---------- */
 .watch-skip-btn {
   position: absolute;
   bottom: 90px;
@@ -418,4 +586,11 @@
   cursor: pointer;
   box-shadow: 0 4px 20px rgba(229,9,20,0.55);
   display: none;
+}
+
+/* Small screen */
+@media (max-width: 720px) {
+  .watch-controls { gap: 6px; }
+  .watch-toggle { padding: 7px 12px; font-size: 12px; }
+  .watch-controls__sep { display: none; }
 }
