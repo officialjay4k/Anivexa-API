@@ -1,0 +1,90 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Cloud Hub — Watch</title>
+  <link rel="icon" type="image/png" href="/favicon.png">
+  <link rel="apple-touch-icon" href="/apple-touch-icon.png">
+  <link rel="stylesheet" href="/shared.css">
+  <link rel="stylesheet" href="/watch.css">
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/artplayer@5.4.0/dist/artplayer.css">
+</head>
+<body>
+
+  <div id="ch-header-mount"></div>
+
+  <main class="watch-main">
+    <div class="ch-container watch-layout">
+
+      <div class="watch-primary">
+
+        <div class="watch-player-wrap">
+          <div class="watch-player" id="watchPlayer">
+            <div class="watch-player__badge" id="watchBadge">Loading…</div>
+          </div>
+          <div class="watch-controls" id="watchControls">
+            <button class="watch-toggle" id="btnAutoSkip" type="button">Auto Skip</button>
+            <button class="watch-toggle" id="btnAutoNext" type="button">Auto Next</button>
+            <button class="watch-toggle" id="btnAutoPlay" type="button">Auto Play</button>
+            <span class="watch-controls__sep"></span>
+            <button class="watch-toggle watch-audio" id="btnSub" type="button">Sub</button>
+            <button class="watch-toggle watch-audio" id="btnDub" type="button">Dub</button>
+            <span class="watch-controls__sep"></span>
+            <button class="watch-toggle watch-quiet" id="btnFailover" type="button" title="Skip current source and try the next">Skip Source</button>
+          </div>
+        </div>
+
+        <section class="watch-info">
+          <h1 class="watch-title" id="watchTitle">Loading…</h1>
+          <div class="watch-meta" id="watchMeta"></div>
+          <div class="watch-actions">
+            <a href="#" class="ch-btn ch-btn--quiet ch-btn--sm" id="watchPreviewLink">View Details</a>
+            <button class="ch-btn ch-btn--ghost ch-btn--sm" id="watchWatchlistBtn" type="button">Add to List</button>
+          </div>
+        </section>
+
+        <section class="watch-comments">
+          <header class="watch-comments__head">
+            <h3 class="watch-comments__title">Comments</h3>
+            <span class="watch-comments__count">0</span>
+          </header>
+          <div class="watch-comments__empty">
+            <svg width="34" height="34" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round">
+              <path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"></path>
+            </svg>
+            <p>Comments are coming soon.</p>
+            <span>Sign in to be notified when they launch.</span>
+          </div>
+        </section>
+
+      </div>
+
+      <aside class="watch-sidebar">
+        <div class="watch-sidebar__head">
+          <h3 class="watch-sidebar__title">Episodes</h3>
+          <span class="watch-sidebar__count" id="watchEpCount">—</span>
+        </div>
+        <div class="watch-sidebar__list" id="watchEpList">
+          <div class="watch-sidebar__loading">Loading…</div>
+        </div>
+      </aside>
+
+    </div>
+  </main>
+
+  <div id="ch-footer-mount"></div>
+
+  <script src="https://cdn.jsdelivr.net/npm/hls.js@1.6.7/dist/hls.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/artplayer@5.4.0/dist/artplayer.js"></script>
+  <script src="https://flixcloud.cc/artplayer-new/artplayer-plugin-libass.legacy.js?v=104"></script>
+
+  <script src="/tmdb.js"></script>
+  <script src="/shared.js"></script>
+  <script src="/progress.js"></script>
+  <script src="/subtitles.js"></script>
+  <script src="/pipeline.js"></script>
+  <script src="/player.js"></script>
+  <script src="/watch.js"></script>
+</body>
+</html>
