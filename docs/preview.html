@@ -1,0 +1,95 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Cloud Hub — Preview</title>
+  <link rel="icon" type="image/png" href="/favicon.png">
+  <link rel="apple-touch-icon" href="/apple-touch-icon.png">
+  <link rel="stylesheet" href="/shared.css">
+  <link rel="stylesheet" href="/preview.css">
+</head>
+<body>
+
+  <div id="ch-header-mount"></div>
+
+  <section class="preview-hero" id="previewHero">
+    <div class="preview-hero__bg" id="previewHeroBg"></div>
+    <div class="preview-hero__scrim"></div>
+    <div class="preview-hero__inner ch-container" id="previewHeroInner"></div>
+  </section>
+
+  <main class="preview-main">
+    <div class="ch-container preview-layout">
+
+      <aside class="preview-sidebar" id="previewSidebar">
+        <div class="preview-sidebar__head">
+          <h3 class="preview-sidebar__title">Episodes</h3>
+          <span class="preview-sidebar__count" id="epCount">—</span>
+        </div>
+        <div class="preview-sidebar__list" id="epList">
+          <div class="preview-sidebar__loading">Loading…</div>
+        </div>
+      </aside>
+
+      <div class="preview-info" id="previewInfo">
+
+        <div class="preview-info__meta" id="previewMeta"></div>
+
+        <div class="preview-info__cta" id="previewCta"></div>
+
+        <section class="preview-info__block">
+          <h3 class="preview-block-title">Synopsis</h3>
+          <p class="preview-desc" id="previewDesc">—</p>
+        </section>
+
+        <section class="preview-info__block">
+          <h3 class="preview-block-title">Details</h3>
+          <div class="preview-facts" id="previewFacts"></div>
+        </section>
+
+        <section class="preview-info__block">
+          <h3 class="preview-block-title">Tags</h3>
+          <div class="preview-tags" id="previewTags"></div>
+        </section>
+
+        <section class="preview-info__block" id="staffBlock" hidden>
+          <h3 class="preview-block-title">Staff</h3>
+          <div class="preview-staff" id="previewStaff"></div>
+        </section>
+
+        <section class="preview-info__block" id="trailerBlock" hidden>
+          <h3 class="preview-block-title">Trailer</h3>
+          <div class="preview-trailer" id="previewTrailer"></div>
+        </section>
+
+      </div>
+
+    </div>
+
+    <div class="ch-container">
+
+      <section class="preview-section" id="charactersSection" hidden>
+        <header class="ch-section-head">
+          <h2 class="ch-section-title">Characters & Voice Cast</h2>
+        </header>
+        <div class="preview-characters" id="charactersRow"></div>
+      </section>
+
+      <section class="preview-section" id="recsSection" hidden>
+        <header class="ch-section-head">
+          <h2 class="ch-section-title">You Might Also Like</h2>
+        </header>
+        <div class="preview-grid" id="recsGrid"></div>
+      </section>
+
+    </div>
+  </main>
+
+  <div id="ch-footer-mount"></div>
+
+  <script src="/tmdb.js"></script>
+  <script src="/shared.js"></script>
+  <script src="/preview.js"></script>
+</body>
+</html>
