@@ -255,7 +255,7 @@ function renderContinue() {
         <div class="home-card__progress"><div class="home-card__progress-fill" style="width:${pct.toFixed(1)}%"></div></div>
       </div>
       <div class="home-card__title-wrap">
-        <div class="home-card__title-text" style="opacity:1;position:static;">${chEscapeHtml(item.title || `AniList ${item.anilistId}`)}</div>
+        <div class="home-card__title-text" style="opacity:1;">${chEscapeHtml(item.title || `AniList ${item.anilistId}`)}</div>
       </div>
       <div class="home-card__meta">${chFormatTime(item.currentTime)} / ${chFormatTime(item.duration)}</div>
     `;
@@ -265,16 +265,49 @@ function renderContinue() {
 }
 
 // ---------- Title overflow detection ----------
+// Measures text width by temporarily forcing single-line, then restores.
 function detectTitleOverflow(root) {
   if (!root) return;
   requestAnimationFrame(() => {
     root.querySelectorAll('.home-card__title-text').forEach(el => {
       el.classList.remove('is-overflowing');
       el.style.removeProperty('--overflow-px');
-      const overflow = el.scrollWidth - el.clientWidth;
-      if (overflow > 2) {
+      el.style.removeProperty('--overflow-duration');
+
+      const saved = {
+        ws: el.style.whiteSpace,
+        disp: el.style.display,
+        lc: el.style.webkitLineClamp,
+        bo: el.style.webkitBoxOrient,
+        pos: el.style.position,
+        w: el.style.width,
+        right: el.style.right,
+      };
+      el.style.whiteSpace = 'nowrap';
+      el.style.display = 'block';
+      el.style.webkitLineClamp = 'unset';
+      el.style.webkitBoxOrient = 'unset';
+      el.style.position = 'static';
+      el.style.width = '100%';
+      el.style.right = 'auto';
+
+      const fullWidth = el.scrollWidth;
+      const visibleWidth = el.parentElement?.clientWidth || el.clientWidth;
+
+      el.style.whiteSpace = saved.ws;
+      el.style.display = saved.disp;
+      el.style.webkitLineClamp = saved.lc;
+      el.style.webkitBoxOrient = saved.bo;
+      el.style.position = saved.pos;
+      el.style.width = saved.w;
+      el.style.right = saved.right;
+
+      if (fullWidth > visibleWidth + 4) {
+        const overflow = fullWidth - visibleWidth + 12;
+        const duration = Math.max(4, overflow / 30);
         el.classList.add('is-overflowing');
-        el.style.setProperty('--overflow-px', `-${overflow + 8}px`);
+        el.style.setProperty('--overflow-px', `-${overflow}px`);
+        el.style.setProperty('--overflow-duration', `${duration}s`);
       }
     });
   });
@@ -314,7 +347,7 @@ async function renderMediaGrid(gridEl, items, opts = {}) {
            <div class="home-card__title-text">${chEscapeHtml(titleOf(m))}</div>
          </div>`
       : `<div class="home-card__title-wrap">
-           <div class="home-card__title-text" style="opacity:1;position:static;">${chEscapeHtml(titleOf(m))}</div>
+           <div class="home-card__title-text" style="opacity:1;">${chEscapeHtml(titleOf(m))}</div>
          </div>`;
 
     card.innerHTML = `
