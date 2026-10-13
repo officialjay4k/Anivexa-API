@@ -23,7 +23,6 @@ async function anilistQuery(query, variables = {}) {
   return json.data;
 }
 
-// Spotlight = currently airing, highest trending
 const SPOTLIGHT_QUERY = `
   query {
     Page(page: 1, perPage: 12) {
@@ -43,7 +42,6 @@ const SPOTLIGHT_QUERY = `
   }
 `;
 
-// Recent: recently aired episodes of POPULAR airing shows
 const LATEST_QUERY = `
   query {
     Page(page: 1, perPage: 30) {
@@ -76,7 +74,6 @@ const POPULAR_QUERY = `
   }
 `;
 
-// Schedule: POPULAR currently-airing shows, sorted by next airing time
 const SCHEDULE_QUERY = `
   query {
     Page(page: 1, perPage: 40) {
@@ -96,12 +93,10 @@ const SCHEDULE_QUERY = `
 function titleOf(media) {
   return media?.title?.english || media?.title?.romaji || 'Untitled';
 }
-
 function formatFormat(format) {
   if (!format) return '';
   return format.replace(/_/g, ' ').replace(/\b\w/g, c => c.toUpperCase());
 }
-
 function cleanDescription(desc) {
   if (!desc) return '';
   return desc
@@ -114,6 +109,11 @@ function cleanDescription(desc) {
     .replace(/\s+/g, ' ')
     .trim();
 }
+
+const PLAY_ICON_SVG = `
+  <svg width="12" height="12" viewBox="0 0 24 24" fill="currentColor">
+    <polygon points="6 4 20 12 6 20"></polygon>
+  </svg>`;
 
 // ---------- Hero ----------
 async function renderHero(mediaList) {
@@ -132,7 +132,6 @@ async function renderHero(mediaList) {
     slides.map(m => tmdbLookup(titleOf(m), m.seasonYear).catch(() => null))
   );
 
-  // Background slides
   slides.forEach((m, i) => {
     const tmdb = heroTmdbCache[i];
     const bgUrl = tmdb?.backdropUrl || m.bannerImage || m.coverImage?.extraLarge || m.coverImage?.large;
@@ -142,7 +141,6 @@ async function renderHero(mediaList) {
     slidesWrap.appendChild(slide);
   });
 
-  // Featured cover row (bottom-right) — AniList covers, no text
   slides.forEach((m, i) => {
     const cover = m.coverImage?.extraLarge || m.coverImage?.large || '';
     const card = document.createElement('div');
@@ -153,7 +151,6 @@ async function renderHero(mediaList) {
     featuredRow.appendChild(card);
   });
 
-  // Dots
   slides.forEach((_, i) => {
     const dot = document.createElement('button');
     dot.className = 'home-hero__dot' + (i === 0 ? ' is-active' : '');
@@ -253,6 +250,7 @@ function renderContinue() {
     card.innerHTML = `
       <div class="home-card__thumb">
         <img src="${chEscapeHtml(item.image || '')}" alt="" loading="lazy" onerror="this.style.visibility='hidden'">
+        <div class="home-card__ribbon">${PLAY_ICON_SVG}<span>Resume</span></div>
         <div class="home-card__badge">EP ${item.ep}</div>
         <div class="home-card__progress"><div class="home-card__progress-fill" style="width:${pct.toFixed(1)}%"></div></div>
       </div>
@@ -266,7 +264,7 @@ function renderContinue() {
   detectTitleOverflow(row);
 }
 
-// ---------- Title overflow detector ----------
+// ---------- Title overflow detection ----------
 function detectTitleOverflow(root) {
   if (!root) return;
   requestAnimationFrame(() => {
@@ -276,7 +274,7 @@ function detectTitleOverflow(root) {
       const overflow = el.scrollWidth - el.clientWidth;
       if (overflow > 2) {
         el.classList.add('is-overflowing');
-        el.style.setProperty('--overflow-px', `-${overflow}px`);
+        el.style.setProperty('--overflow-px', `-${overflow + 8}px`);
       }
     });
   });
@@ -322,6 +320,7 @@ async function renderMediaGrid(gridEl, items, opts = {}) {
     card.innerHTML = `
       <div class="home-card__thumb">
         <img src="${chEscapeHtml(cover)}" alt="" loading="lazy" onerror="this.style.visibility='hidden'">
+        <div class="home-card__ribbon">${PLAY_ICON_SVG}<span>Watch</span></div>
         ${badge}
         ${scoreBadge}
       </div>
@@ -344,7 +343,6 @@ function renderSchedule(mediaList) {
     return;
   }
 
-  // Only items with a scheduled next episode, sorted by airing time ascending.
   const upcoming = mediaList
     .filter(m => m.nextAiringEpisode?.airingAt)
     .map(m => ({
@@ -389,16 +387,12 @@ function renderSchedule(mediaList) {
 async function initHome() {
   renderContinue();
 
-  // Spotlight (hero)
   try {
     const spot = await anilistQuery(SPOTLIGHT_QUERY);
     const media = spot?.Page?.media || [];
     await renderHero(media);
-  } catch (err) {
-    console.error('Spotlight fetch failed:', err);
-  }
+  } catch (err) { console.error('Spotlight fetch failed:', err); }
 
-  // Latest (popular currently airing shows)
   try {
     const latest = await anilistQuery(LATEST_QUERY);
     const items = (latest?.Page?.media || [])
@@ -411,7 +405,6 @@ async function initHome() {
     document.getElementById('latestGrid').innerHTML = '<div class="home-empty">Could not load.</div>';
   }
 
-  // Popular
   try {
     const popular = await anilistQuery(POPULAR_QUERY);
     const items = popular?.Page?.media || [];
@@ -421,7 +414,6 @@ async function initHome() {
     document.getElementById('popularGrid').innerHTML = '<div class="home-empty">Could not load.</div>';
   }
 
-  // Schedule (popular currently-airing shows, sorted by next airing)
   try {
     const sched = await anilistQuery(SCHEDULE_QUERY);
     renderSchedule(sched?.Page?.media || []);
@@ -430,7 +422,6 @@ async function initHome() {
     document.getElementById('scheduleList').innerHTML = '<div class="home-empty">Could not load.</div>';
   }
 
-  // Hero controls
   const hero = document.getElementById('homeHero');
   const prev = document.getElementById('heroPrev');
   const next = document.getElementById('heroNext');
@@ -441,7 +432,6 @@ async function initHome() {
     hero.addEventListener('mouseleave', startHeroRotation);
   }
 
-  // Re-detect overflow on resize
   window.addEventListener('resize', () => {
     detectTitleOverflow(document.getElementById('continueRow'));
     detectTitleOverflow(document.getElementById('latestGrid'));
