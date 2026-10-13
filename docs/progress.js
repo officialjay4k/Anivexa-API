@@ -1,21 +1,20 @@
 // ============================================================
 // Cloud Hub — progress.js
-// localStorage-backed progress store. Key format:
-//   `${anilistId}:${audio}:${ep}`
+// localStorage-backed progress store. Key: `${anilistId}:${audio}:${ep}`
 // ============================================================
 
-const chProgress = (() => {
+const chProgress = (function () {
   const KEY = CH.STORAGE_PROGRESS;
 
   function readAll() {
-    try { return JSON.parse(localStorage.getItem(KEY)) || {}; } catch { return {}; }
+    try { return JSON.parse(localStorage.getItem(KEY)) || {}; } catch (e) { return {}; }
   }
   function writeAll(store) {
-    try { localStorage.setItem(KEY, JSON.stringify(store)); } catch {}
+    try { localStorage.setItem(KEY, JSON.stringify(store)); } catch (e) {}
   }
 
   function key(anilistId, audio, ep) {
-    return `${anilistId}:${audio}:${ep}`;
+    return anilistId + ':' + audio + ':' + ep;
   }
 
   function get(anilistId, audio, ep) {
@@ -30,10 +29,10 @@ const chProgress = (() => {
     const store = readAll();
     store[key(anilistId, audio, ep)] = {
       anilistId: String(anilistId),
-      title: title || `AniList ${anilistId}`,
+      title: title || ('AniList ' + anilistId),
       image: image || null,
       ep: Number(ep),
-      audio,
+      audio: audio,
       currentTime: Number(currentTime),
       duration: Number(duration),
       updatedAt: Date.now()
@@ -51,29 +50,39 @@ const chProgress = (() => {
     return Object.values(readAll());
   }
 
-  // Deduped to one entry per show, most recent wins.
-  function listRecentShows(limit = 20) {
+  function listRecentShows(limit) {
+    limit = limit || 20;
     const byShow = new Map();
     for (const e of listAll()) {
       const k = String(e.anilistId);
       const existing = byShow.get(k);
       if (!existing || (e.updatedAt || 0) > (existing.updatedAt || 0)) byShow.set(k, e);
     }
-    return [...byShow.values()]
-      .sort((a, b) => (b.updatedAt || 0) - (a.updatedAt || 0))
+    return Array.from(byShow.values())
+      .sort(function (a, b) { return (b.updatedAt || 0) - (a.updatedAt || 0); })
       .slice(0, limit);
   }
 
   function watchedForShow(anilistId, audio) {
     const store = readAll();
-    const prefix = `${anilistId}:${audio}:`;
+    const prefix = anilistId + ':' + audio + ':';
     const out = new Set();
-    for (const [k, v] of Object.entries(store)) {
-      if (!k.startsWith(prefix)) continue;
+    for (const k in store) {
+      if (!Object.prototype.hasOwnProperty.call(store, k)) continue;
+      if (k.indexOf(prefix) !== 0) continue;
+      const v = store[k];
       if (v && v.currentTime > 5) out.add(Number(v.ep));
     }
     return out;
   }
 
-  return { get, set, remove, listAll, listRecentShows, watchedForShow, key };
+  return {
+    get: get,
+    set: set,
+    remove: remove,
+    listAll: listAll,
+    listRecentShows: listRecentShows,
+    watchedForShow: watchedForShow,
+    key: key
+  };
 })();
