@@ -1,12 +1,11 @@
 // ============================================================
 // Cloud Hub — watch.js
+// Orchestrates the watch page.
 // ============================================================
 
 const ANILIST_GRAPHQL = CH.ANILIST_GRAPHQL;
 const API_BASE = CH.API_BASE;
 const SETTINGS_KEY = CH.STORAGE_SETTINGS;
-const EP_FETCH_PROVIDERS = ['reanime', 'anikoto', 'animegg', 'aniwaves', 'senshi'];
-const CARD_LAYOUT_THRESHOLD = 12;
 
 const DEFAULTS = { autoSkip: false, autoNext: false, autoPlay: false, subtitlesOn: false, audio: 'dub' };
 function loadSettings() {
@@ -16,7 +15,9 @@ function loadSettings() {
     return Object.assign({}, DEFAULTS, JSON.parse(raw));
   } catch (e) { return Object.assign({}, DEFAULTS); }
 }
-function saveSettings(s) { try { localStorage.setItem(SETTINGS_KEY, JSON.stringify(s)); } catch (e) {} }
+function saveSettings(s) {
+  try { localStorage.setItem(SETTINGS_KEY, JSON.stringify(s)); } catch (e) {}
+}
 let appSettings = loadSettings();
 
 let anilistId = '';
@@ -24,18 +25,16 @@ let currentEp = 1;
 let currentAudio = appSettings.audio || 'dub';
 let media = null;
 let episodeList = [];
-let currentEpMeta = null;
 let playerApi = null;
 let saveTick = 0;
 let autoNextFired = false;
 
 function parseParams() {
   const p = new URLSearchParams(location.search);
-  return {
-    id: p.get('id'),
-    ep: parseInt(p.get('ep') || '1', 10) || 1,
-    audio: p.get('audio') === 'sub' ? 'sub' : 'dub'
-  };
+  const id = p.get('id');
+  const ep = parseInt(p.get('ep') || '1', 10) || 1;
+  const audio = p.get('audio') === 'sub' ? 'sub' : 'dub';
+  return { id: id, ep: ep, audio: audio };
 }
 function updateUrlParams(opts) {
   const p = new URLSearchParams(location.search);
@@ -57,73 +56,20 @@ async function anilistQuery(query, variables) {
   return json.data;
 }
 
-const MEDIA_QUERY = 'query ($id: Int) { Media(id: $id, type: ANIME) { id title { romaji english } coverImage { extraLarge large } format episodes duration seasonYear averageScore description(asHtml: false) genres tags { id name rank isMediaSpoiler } } }';
+const MEDIA_QUERY = 'query ($id: Int) { Media(id: $id, type: ANIME) { id title { romaji english } coverImage { extraLarge large } format episodes duration seasonYear averageScore description(asHtml: false) genres } }';
 
-function titleOf(m) { return (m && m.title && (m.title.english || m.title.romaji)) || 'Untitled'; }
+function titleOf(m) {
+  return (m && m.title && (m.title.english || m.title.romaji)) || 'Untitled';
+}
 function formatFormat(f) {
   if (!f) return '';
   return f.replace(/_/g, ' ').replace(/\b\w/g, function (c) { return c.toUpperCase(); });
 }
 
-// ============================================================
-// Fetch episodes + availability from multiple providers
-// ============================================================
-async function fetchProvidersEpisodes(anilistId) {
-  const reqs = EP_FETCH_PROVIDERS.map(function (p) {
-    return fetch(API_BASE + '/episodes/' + p + '/' + anilistId, { cache: 'no-store' })
-      .then(function (res) {
-        if (!res.ok) return null;
-        return res.json();
-      })
-      .then(function (data) {
-        if (!data) return null;
-        const block = data[p];
-        if (!block || block.error) return null;
-        return {
-          provider: p,
-          sub: (block.episodes && block.episodes.sub) || [],
-          dub: (block.episodes && block.episodes.dub) || []
-        };
-      })
-      .catch(function () { return null; });
-  });
-  const results = (await Promise.all(reqs)).filter(Boolean);
-  const hasSub = results.some(function (r) { return r.sub.length > 0; });
-  const hasDub = results.some(function (r) { return r.dub.length > 0; });
-  return { results: results, hasSub: hasSub, hasDub: hasDub };
-}
-
-function pickBestEpisodeList(results, audio, expectedCount) {
-  let best = { provider: null, list: [] };
-  if (!results.length) return best;
-
-  if (expectedCount != null && expectedCount > 0) {
-    let bestDiff = Infinity;
-    for (const r of results) {
-      const list = audio === 'sub' ? r.sub : r.dub;
-      if (!list.length) continue;
-      const diff = Math.abs(list.length - expectedCount);
-      if (diff < bestDiff) {
-        bestDiff = diff;
-        best = { provider: r.provider, list: list };
-      }
-    }
-    if (best.list.length) return best;
-  }
-  // Fallback: longest
-  for (const r of results) {
-    const list = audio === 'sub' ? r.sub : r.dub;
-    if (list.length > best.list.length) best = { provider: r.provider, list: list };
-  }
-  return best;
-}
-
-// ============================================================
-// Render
-// ============================================================
 function renderInfo() {
   if (!media) return;
   document.title = titleOf(media) + ' — Ep ' + currentEp + ' — Cloud Hub';
+
   const titleEl = document.getElementById('watchTitle');
   titleEl.innerHTML = '<span class="watch-title__ep">EP ' + currentEp + '</span>' + chEscapeHtml(titleOf(media));
 
@@ -164,73 +110,60 @@ function renderInfo() {
   };
 }
 
+async function fetchEpisodeList() {
+  try {
+    const res = await fetch(API_BASE + '/episodes/reanime/' + anilistId, { cache: 'no-store' });
+    if (!res.ok) return [];
+    const data = await res.json();
+    const block = data.reanime;
+    if (!block || block.error) return [];
+    const sub = (block.episodes && block.episodes.sub) || [];
+    const dub = (block.episodes && block.episodes.dub) || [];
+    const list = (sub.length >= dub.length ? sub : dub).slice();
+    list.sort(function (a, b) { return Number(a.number) - Number(b.number); });
+    return list;
+  } catch (e) { return []; }
+}
+
 function renderEpisodes() {
   const listEl = document.getElementById('watchEpList');
   const countEl = document.getElementById('watchEpCount');
-  listEl.classList.remove('cards', 'pills');
 
   if (!episodeList.length) {
-    listEl.innerHTML = '<div class="watch-ep-loading">No episodes found.</div>';
+    listEl.innerHTML = '<div class="watch-sidebar__loading">No episodes found.</div>';
     countEl.textContent = '—';
     return;
   }
   countEl.textContent = episodeList.length + ' ep' + (episodeList.length === 1 ? '' : 's');
 
   const watched = chProgress.watchedForShow(anilistId, currentAudio);
-  const useCards = episodeList.length <= CARD_LAYOUT_THRESHOLD;
-  listEl.classList.add(useCards ? 'cards' : 'pills');
-  listEl.innerHTML = '';
 
+  listEl.innerHTML = '';
   for (const raw of episodeList) {
     const n = Number(raw.number);
     if (!isFinite(n)) continue;
-    const isWatched = watched.has(n);
-    const isCurrent = n === currentEp;
-    const title = raw.title || ('Episode ' + n);
-    const thumb = raw.image || (media && media.coverImage && (media.coverImage.extraLarge || media.coverImage.large)) || '';
-
-    if (useCards) {
-      const btn = document.createElement('button');
-      btn.type = 'button';
-      btn.className = 'watch-ep-card';
-      if (isWatched) btn.classList.add('watched');
-      if (isCurrent) btn.classList.add('current');
-      btn.dataset.ep = n;
-      btn.innerHTML =
-        '<div class="watch-ep-card__thumb" style="background-image:url(\'' + chEscapeHtml(thumb).replace(/'/g, '%27') + '\')"></div>' +
-        '<div class="watch-ep-card__body">' +
-          '<div class="watch-ep-card__num">Episode ' + n + '</div>' +
-          '<div class="watch-ep-card__title">' + chEscapeHtml(title) + '</div>' +
-        '</div>';
-      btn.addEventListener('click', function () { goToEpisode(n); });
-      listEl.appendChild(btn);
-    } else {
-      const btn = document.createElement('button');
-      btn.type = 'button';
-      btn.className = 'watch-ep-pill';
-      if (isWatched) btn.classList.add('watched');
-      if (isCurrent) btn.classList.add('current');
-      btn.dataset.ep = n;
-      btn.textContent = n;
-      btn.title = 'Episode ' + n + (title && title !== 'Episode ' + n ? ' — ' + title : '');
-      btn.addEventListener('click', function () { goToEpisode(n); });
-      listEl.appendChild(btn);
-    }
+    const btn = document.createElement('button');
+    btn.type = 'button';
+    btn.className = 'watch-ep';
+    btn.dataset.ep = n;
+    btn.textContent = n;
+    if (watched.has(n)) btn.classList.add('watched');
+    if (n === currentEp) btn.classList.add('current');
+    btn.addEventListener('click', function () {
+      if (n === currentEp) return;
+      saveNow();
+      currentEp = n;
+      autoNextFired = false;
+      updateUrlParams({ ep: currentEp });
+      renderInfo();
+      renderEpisodes();
+      startPlayback();
+    });
+    listEl.appendChild(btn);
   }
 
-  const current = listEl.querySelector('.current');
+  const current = listEl.querySelector('.watch-ep.current');
   if (current) try { current.scrollIntoView({ block: 'nearest' }); } catch (e) {}
-}
-
-function goToEpisode(n) {
-  if (n === currentEp) return;
-  saveNow();
-  currentEp = n;
-  autoNextFired = false;
-  updateUrlParams({ ep: currentEp });
-  renderInfo();
-  renderEpisodes();
-  startPlayback();
 }
 
 function refreshControls() {
@@ -242,11 +175,10 @@ function refreshControls() {
   const dub = document.getElementById('btnDub');
   sub.classList.toggle('active', currentAudio === 'sub');
   dub.classList.toggle('active', currentAudio === 'dub');
-}
 
-function setAudioButtonsVisible(hasSub, hasDub) {
-  document.getElementById('btnSub').style.display = hasSub ? '' : 'none';
-  document.getElementById('btnDub').style.display = hasDub ? '' : 'none';
+  const avail = chPipeline.getState().availability;
+  sub.disabled = !avail.sub && currentAudio !== 'sub';
+  dub.disabled = !avail.dub && currentAudio !== 'dub';
 }
 
 function wireControls() {
@@ -267,17 +199,22 @@ function wireControls() {
     chPlayer.setSettings(appSettings);
     refreshControls();
   });
+
   document.getElementById('btnSub').addEventListener('click', function () { switchAudio('sub'); });
   document.getElementById('btnDub').addEventListener('click', function () { switchAudio('dub'); });
+
   document.getElementById('btnFailover').addEventListener('click', function () {
     saveNow();
     chPipeline.forceFailover();
   });
+
   refreshControls();
 }
 
 function switchAudio(next) {
   if (next === currentAudio) return;
+  if (next === 'sub' && !chPipeline.getState().availability.sub) return;
+  if (next === 'dub' && !chPipeline.getState().availability.dub) return;
   saveNow();
   currentAudio = next;
   appSettings.audio = next;
@@ -286,8 +223,7 @@ function switchAudio(next) {
   updateUrlParams({ audio: next });
   chPlayer.setAudioPreference(next);
   refreshControls();
-  // Re-pick episode list (sub vs dub list may differ)
-  loadEpisodeListAndRender().catch(function () {});
+  renderEpisodes();
   startPlayback();
 }
 
@@ -339,29 +275,20 @@ async function resolveSkipIntervals(anilistId, ep, watchData) {
   return { op: null, ed: null };
 }
 
-async function loadEpisodeListAndRender() {
-  const fetched = await fetchProvidersEpisodes(anilistId);
-  const best = pickBestEpisodeList(fetched.results, currentAudio, media && media.episodes);
-  episodeList = best.list.slice().sort(function (a, b) { return Number(a.number) - Number(b.number); });
-  renderEpisodes();
-  return fetched;
-}
-
 async function startPlayback() {
   autoNextFired = false;
   const badge = document.getElementById('watchBadge');
-  if (badge) { badge.textContent = 'Loading…'; badge.className = 'watch-player-badge'; }
+  badge.textContent = 'Loading…';
+  badge.className = 'watch-player__badge';
   await chPipeline.start({ anilistId: anilistId, ep: currentEp, audio: currentAudio });
 }
 
 chPipeline.on('stream', async function (data) {
   const entry = data.entry;
   const badge = document.getElementById('watchBadge');
-  if (badge) {
-    const providerIdx = chPipeline.getState().workList.indexOf(entry);
-    badge.textContent = entry.provider.toUpperCase() + ' / ' + (entry.stream.server || '?') + ' [' + (entry.isMp4 ? 'MP4' : 'HLS') + ']';
-    badge.className = 'watch-player-badge ' + (entry.isMp4 ? 'mp4' : 'provider-' + (Math.max(0, providerIdx) % 5));
-  }
+  const providerIdx = chPipeline.getState().workList.indexOf(entry);
+  badge.textContent = entry.provider.toUpperCase() + ' / ' + (entry.stream.server || '?') + ' [' + (entry.isMp4 ? 'MP4' : 'HLS') + ']';
+  badge.className = 'watch-player__badge ' + (entry.isMp4 ? 'mp4' : 'provider-' + (Math.max(0, providerIdx) % 5));
 
   const stream = entry.stream;
   const key = stream.playlist_key || stream.key || '';
@@ -376,11 +303,12 @@ chPipeline.on('stream', async function (data) {
   chPlayer.setSkipIntervals(skip && skip.op, skip && skip.ed);
 
   const resumeAt = computeResumeAt();
+
   chPlayer.setSettings(appSettings);
   chPlayer.setAudioPreference(currentAudio);
 
   const container = document.getElementById('watchPlayer');
-  if (container) container.innerHTML = '';
+  container.querySelectorAll('.artplayer-app').forEach(function (el) { el.remove(); });
 
   playerApi = await chPlayer.mount({
     container: container,
@@ -427,9 +355,17 @@ chPipeline.on('stream', async function (data) {
         renderEpisodes();
         startPlayback();
       },
-      onError: function () { saveNow(); chPipeline.forceFailover(); },
-      onHlsFatal: function () { saveNow(); chPipeline.forceFailover(); },
-      onDestroy: function () { saveNow(); }
+      onError: function () {
+        saveNow();
+        chPipeline.forceFailover();
+      },
+      onHlsFatal: function () {
+        saveNow();
+        chPipeline.forceFailover();
+      },
+      onDestroy: function () {
+        saveNow();
+      }
     }
   });
 });
@@ -443,13 +379,12 @@ chPipeline.on('status', function (payload) {
 
 chPipeline.on('exhausted', function () {
   const container = document.getElementById('watchPlayer');
-  if (!container) return;
-  container.innerHTML = '';
+  container.querySelectorAll('.artplayer-app, iframe').forEach(function (el) { el.remove(); });
+
   const badge = document.getElementById('watchBadge');
-  if (badge) {
-    badge.textContent = 'IFRAME FALLBACK';
-    badge.className = 'watch-player-badge iframe';
-  }
+  badge.textContent = 'IFRAME FALLBACK';
+  badge.className = 'watch-player__badge iframe';
+
   const iframe = document.createElement('iframe');
   iframe.src = 'https://megaplay.buzz/stream/ani/' + anilistId + '/' + currentEp + '/' + currentAudio;
   iframe.setAttribute('allow', 'autoplay; encrypted-media; picture-in-picture; fullscreen');
@@ -458,77 +393,12 @@ chPipeline.on('exhausted', function () {
   container.appendChild(iframe);
 });
 
-// ============================================================
-// Similar anime
-// ============================================================
-const SIMILAR_RECS_QUERY = 'query ($id: Int) { Media(id: $id, type: ANIME) { recommendations(perPage: 8, sort: RATING_DESC) { nodes { mediaRecommendation { id title { romaji english } coverImage { large extraLarge } format averageScore seasonYear } } } } }';
-const SIMILAR_TAG_QUERY = 'query ($tag: String) { Page(page: 1, perPage: 10) { media(type: ANIME, tag: $tag, sort: POPULARITY_DESC, isAdult: false) { id title { romaji english } coverImage { large extraLarge } format averageScore seasonYear } } }';
-
-async function renderSimilar(media) {
-  const wrap = document.getElementById('watchSimilarList');
-  if (!wrap || !media) return;
-
-  let items = [];
-  try {
-    const data = await anilistQuery(SIMILAR_RECS_QUERY, { id: media.id });
-    const nodes = (data && data.Media && data.Media.recommendations && data.Media.recommendations.nodes) || [];
-    items = nodes.map(function (n) { return n.mediaRecommendation; }).filter(function (m) { return m && m.id !== media.id; });
-  } catch (e) {}
-
-  if (items.length < 6) {
-    const topTag = (media.tags || []).filter(function (t) { return !t.isMediaSpoiler; })
-      .sort(function (a, b) { return b.rank - a.rank; })[0];
-    if (topTag) {
-      try {
-        const data = await anilistQuery(SIMILAR_TAG_QUERY, { tag: topTag.name });
-        const extra = (data && data.Page && data.Page.media) || [];
-        const seen = new Set(items.map(function (m) { return m.id; }));
-        for (const m of extra) {
-          if (seen.has(m.id) || m.id === media.id) continue;
-          items.push(m); seen.add(m.id);
-          if (items.length >= 8) break;
-        }
-      } catch (e) {}
-    }
-  }
-
-  items = items.slice(0, 8);
-  if (!items.length) {
-    wrap.innerHTML = '<div class="watch-similar-loading">No recommendations.</div>';
-    return;
-  }
-
-  wrap.innerHTML = '';
-  for (const m of items) {
-    const cover = m.coverImage && (m.coverImage.extraLarge || m.coverImage.large) || '';
-    const a = document.createElement('a');
-    a.className = 'watch-similar-item';
-    a.href = '/preview?id=' + m.id;
-
-    const metaBits = [];
-    if (m.format) metaBits.push(formatFormat(m.format));
-    if (m.seasonYear) metaBits.push(m.seasonYear);
-    const scoreHtml = m.averageScore ? '<span class="watch-similar-item__score">★ ' + m.averageScore + '</span>' : '';
-
-    a.innerHTML =
-      '<div class="watch-similar-item__thumb"><img src="' + chEscapeHtml(cover) + '" alt="" loading="lazy"></div>' +
-      '<div class="watch-similar-item__body">' +
-        '<div class="watch-similar-item__title">' + chEscapeHtml(titleOf(m)) + '</div>' +
-        '<div class="watch-similar-item__meta">' + metaBits.join(' · ') + (scoreHtml ? ' ' + scoreHtml : '') + '</div>' +
-      '</div>';
-    wrap.appendChild(a);
-  }
-}
-
-// ============================================================
-// Boot
-// ============================================================
 async function initWatch() {
   const params = parseParams();
   if (!params.id) {
     document.getElementById('watchTitle').textContent = 'No anime specified';
     document.getElementById('watchMeta').innerHTML = '<a href="/home">Return home</a>';
-    document.getElementById('watchEpList').innerHTML = '<div class="watch-ep-loading">—</div>';
+    document.getElementById('watchEpList').innerHTML = '<div class="watch-sidebar__loading">—</div>';
     return;
   }
   anilistId = params.id;
@@ -540,12 +410,10 @@ async function initWatch() {
 
   wireControls();
 
-  // Fetch media + episodes/availability in parallel.
-  const mediaPromise = anilistQuery(MEDIA_QUERY, { id: Number(anilistId) }).catch(function (e) { console.error(e); return null; });
-  const epsPromise = fetchProvidersEpisodes(anilistId).catch(function () { return { results: [], hasSub: false, hasDub: false }; });
-
-  const mediaData = await mediaPromise;
-  media = mediaData && mediaData.Media;
+  try {
+    const data = await anilistQuery(MEDIA_QUERY, { id: Number(anilistId) });
+    media = data && data.Media;
+  } catch (e) { console.error('Media fetch failed:', e); }
 
   if (!media) {
     document.getElementById('watchTitle').textContent = 'Failed to load anime';
@@ -553,34 +421,12 @@ async function initWatch() {
   }
   renderInfo();
 
-  // Determine availability and hide/show buttons.
-  const fetched = await epsPromise;
-  const hasSub = fetched.hasSub;
-  const hasDub = fetched.hasDub;
-
-  // Auto-switch if requested audio is unavailable.
-  if (currentAudio === 'dub' && !hasDub && hasSub) {
-    currentAudio = 'sub';
-    appSettings.audio = 'sub';
-    saveSettings(appSettings);
-    updateUrlParams({ audio: 'sub' });
-  } else if (currentAudio === 'sub' && !hasSub && hasDub) {
-    currentAudio = 'dub';
-    appSettings.audio = 'dub';
-    saveSettings(appSettings);
-    updateUrlParams({ audio: 'dub' });
-  }
-  setAudioButtonsVisible(hasSub, hasDub);
+  episodeList = await fetchEpisodeList();
+  renderEpisodes();
   refreshControls();
 
-  // Pick best episode list and render.
-  const best = pickBestEpisodeList(fetched.results, currentAudio, media.episodes);
-  episodeList = best.list.slice().sort(function (a, b) { return Number(a.number) - Number(b.number); });
-  renderEpisodes();
-
-  // Kick off stream + similar in parallel.
   window.addEventListener('beforeunload', saveNow);
-  renderSimilar(media).catch(function () {});
+
   startPlayback();
 }
 
