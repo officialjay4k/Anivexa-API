@@ -1,10 +1,9 @@
 // ============================================================
 // Cloud Hub — subtitles.js
-// Subtitle helpers: URL proxy, format detection, libass loader,
-// font extraction from embed page.
+// Subtitle proxy, format detection, libass loader, font fetch.
 // ============================================================
 
-const chSubs = (() => {
+const chSubs = (function () {
   const API_BASE = CH.API_BASE;
 
   function getStreamRefererUA(stream) {
@@ -15,29 +14,29 @@ const chSubs = (() => {
     let userAgent = null;
     if (stream.headers && stream.headers['User-Agent']) userAgent = stream.headers['User-Agent'];
     else if (typeof stream.userAgent === 'string' && stream.userAgent) userAgent = stream.userAgent;
-    return { referer, userAgent };
+    return { referer: referer, userAgent: userAgent };
   }
 
   function proxy(url, referer, ua) {
     const m = (url || '').match(/\.([a-z0-9]+)(?:\?|$)/i);
-    const ext = (m && ['ass','ssa','srt','vtt'].includes(m[1].toLowerCase()))
+    const ext = (m && ['ass', 'ssa', 'srt', 'vtt'].indexOf(m[1].toLowerCase()) >= 0)
       ? m[1].toLowerCase()
       : 'ass';
-    let u = `${API_BASE}/proxy/subtitle.${ext}?url=${encodeURIComponent(url)}`;
-    if (referer) u += `&referer=${encodeURIComponent(referer)}`;
-    if (ua)      u += `&ua=${encodeURIComponent(ua)}`;
+    let u = API_BASE + '/proxy/subtitle.' + ext + '?url=' + encodeURIComponent(url);
+    if (referer) u += '&referer=' + encodeURIComponent(referer);
+    if (ua) u += '&ua=' + encodeURIComponent(ua);
     return u;
   }
 
-  function proxyStatic(path) {
-    return `${API_BASE}/proxy/reanime-static?path=${encodeURIComponent(path)}`;
+  function proxyStatic(p) {
+    return API_BASE + '/proxy/reanime-static?path=' + encodeURIComponent(p);
   }
 
   function url(sub) {
-    return sub?.url || sub?.file || sub?.src || sub?.source || '';
+    return (sub && (sub.url || sub.file || sub.src || sub.source)) || '';
   }
   function lang(sub) {
-    return sub?.language || sub?.label || sub?.name || sub?.title || sub?.srclang || sub?.lang || '';
+    return (sub && (sub.language || sub.label || sub.name || sub.title || sub.srclang || sub.lang)) || '';
   }
 
   function detect(sub) {
@@ -46,9 +45,11 @@ const chSubs = (() => {
     if (fmt === 'srt') return 'srt';
     if (fmt === 'vtt' || fmt === 'webvtt') return 'vtt';
     const m = (sub.url || '').toLowerCase().match(/\.([a-z0-9]+)(?:\?|$)/);
-    if (m && (m[1] === 'ass' || m[1] === 'ssa')) return 'ass';
-    if (m && m[1] === 'srt') return 'srt';
-    if (m && m[1] === 'vtt') return 'vtt';
+    if (m) {
+      if (m[1] === 'ass' || m[1] === 'ssa') return 'ass';
+      if (m[1] === 'srt') return 'srt';
+      if (m[1] === 'vtt') return 'vtt';
+    }
     return 'unknown';
   }
 
@@ -56,16 +57,17 @@ const chSubs = (() => {
     if (!watchData) return { subs: [], referer: null, userAgent: null };
     const s0 = (watchData.streams && watchData.streams[0]) || {};
     const subs = s0.subtitles || watchData.subtitles || [];
-    const { referer, userAgent } = getStreamRefererUA(s0);
-    return { subs, referer, userAgent };
+    const ru = getStreamRefererUA(s0);
+    return { subs: subs, referer: ru.referer, userAgent: ru.userAgent };
   }
 
-  function buildMenu(subs, referer, ua, opts = {}) {
+  function buildMenu(subs, referer, ua, opts) {
+    opts = opts || {};
     const subtitlesOn = !!opts.subtitlesOn;
     const items = [{ html: 'Off', url: null, default: !subtitlesOn }];
-    (subs || []).forEach((sub, i) => {
+    (subs || []).forEach(function (sub, i) {
       const kind = detect(sub);
-      const label = lang(sub) || `Track ${i + 1}`;
+      const label = lang(sub) || ('Track ' + (i + 1));
       items.push({
         html: label,
         url: proxy(url(sub), referer, ua),
@@ -82,13 +84,13 @@ const chSubs = (() => {
     if (!art) return;
     if (!item || !item.url) {
       art.subtitle.show = false;
-      if (art.plugins?.artplayerPluginLibass) {
-        try { art.plugins.artplayerPluginLibass.hide(); } catch {}
+      if (art.plugins && art.plugins.artplayerPluginLibass) {
+        try { art.plugins.artplayerPluginLibass.hide(); } catch (e) {}
       }
       return;
     }
     if (item.format === 'ass') {
-      const libass = art.plugins?.artplayerPluginLibass;
+      const libass = art.plugins && art.plugins.artplayerPluginLibass;
       if (!libass) { console.warn('[Subs] libass plugin missing'); return; }
       try {
         await libass.switch(item.url);
@@ -114,8 +116,8 @@ const chSubs = (() => {
             .replace(/\n{3,}/g, '\n\n');
         }
         const blobUrl = URL.createObjectURL(new Blob([vtt], { type: 'text/vtt' }));
-        if (art.plugins?.artplayerPluginLibass) {
-          try { art.plugins.artplayerPluginLibass.hide(); } catch {}
+        if (art.plugins && art.plugins.artplayerPluginLibass) {
+          try { art.plugins.artplayerPluginLibass.hide(); } catch (e) {}
         }
         art.subtitle.switch(blobUrl, { type: 'vtt', encoding: 'utf-8', escape: false, name: item.name });
         art.subtitle.show = true;
@@ -126,34 +128,44 @@ const chSubs = (() => {
   }
 
   async function fetchFonts(watchData) {
-    const embedUrl = watchData?.embeds?.[0]?.url;
+    const embedUrl = watchData && watchData.embeds && watchData.embeds[0] && watchData.embeds[0].url;
     if (!embedUrl) return null;
     try {
-      const res = await fetch(`${API_BASE}/proxy/raw?url=${encodeURIComponent(embedUrl)}`, { cache: 'no-store' });
+      const res = await fetch(API_BASE + '/proxy/raw?url=' + encodeURIComponent(embedUrl), { cache: 'no-store' });
       if (!res.ok) return null;
       const html = await res.text();
       const m = html.match(/available_fonts\s*:\s*\{([^}]{4,40000})\}/);
       if (!m) return null;
       const re = /(?:(?:"([^"]+)")|(?:'([^']+)')|([A-Za-z_$][\w$]*))\s*:\s*"([^"]+)"/g;
       const out = {};
-      let count = 0, mm;
+      let count = 0;
+      let mm;
       while ((mm = re.exec(m[1])) !== null) {
         const key = mm[1] || mm[2] || mm[3];
         const rawUrl = mm[4];
-        const absolute = rawUrl.startsWith('//') ? `https:${rawUrl}`
-                        : rawUrl.startsWith('http') ? rawUrl : null;
-        if (!absolute) continue;
-        out[key] = `${API_BASE}/proxy/raw?url=${encodeURIComponent(absolute)}`;
+        let absolute = null;
+        if (rawUrl.indexOf('//') === 0) absolute = 'https:' + rawUrl;
+        else if (rawUrl.indexOf('http') === 0) absolute = rawUrl;
+        if (absolute === null) continue;
+        out[key] = API_BASE + '/proxy/raw?url=' + encodeURIComponent(absolute);
         count++;
       }
       return count ? out : null;
-    } catch { return null; }
+    } catch (e) {
+      return null;
+    }
   }
 
   return {
-    getStreamRefererUA, proxy, proxyStatic,
-    url, lang, detect,
-    fromWatchData, buildMenu, applyToPlayer,
-    fetchFonts
+    getStreamRefererUA: getStreamRefererUA,
+    proxy: proxy,
+    proxyStatic: proxyStatic,
+    url: url,
+    lang: lang,
+    detect: detect,
+    fromWatchData: fromWatchData,
+    buildMenu: buildMenu,
+    applyToPlayer: applyToPlayer,
+    fetchFonts: fetchFonts
   };
 })();
