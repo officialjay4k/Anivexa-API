@@ -7,7 +7,7 @@
 }
 
 /* ============================================================
-   Hero — full viewport width, no box
+   Hero
    ============================================================ */
 .home-hero {
   position: relative;
@@ -49,22 +49,22 @@
     linear-gradient(180deg, rgba(5,2,3,0.5) 0%, transparent 22%, transparent 60%, rgba(5,2,3,0.98) 100%);
 }
 
+/* Content block — moved DOWN (flex-end + reduced bottom padding) */
 .home-hero__inner {
   position: relative;
   z-index: 3;
   height: 100%;
   display: flex;
-  align-items: center;
-  padding-block: var(--s-7);
-  padding-bottom: 220px;
+  align-items: flex-end;
+  padding-block: var(--s-7) 100px;
 }
 @media (max-width: 900px) {
-  .home-hero__inner { padding-bottom: 180px; }
+  .home-hero__inner { padding-bottom: 80px; }
+}
+@media (max-width: 720px) {
+  .home-hero__inner { padding-bottom: 60px; }
 }
 
-/* ============================================================
-   Spotlight (left)
-   ============================================================ */
 .home-hero__spotlight {
   position: relative;
   max-width: 640px;
@@ -106,7 +106,6 @@
   -webkit-backdrop-filter: blur(8px);
   box-shadow: 0 0 24px rgba(179, 19, 31, 0.45), inset 0 0 12px rgba(217, 24, 40, 0.15);
 }
-
 .home-hero__eyebrow-rank {
   background: linear-gradient(135deg, var(--ch-red-bright), var(--ch-red));
   color: var(--ch-white);
@@ -116,7 +115,6 @@
   letter-spacing: 0.06em;
   box-shadow: 0 0 12px var(--ch-red-glow);
 }
-
 .home-hero__eyebrow-label {
   color: var(--ch-red-bright);
   text-shadow: 0 0 8px var(--ch-red-glow);
@@ -186,9 +184,7 @@
   flex-wrap: wrap;
 }
 
-/* ============================================================
-   Nav arrows — moved to top-right
-   ============================================================ */
+/* Nav arrows — top-right */
 .home-hero__nav {
   position: absolute;
   top: 28px;
@@ -224,9 +220,7 @@
   .home-hero__nav--next { right: 40px; }
 }
 
-/* ============================================================
-   Featured covers — bottom-right, side-by-side, active is bigger
-   ============================================================ */
+/* Featured covers — bottom-right */
 .home-hero__featured {
   position: absolute;
   right: 44px;
@@ -236,7 +230,6 @@
   flex-direction: column;
   align-items: flex-end;
   gap: var(--s-3);
-  pointer-events: auto;
 }
 @media (max-width: 1050px) {
   .home-hero__featured { right: 24px; bottom: 24px; }
@@ -297,7 +290,6 @@
   transform: translateY(-6px);
 }
 
-/* Dots */
 .home-hero__dots {
   position: absolute;
   bottom: 26px;
@@ -328,9 +320,7 @@
   box-shadow: 0 0 14px var(--ch-red-glow);
 }
 
-/* ============================================================
-   Main layout
-   ============================================================ */
+/* Main layout */
 .home-layout {
   display: grid;
   grid-template-columns: minmax(0, 1fr) 340px;
@@ -346,7 +336,9 @@
 .home-section { margin-bottom: var(--s-6); }
 .home-section:last-child { margin-bottom: 0; }
 
-/* ---------- Cards ---------- */
+/* ============================================================
+   Cards — soft centered glow + ribbon drop on hover
+   ============================================================ */
 .home-card {
   display: flex;
   flex-direction: column;
@@ -366,11 +358,14 @@
   background: var(--ch-bg-2);
   border: 1px solid var(--ch-border-soft);
   transition: border-color var(--dur) var(--ease),
-              box-shadow var(--dur) var(--ease);
+              box-shadow 320ms var(--ease);
 }
 .home-card:hover .home-card__thumb {
-  border-color: var(--ch-border-hi);
-  box-shadow: var(--shadow-md), var(--shadow-red);
+  border-color: rgba(179, 19, 31, 0.55);
+  /* Soft centered glow — low brightness, radial feel */
+  box-shadow:
+    0 6px 18px rgba(0,0,0,0.55),
+    0 0 26px -4px rgba(179, 19, 31, 0.35);
 }
 
 .home-card__thumb img {
@@ -378,6 +373,48 @@
   height: 100%;
   object-fit: cover;
   display: block;
+}
+
+/* Ribbon drops down on hover */
+.home-card__ribbon {
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  padding: 12px 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  background: linear-gradient(180deg, var(--ch-red-bright), var(--ch-red));
+  color: #fff;
+  font-size: 11px;
+  font-weight: 800;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  transform: translateY(-100%);
+  transition: transform 340ms var(--ease-pop);
+  z-index: 4;
+  box-shadow: 0 6px 18px rgba(0,0,0,0.55);
+  pointer-events: none;
+}
+.home-card__ribbon svg {
+  filter: drop-shadow(0 0 6px rgba(255,255,255,0.6));
+}
+.home-card:hover .home-card__ribbon {
+  transform: translateY(0);
+  pointer-events: auto;
+}
+/* Subtle rounded corners for ribbon bottom */
+.home-card__ribbon::after {
+  content: '';
+  position: absolute;
+  bottom: -6px;
+  left: 0;
+  right: 0;
+  height: 6px;
+  background: linear-gradient(180deg, var(--ch-red) 0%, transparent 100%);
+  pointer-events: none;
 }
 
 .home-card__badge {
@@ -394,6 +431,11 @@
   -webkit-backdrop-filter: blur(8px);
   color: var(--ch-white);
   text-transform: uppercase;
+  z-index: 2;
+  transition: top 300ms var(--ease);
+}
+.home-card:hover .home-card__badge {
+  top: 42px;
 }
 
 .home-card__score {
@@ -408,6 +450,7 @@
   backdrop-filter: blur(8px);
   -webkit-backdrop-filter: blur(8px);
   color: var(--ch-cream);
+  z-index: 2;
 }
 
 .home-card__progress {
@@ -415,6 +458,7 @@
   left: 0; right: 0; bottom: 0;
   height: 3px;
   background: rgba(5, 2, 3, 0.7);
+  z-index: 2;
 }
 .home-card__progress-fill {
   height: 100%;
@@ -422,6 +466,7 @@
   box-shadow: 0 0 8px var(--ch-red-glow);
 }
 
+/* Title with logo → text swap + scroll while hovered */
 .home-card__title-wrap {
   position: relative;
   min-height: 40px;
@@ -438,10 +483,8 @@
   height: auto;
   object-fit: contain;
   object-position: left center;
-  /* Halo filter brightens dark logos on dark backgrounds */
   filter:
-    drop-shadow(0 0 4px rgba(255,255,255,0.28))
-    drop-shadow(0 0 8px rgba(255,255,255,0.12))
+    drop-shadow(0 0 3px rgba(255,255,255,0.22))
     drop-shadow(0 2px 6px rgba(0,0,0,0.7));
   transition: opacity 180ms var(--ease);
 }
@@ -464,16 +507,19 @@
 .home-card:hover .home-card__title-logo { opacity: 0; }
 .home-card:hover .home-card__title-text { opacity: 1; }
 
-/* Title scroll on hover if overflowing */
+/* Scrolling title: continuous loop while hovered */
 .home-card:hover .home-card__title-text.is-overflowing {
   white-space: nowrap;
   -webkit-line-clamp: unset;
-  display: inline-block;
-  animation: home-title-marquee 8s ease-in-out infinite;
+  -webkit-box-orient: unset;
+  display: block;
+  overflow: hidden;
+  position: relative;
+  animation: home-title-scroll 5s linear infinite;
 }
-@keyframes home-title-marquee {
-  0%, 12% { transform: translateX(0); }
-  88%, 100% { transform: translateX(var(--overflow-px, 0)); }
+@keyframes home-title-scroll {
+  0%   { transform: translateX(0); }
+  100% { transform: translateX(var(--overflow-px, 0)); }
 }
 
 .home-card__meta {
@@ -507,7 +553,7 @@
 }
 
 /* ============================================================
-   Schedule sidebar — always-visible overlay + hover play button
+   Schedule sidebar
    ============================================================ */
 .home-schedule {
   display: flex;
@@ -617,7 +663,6 @@
   text-shadow: 0 2px 8px rgba(0,0,0,0.9);
 }
 
-/* Play button — hidden until hover */
 .schedule-card__play {
   position: absolute;
   right: 14px;
@@ -636,35 +681,47 @@
   transition: opacity 220ms var(--ease),
               transform 260ms var(--ease-pop),
               box-shadow 220ms var(--ease);
-  box-shadow: 0 0 0 rgba(179, 19, 31, 0);
 }
-.schedule-card__play svg {
-  margin-left: 2px;
-}
+.schedule-card__play svg { margin-left: 2px; }
 .schedule-card:hover .schedule-card__play {
   opacity: 1;
   transform: translate(0, -50%) scale(1);
   box-shadow: 0 0 24px var(--ch-red-glow);
 }
 
-/* ---------- Skeletons ---------- */
+/* ============================================================
+   Skeleton — YouTube-style curved shimmer
+   ============================================================ */
 .home-skeleton {
+  position: relative;
   aspect-ratio: 2 / 3;
   border-radius: var(--r-md);
-  background: linear-gradient(90deg,
-    var(--ch-bg-2) 0%,
-    var(--ch-bg-3) 50%,
-    var(--ch-bg-2) 100%);
-  background-size: 200% 100%;
-  animation: home-shimmer 1.4s linear infinite;
+  background: var(--ch-bg-2);
+  overflow: hidden;
+  border: 1px solid var(--ch-border-soft);
+}
+.home-skeleton::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  background: linear-gradient(
+    100deg,
+    transparent 20%,
+    rgba(222, 208, 179, 0.09) 40%,
+    rgba(222, 208, 179, 0.14) 50%,
+    rgba(222, 208, 179, 0.09) 60%,
+    transparent 80%
+  );
+  transform: translateX(-100%);
+  animation: home-shimmer 1.6s ease-in-out infinite;
 }
 .home-skeleton--row {
   aspect-ratio: auto;
   height: 108px;
 }
 @keyframes home-shimmer {
-  from { background-position: 200% 0; }
-  to   { background-position: -200% 0; }
+  0%   { transform: translateX(-100%); }
+  100% { transform: translateX(100%); }
 }
 
 .home-empty {
