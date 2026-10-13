@@ -10,7 +10,6 @@ const BASE  = process.env.BASE_PATH ?? "";
 const __dir = dirname(fileURLToPath(import.meta.url));
 const DOCS  = join(__dir, "docs");
 
-// Friendly page routes (no extension)
 const PAGE_ROUTES = {
   "/":         "landing.html",
   "/home":     "home.html",
@@ -56,7 +55,8 @@ function serveStatic(res, filename) {
     const body = readFileSync(full);
     res.writeHead(200, {
       "Content-Type": mime,
-      "Cache-Control": ext === "html" ? "no-cache" : "public, max-age=300",
+      // ← CHANGED: no-store so updated images/files always show during dev
+      "Cache-Control": "no-store",
       "Access-Control-Allow-Origin": "*",
     });
     res.end(body);
