@@ -360,4 +360,4 @@ const chPipeline = (function () {
     MAX_UNIQUE_FRAGMENT_ERRORS: MAX_UNIQUE_FRAGMENT_ERRORS,
     isMp4: isMp4
   };
-})();s
+})();
