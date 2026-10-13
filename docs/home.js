@@ -23,97 +23,23 @@ async function anilistQuery(query, variables = {}) {
   return json.data;
 }
 
-const SPOTLIGHT_QUERY = `
-  query {
-    Page(page: 1, perPage: 12) {
-      media(type: ANIME, status: RELEASING, sort: TRENDING_DESC, isAdult: false) {
-        id
-        title { romaji english }
-        coverImage { extraLarge large }
-        bannerImage
-        description(asHtml: false)
-        format
-        episodes
-        seasonYear
-        averageScore
-        genres
-      }
-    }
-  }
-`;
+const SPOTLIGHT_QUERY = `query { Page(page: 1, perPage: 12) { media(type: ANIME, status: RELEASING, sort: TRENDING_DESC, isAdult: false) { id title { romaji english } coverImage { extraLarge large } bannerImage description(asHtml: false) format episodes seasonYear averageScore genres } } }`;
+const LATEST_QUERY = `query { Page(page: 1, perPage: 30) { media(type: ANIME, status: RELEASING, sort: POPULARITY_DESC, isAdult: false) { id title { romaji english } coverImage { extraLarge large } format averageScore seasonYear episodes nextAiringEpisode { episode airingAt } } } }`;
+const POPULAR_QUERY = `query { Page(page: 1, perPage: 18) { media(type: ANIME, sort: POPULARITY_DESC, isAdult: false) { id title { romaji english } coverImage { extraLarge large } format averageScore seasonYear } } }`;
+const SCHEDULE_QUERY = `query { Page(page: 1, perPage: 40) { media(type: ANIME, status: RELEASING, sort: POPULARITY_DESC, isAdult: false) { id title { romaji english } coverImage { extraLarge large } bannerImage format averageScore nextAiringEpisode { episode airingAt timeUntilAiring } } } }`;
 
-const LATEST_QUERY = `
-  query {
-    Page(page: 1, perPage: 30) {
-      media(type: ANIME, status: RELEASING, sort: POPULARITY_DESC, isAdult: false) {
-        id
-        title { romaji english }
-        coverImage { extraLarge large }
-        format
-        averageScore
-        seasonYear
-        episodes
-        nextAiringEpisode { episode airingAt }
-      }
-    }
-  }
-`;
-
-const POPULAR_QUERY = `
-  query {
-    Page(page: 1, perPage: 18) {
-      media(type: ANIME, sort: POPULARITY_DESC, isAdult: false) {
-        id
-        title { romaji english }
-        coverImage { extraLarge large }
-        format
-        averageScore
-        seasonYear
-      }
-    }
-  }
-`;
-
-const SCHEDULE_QUERY = `
-  query {
-    Page(page: 1, perPage: 40) {
-      media(type: ANIME, status: RELEASING, sort: POPULARITY_DESC, isAdult: false) {
-        id
-        title { romaji english }
-        coverImage { extraLarge large }
-        bannerImage
-        format
-        averageScore
-        nextAiringEpisode { episode airingAt timeUntilAiring }
-      }
-    }
-  }
-`;
-
-function titleOf(media) {
-  return media?.title?.english || media?.title?.romaji || 'Untitled';
-}
+function titleOf(media) { return media?.title?.english || media?.title?.romaji || 'Untitled'; }
 function formatFormat(format) {
   if (!format) return '';
   return format.replace(/_/g, ' ').replace(/\b\w/g, c => c.toUpperCase());
 }
 function cleanDescription(desc) {
   if (!desc) return '';
-  return desc
-    .replace(/<br\s*\/?>/gi, ' ')
-    .replace(/<[^>]+>/g, '')
-    .replace(/&quot;/g, '"')
-    .replace(/&#039;/g, "'")
-    .replace(/&amp;/g, '&')
-    .replace(/&[^;]+;/g, ' ')
-    .replace(/\s+/g, ' ')
-    .trim();
+  return desc.replace(/<br\s*\/?>/gi, ' ').replace(/<[^>]+>/g, '')
+    .replace(/&quot;/g, '"').replace(/&#039;/g, "'").replace(/&amp;/g, '&')
+    .replace(/&[^;]+;/g, ' ').replace(/\s+/g, ' ').trim();
 }
-
-const PLAY_ICON_SVG = `
-  <svg width="12" height="12" viewBox="0 0 24 24" fill="currentColor">
-    <polygon points="6 4 20 12 6 20"></polygon>
-  </svg>`;
+const PLAY_ICON_SVG = `<svg width="12" height="12" viewBox="0 0 24 24" fill="currentColor"><polygon points="6 4 20 12 6 20"></polygon></svg>`;
 
 // ---------- Hero ----------
 async function renderHero(mediaList) {
@@ -128,9 +54,7 @@ async function renderHero(mediaList) {
   featuredRow.innerHTML = '';
   dots.innerHTML = '';
 
-  heroTmdbCache = await Promise.all(
-    slides.map(m => tmdbLookup(titleOf(m), m.seasonYear).catch(() => null))
-  );
+  heroTmdbCache = await Promise.all(slides.map(m => tmdbLookup(titleOf(m), m.seasonYear).catch(() => null)));
 
   slides.forEach((m, i) => {
     const tmdb = heroTmdbCache[i];
@@ -169,7 +93,6 @@ function renderSpotlight(i) {
   if (!m) return;
   const tmdb = heroTmdbCache?.[i] || null;
   const spot = document.getElementById('heroSpotlight');
-
   const desc = cleanDescription(m.description).slice(0, 280);
   const meta = [];
   if (m.averageScore) meta.push(`<span class="text-cream">★ ${m.averageScore}</span>`);
@@ -178,10 +101,12 @@ function renderSpotlight(i) {
   if (m.genres?.length) meta.push(`<span>${m.genres.slice(0, 3).join(' · ')}</span>`);
 
   const titleHtml = tmdb?.logoUrl
-    ? `<img class="home-hero__title-logo" src="${chEscapeHtml(tmdb.logoUrl)}"
-            alt="${chEscapeHtml(titleOf(m))}"
-            onerror="this.outerHTML='<h1 class=&quot;home-hero__title&quot;>${chEscapeHtml(titleOf(m))}</h1>'">`
+    ? `<img class="home-hero__title-logo" src="${chEscapeHtml(tmdb.logoUrl)}" alt="${chEscapeHtml(titleOf(m))}" onerror="this.outerHTML='<h1 class=&quot;home-hero__title&quot;>${chEscapeHtml(titleOf(m))}</h1>'">`
     : `<h1 class="home-hero__title">${chEscapeHtml(titleOf(m))}</h1>`;
+
+  // Resume/Watch Again label
+  const resume = chResumeInfo(m.id);
+  const ctaLabel = resume.label;
 
   spot.innerHTML = `
     <div class="home-hero__eyebrow">
@@ -192,9 +117,9 @@ function renderSpotlight(i) {
     <div class="home-hero__meta">${meta.join('<span class="sep">·</span>')}</div>
     ${desc ? `<p class="home-hero__desc">${chEscapeHtml(desc)}</p>` : ''}
     <div class="home-hero__cta">
-      <a href="/preview?id=${m.id}" class="ch-btn ch-btn--primary ch-btn--lg">
+      <a href="${resume.href}" class="ch-btn ch-btn--primary ch-btn--lg">
         <svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor"><polygon points="6 4 20 12 6 20"></polygon></svg>
-        Stream Now
+        ${chEscapeHtml(ctaLabel)}
       </a>
       <a href="/preview?id=${m.id}" class="ch-btn ch-btn--ghost ch-btn--lg">More Info</a>
     </div>
@@ -225,15 +150,15 @@ function stopHeroRotation() {
   if (heroTimer) { clearInterval(heroTimer); heroTimer = null; }
 }
 
-// ---------- Continue Watching (deduped by anilistId) ----------
+// ---------- Continue Watching ----------
 function renderContinue() {
   const section = document.getElementById('continueSection');
   const row = document.getElementById('continueRow');
+  if (!section || !row) return;
 
   let store = {};
   try { store = JSON.parse(localStorage.getItem(CH.STORAGE_PROGRESS)) || {}; } catch {}
 
-  // Dedupe: one entry per anilistId, keep most recent watch
   const byShow = new Map();
   for (const entry of Object.values(store)) {
     if (!entry || !entry.anilistId) continue;
@@ -242,10 +167,7 @@ function renderContinue() {
     const existing = byShow.get(k);
     if (!existing || (entry.updatedAt || 0) > (existing.updatedAt || 0)) byShow.set(k, entry);
   }
-
-  const items = [...byShow.values()]
-    .sort((a, b) => (b.updatedAt || 0) - (a.updatedAt || 0))
-    .slice(0, 12);
+  const items = [...byShow.values()].sort((a, b) => (b.updatedAt || 0) - (a.updatedAt || 0)).slice(0, 12);
 
   if (!items.length) { section.hidden = true; return; }
   section.hidden = false;
@@ -273,7 +195,6 @@ function renderContinue() {
   detectTitleOverflow(row);
 }
 
-// ---------- Title overflow detection ----------
 function detectTitleOverflow(root) {
   if (!root) return;
   requestAnimationFrame(() => {
@@ -281,27 +202,15 @@ function detectTitleOverflow(root) {
       el.classList.remove('is-overflowing');
       el.style.removeProperty('--overflow-px');
       el.style.removeProperty('--overflow-duration');
-
-      const saved = {
-        ws: el.style.whiteSpace, disp: el.style.display,
-        lc: el.style.webkitLineClamp, bo: el.style.webkitBoxOrient,
-        pos: el.style.position, w: el.style.width, right: el.style.right,
-      };
-      el.style.whiteSpace = 'nowrap';
-      el.style.display = 'block';
-      el.style.webkitLineClamp = 'unset';
-      el.style.webkitBoxOrient = 'unset';
-      el.style.position = 'static';
-      el.style.width = '100%';
-      el.style.right = 'auto';
-
+      const saved = { ws: el.style.whiteSpace, disp: el.style.display, lc: el.style.webkitLineClamp, bo: el.style.webkitBoxOrient, pos: el.style.position, w: el.style.width, right: el.style.right };
+      el.style.whiteSpace = 'nowrap'; el.style.display = 'block';
+      el.style.webkitLineClamp = 'unset'; el.style.webkitBoxOrient = 'unset';
+      el.style.position = 'static'; el.style.width = '100%'; el.style.right = 'auto';
       const fullWidth = el.scrollWidth;
       const visibleWidth = el.parentElement?.clientWidth || el.clientWidth;
-
       el.style.whiteSpace = saved.ws; el.style.display = saved.disp;
       el.style.webkitLineClamp = saved.lc; el.style.webkitBoxOrient = saved.bo;
       el.style.position = saved.pos; el.style.width = saved.w; el.style.right = saved.right;
-
       if (fullWidth > visibleWidth + 4) {
         const overflow = fullWidth - visibleWidth + 12;
         const duration = Math.max(4, overflow / 30);
@@ -313,33 +222,26 @@ function detectTitleOverflow(root) {
   });
 }
 
-// ---------- Grid renderer ----------
 async function renderMediaGrid(gridEl, items, opts = {}) {
   gridEl.innerHTML = '';
-  if (!items?.length) {
-    gridEl.innerHTML = '<div class="home-empty">No data.</div>';
-    return;
-  }
+  if (!items?.length) { gridEl.innerHTML = '<div class="home-empty">No data.</div>'; return; }
 
-  const tmdbResults = await Promise.all(
-    items.map(m => tmdbLookup(titleOf(m), m.seasonYear).catch(() => null))
-  );
+  const tmdbResults = await Promise.all(items.map(m => tmdbLookup(titleOf(m), m.seasonYear).catch(() => null)));
 
   items.forEach((m, i) => {
     const tmdb = tmdbResults[i];
     const cover = m.coverImage?.extraLarge || m.coverImage?.large || '';
     const card = document.createElement('a');
     card.className = 'home-card';
-    card.href = `/preview?id=${m.id}`;
+    const resume = chResumeInfo(m.id);
+    card.href = resume.href;
 
     let badge = '';
-    if (opts.latestEp && m.nextAiringEpisode?.episode) {
-      badge = `<div class="home-card__badge">EP ${m.nextAiringEpisode.episode - 1}</div>`;
-    } else if (opts.latestEp && m.episodes) {
-      badge = `<div class="home-card__badge">${m.episodes} EPS</div>`;
-    }
+    if (opts.latestEp && m.nextAiringEpisode?.episode) badge = `<div class="home-card__badge">EP ${m.nextAiringEpisode.episode - 1}</div>`;
+    else if (opts.latestEp && m.episodes) badge = `<div class="home-card__badge">${m.episodes} EPS</div>`;
 
     const scoreBadge = m.averageScore ? `<div class="home-card__score">★ ${m.averageScore}</div>` : '';
+    const ribbonLabel = resume.isResume ? 'Resume' : (resume.isRewatch ? 'Watch Again' : 'Watch');
 
     const titleWrap = tmdb?.logoUrl
       ? `<div class="home-card__title-wrap">
@@ -353,7 +255,7 @@ async function renderMediaGrid(gridEl, items, opts = {}) {
     card.innerHTML = `
       <div class="home-card__thumb">
         <img src="${chEscapeHtml(cover)}" alt="" loading="lazy" onerror="this.style.visibility='hidden'">
-        <div class="home-card__ribbon">${PLAY_ICON_SVG}<span>Watch</span></div>
+        <div class="home-card__ribbon">${PLAY_ICON_SVG}<span>${ribbonLabel}</span></div>
         ${badge}
         ${scoreBadge}
       </div>
@@ -366,44 +268,42 @@ async function renderMediaGrid(gridEl, items, opts = {}) {
   detectTitleOverflow(gridEl);
 }
 
-// ---------- Schedule ----------
+// ---------- Schedule with flipped time ----------
 function renderSchedule(mediaList) {
   const wrap = document.getElementById('scheduleList');
   wrap.innerHTML = '';
-
-  if (!mediaList?.length) {
-    wrap.innerHTML = '<div class="home-empty">No upcoming episodes.</div>';
-    return;
-  }
+  if (!mediaList?.length) { wrap.innerHTML = '<div class="home-empty">No upcoming episodes.</div>'; return; }
 
   const upcoming = mediaList
     .filter(m => m.nextAiringEpisode?.airingAt)
-    .map(m => ({
-      media: m,
-      episode: m.nextAiringEpisode.episode,
-      airingAt: m.nextAiringEpisode.airingAt
-    }))
+    .map(m => ({ media: m, episode: m.nextAiringEpisode.episode, airingAt: m.nextAiringEpisode.airingAt }))
     .sort((a, b) => a.airingAt - b.airingAt)
     .slice(0, 8);
 
-  if (!upcoming.length) {
-    wrap.innerHTML = '<div class="home-empty">No upcoming episodes.</div>';
-    return;
-  }
+  if (!upcoming.length) { wrap.innerHTML = '<div class="home-empty">No upcoming episodes.</div>'; return; }
 
   for (const s of upcoming) {
     const m = s.media;
     const bg = m.bannerImage || m.coverImage?.extraLarge || m.coverImage?.large || '';
+
+    // Vertical time string — reads top to bottom on the left side
+    const timeStr = chFormatTimeUntil(s.airingAt).replace('in ', '').toUpperCase();
+    const epStr = 'EP ' + s.episode;
+
     const card = document.createElement('a');
     card.className = 'schedule-card';
-    card.href = `/preview?id=${m.id}`;
+    card.href = '/preview?id=' + m.id;
     card.innerHTML = `
       <div class="schedule-card__bg" style="background-image:url('${chEscapeHtml(bg)}')"></div>
       <div class="schedule-card__scrim"></div>
+      <div class="schedule-card__time-flip">
+        <span>${chEscapeHtml(timeStr)}</span>
+        <span>${chEscapeHtml(epStr)}</span>
+      </div>
       <div class="schedule-card__content">
         <div class="schedule-card__when">
           <span class="schedule-card__when-dot"></span>
-          ${chFormatTimeUntil(s.airingAt)} · EP ${s.episode}
+          Airing soon
         </div>
         <div class="schedule-card__title">${chEscapeHtml(titleOf(m))}</div>
         <div class="schedule-card__meta">${formatFormat(m.format)}${m.averageScore ? ' · ★ ' + m.averageScore : ''}</div>
@@ -441,35 +341,4 @@ async function initHome() {
   try {
     const popular = await anilistQuery(POPULAR_QUERY);
     const items = popular?.Page?.media || [];
-    renderMediaGrid(document.getElementById('popularGrid'), items.slice(0, 12));
-  } catch (err) {
-    console.error('Popular fetch failed:', err);
-    document.getElementById('popularGrid').innerHTML = '<div class="home-empty">Could not load.</div>';
-  }
-
-  try {
-    const sched = await anilistQuery(SCHEDULE_QUERY);
-    renderSchedule(sched?.Page?.media || []);
-  } catch (err) {
-    console.error('Schedule fetch failed:', err);
-    document.getElementById('scheduleList').innerHTML = '<div class="home-empty">Could not load.</div>';
-  }
-
-  const hero = document.getElementById('homeHero');
-  const prev = document.getElementById('heroPrev');
-  const next = document.getElementById('heroNext');
-  if (prev) prev.addEventListener('click', () => goToSlide(heroIndex - 1));
-  if (next) next.addEventListener('click', () => goToSlide(heroIndex + 1));
-  if (hero) {
-    hero.addEventListener('mouseenter', stopHeroRotation);
-    hero.addEventListener('mouseleave', startHeroRotation);
-  }
-
-  window.addEventListener('resize', () => {
-    detectTitleOverflow(document.getElementById('continueRow'));
-    detectTitleOverflow(document.getElementById('latestGrid'));
-    detectTitleOverflow(document.getElementById('popularGrid'));
-  });
-}
-
-document.addEventListener('DOMContentLoaded', initHome);
+    renderMediaGrid(document.getElementById('popularGrid
