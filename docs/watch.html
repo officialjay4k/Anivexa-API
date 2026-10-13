@@ -19,18 +19,29 @@
       <div class="watch-top">
         <div class="watch-top__player">
           <div class="watch-player-wrap">
-            <div class="watch-player" id="watchPlayer"></div>
+            <div class="watch-player" id="watchPlayer">
+              <div class="watch-player__skeleton" id="watchPlayerSkeleton"></div>
+            </div>
             <div class="watch-player-badge" id="watchBadge">Loading…</div>
           </div>
           <div class="watch-controls" id="watchControls">
-            <button class="watch-toggle" id="btnAutoSkip" type="button">Auto Skip</button>
-            <button class="watch-toggle" id="btnAutoNext" type="button">Auto Next</button>
-            <button class="watch-toggle" id="btnAutoPlay" type="button">Auto Play</button>
+            <button class="watch-toggle watch-toggle--accent" id="btnAutoSkip" type="button">
+              <span class="watch-toggle__dot"></span><span>Auto Skip</span>
+            </button>
+            <button class="watch-toggle watch-toggle--accent" id="btnAutoNext" type="button">
+              <span class="watch-toggle__dot"></span><span>Auto Next</span>
+            </button>
+            <button class="watch-toggle watch-toggle--accent" id="btnAutoPlay" type="button">
+              <span class="watch-toggle__dot"></span><span>Auto Play</span>
+            </button>
             <span class="watch-controls__sep"></span>
-            <button class="watch-toggle watch-audio" id="btnSub" type="button">Sub</button>
-            <button class="watch-toggle watch-audio" id="btnDub" type="button">Dub</button>
+            <button class="watch-toggle watch-toggle--audio" id="btnSub" type="button">Sub</button>
+            <button class="watch-toggle watch-toggle--audio" id="btnDub" type="button">Dub</button>
             <span class="watch-controls__sep"></span>
-            <button class="watch-toggle watch-quiet" id="btnFailover" type="button" title="Skip current source and try the next">Skip Source</button>
+            <button class="watch-toggle watch-toggle--failover" id="btnFailover" type="button" title="Skip current source and try the next">
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><polyline points="13 17 18 12 13 7"/><polyline points="6 17 11 12 6 7"/></svg>
+              Skip Source
+            </button>
           </div>
         </div>
 
@@ -40,7 +51,12 @@
             <span class="watch-ep-count" id="watchEpCount">—</span>
           </div>
           <div class="watch-ep-body" id="watchEpList">
-            <div class="watch-ep-loading">Loading episodes…</div>
+            <div class="watch-ep-loading">
+              <div class="ch-skel ch-skel-line" style="width:60%"></div>
+              <div class="ch-skel ch-skel-line" style="width:40%; margin-top:8px;"></div>
+              <div class="ch-skel ch-skel-line" style="width:55%; margin-top:8px;"></div>
+              <div class="ch-skel ch-skel-line" style="width:45%; margin-top:8px;"></div>
+            </div>
           </div>
         </aside>
       </div>
@@ -76,7 +92,20 @@
             <h3 class="watch-similar-title">Similar Anime</h3>
           </div>
           <div class="watch-similar-list" id="watchSimilarList">
-            <div class="watch-similar-loading">Loading…</div>
+            <div class="watch-similar-skel">
+              <div class="ch-skel" style="width:56px; height:80px;"></div>
+              <div style="flex:1;">
+                <div class="ch-skel ch-skel-line" style="width:80%"></div>
+                <div class="ch-skel ch-skel-line" style="width:50%; margin-top:8px;"></div>
+              </div>
+            </div>
+            <div class="watch-similar-skel">
+              <div class="ch-skel" style="width:56px; height:80px;"></div>
+              <div style="flex:1;">
+                <div class="ch-skel ch-skel-line" style="width:70%"></div>
+                <div class="ch-skel ch-skel-line" style="width:40%; margin-top:8px;"></div>
+              </div>
+            </div>
           </div>
         </aside>
       </div>
