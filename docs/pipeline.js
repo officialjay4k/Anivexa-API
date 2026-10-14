@@ -148,8 +148,7 @@ const chPipeline = (function () {
     if (!total) return;
     log('Draining ' + total + ' pending stream(s)');
     S.workList = S.workList.concat(S.pendingHls, S.pendingMp4);
-    S.pendingHls = [];
-    S.pendingMp4 = [];
+    S.pendingHls = []; S.pendingMp4 = [];
   }
 
   async function backgroundFetch(providers, gen) {
@@ -322,7 +321,12 @@ const chPipeline = (function () {
     tryWorkIndex(S.workIndex + 1, gen);
   }
 
-  // NEW: jump directly to a specific (provider, serverName) if present in workList.
+  // NEW: restart the pipeline from scratch (same id, ep, audio)
+  function restart() {
+    if (!S.anilistId) return;
+    start({ anilistId: S.anilistId, ep: S.ep, audio: S.audio });
+  }
+
   function jumpTo(provider, serverName) {
     if (!S.workList.length) return false;
     const idx = S.workList.findIndex(function (e) {
@@ -351,9 +355,8 @@ const chPipeline = (function () {
 
   return {
     on: on, emit: emit,
-    start: start, stop: stop,
-    forceFailover: forceFailover,
-    jumpTo: jumpTo,
+    start: start, stop: stop, restart: restart,
+    forceFailover: forceFailover, jumpTo: jumpTo,
     getState: getState,
     MAX_UNIQUE_FRAGMENT_ERRORS: MAX_UNIQUE_FRAGMENT_ERRORS,
     isMp4: isMp4
