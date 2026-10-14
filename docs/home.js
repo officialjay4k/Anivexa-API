@@ -14,6 +14,9 @@ let heroIndex = 0;
 let heroTimer = null;
 let heroTmdbCache = [];
 
+let currentTrendRange = 'day';
+let currentScheduleDay = 0; // 0=today, 1=tomorrow, -1=yesterday — we use index into 3-day window
+
 // ---------- availability cache ----------
 const availCache = (() => {
   try { return JSON.parse(localStorage.getItem(AVAIL_CACHE_KEY)) || {}; } catch { return {}; }
@@ -23,7 +26,6 @@ const availInflight = new Map();
 function saveAvailCache() {
   try { localStorage.setItem(AVAIL_CACHE_KEY, JSON.stringify(availCache)); } catch {}
 }
-
 function availGet(id) {
   const e = availCache[String(id)];
   if (!e) return null;
@@ -35,27 +37,22 @@ async function fetchAvailability(anilistId) {
   const id = String(anilistId);
   const cached = availGet(id);
   if (cached) return cached;
-
   if (availInflight.has(id)) return availInflight.get(id);
 
   const promise = (async () => {
     let result = { eps: 0, sub: 0, dub: 0, ts: Date.now() };
     try {
-      // One request hits both providers on the worker side.
       const res = await fetch(`${API_BASE}/episodes/reanime/anikoto/${id}?map=false`, { cache: 'no-store' });
       if (res.ok) {
         const data = await res.json();
-        const pick = (key) => data?.[key]?.episodes || {};
+        const pick = (key) => (data?.[key]?.episodes) || {};
         const r = pick('reanime');
         const a = pick('anikoto');
-        const subCount = Math.max((r.sub?.length || 0), (a.sub?.length || 0));
-        const dubCount = Math.max((r.dub?.length || 0), (a.dub?.length || 0));
-        result.sub = subCount;
-        result.dub = dubCount;
-        result.eps = Math.max(subCount, dubCount);
+        result.sub = Math.max((r.sub?.length || 0), (a.sub?.length || 0));
+        result.dub = Math.max((r.dub?.length || 0), (a.dub?.length || 0));
+        result.eps = Math.max(result.sub, result.dub);
       }
-    } catch (e) { /* silent — chips just won't show */ }
-
+    } catch (e) {}
     availCache[id] = result;
     saveAvailCache();
     return result;
@@ -76,39 +73,65 @@ const availObserver = (typeof IntersectionObserver !== 'undefined')
         availObserver.unobserve(el);
         if (!id) continue;
 
-        // Already cached? Render immediately.
         const cached = availGet(id);
         if (cached) { applyChips(el, cached); continue; }
 
         fetchAvailability(id).then((data) => {
-          if (data && (data.eps || data.sub || data.dub)) applyChips(el, data);
+          if (data && (data.eps || data.dub)) applyChips(el, data);
         }).catch(() => {});
       }
     }, { rootMargin: '240px 0px' })
   : null;
 
-function applyChips(cardEl, avail) {
-  const chipRow = cardEl.querySelector('.home-card__chiprow');
-  if (!chipRow) return;
+// Icons for the 3 chip types we keep.
+const ICON_TV  = '<svg width="9" height="9" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="7" width="18" height="12" rx="2"/><line x1="8" y1="3" x2="12" y2="7"/><line x1="16" y1="3" x2="12" y2="7"/></svg>';
+const ICON_MIC = '<svg width="9" height="9" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><path d="M12 2a3 3 0 0 0-3 3v7a3 3 0 0 0 6 0V5a3 3 0 0 0-3-3z"/><path d="M19 10v2a7 7 0 0 1-14 0v-2"/><line x1="12" y1="19" x2="12" y2="22"/></svg>';
 
-  // Remove skeleton state if any.
+function applyChips(cardEl, avail) {
+  const chipRow = cardEl.querySelector('.home-card__chiprow') || cardEl.querySelector('.trend-item__chips');
+  if (!chipRow) return;
   chipRow.classList.remove('is-loading');
 
-  const tvIcon = '<svg width="9" height="9" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="7" width="18" height="12" rx="2"/><line x1="8" y1="3" x2="12" y2="7"/><line x1="16" y1="3" x2="12" y2="7"/></svg>';
-  const subIcon = '<svg width="9" height="9" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="5" width="18" height="14" rx="2"/><line x1="7" y1="14" x2="11" y2="14"/><line x1="7" y1="18" x2="17" y2="18"/></svg>';
-  const dubIcon = '<svg width="9" height="9" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><path d="M12 2a3 3 0 0 0-3 3v7a3 3 0 0 0 6 0V5a3 3 0 0 0-3-3z"/><path d="M19 10v2a7 7 0 0 1-14 0v-2"/><line x1="12" y1="19" x2="12" y2="22"/></svg>';
-
-  const chips = [];
-  if (avail.eps) chips.push(`<span class="home-card__chip">${tvIcon}${avail.eps}</span>`);
-  if (avail.sub) chips.push(`<span class="home-card__chip">${subIcon}${avail.sub}</span>`);
-  if (avail.dub) chips.push(`<span class="home-card__chip">${dubIcon}${avail.dub}</span>`);
-
   // Preserve any existing score chip.
-  const existing = chipRow.querySelector('.home-card__chip--score');
+  const existing = chipRow.querySelector('.home-card__chip--score') || chipRow.querySelector('.trend-item__chip--score');
   chipRow.innerHTML = '';
   if (existing) chipRow.appendChild(existing);
+
+  const chips = [];
+  if (avail.eps) chips.push(`<span class="home-card__chip">${ICON_TV}${avail.eps}</span>`);
+  if (avail.dub) chips.push(`<span class="home-card__chip">${ICON_MIC}${avail.dub}</span>`);
   if (chips.length) chipRow.insertAdjacentHTML('beforeend', chips.join(''));
 }
+
+function applyTrendChips(itemEl, avail) {
+  const chipRow = itemEl.querySelector('.trend-item__chips');
+  if (!chipRow) return;
+  const existing = chipRow.querySelector('.trend-item__chip--score');
+  chipRow.innerHTML = '';
+  if (existing) chipRow.appendChild(existing);
+
+  const chips = [];
+  if (avail.eps) chips.push(`<span class="trend-item__chip">${ICON_TV}${avail.eps}</span>`);
+  if (avail.dub) chips.push(`<span class="trend-item__chip">${ICON_MIC}${avail.dub}</span>`);
+  if (chips.length) chipRow.insertAdjacentHTML('beforeend', chips.join(''));
+}
+
+const trendAvailObserver = (typeof IntersectionObserver !== 'undefined')
+  ? new IntersectionObserver((entries) => {
+      for (const entry of entries) {
+        if (!entry.isIntersecting) continue;
+        const el = entry.target;
+        const id = el.dataset.anilistId;
+        trendAvailObserver.unobserve(el);
+        if (!id) continue;
+        const cached = availGet(id);
+        if (cached) { applyTrendChips(el, cached); continue; }
+        fetchAvailability(id).then((data) => {
+          if (data && (data.eps || data.dub)) applyTrendChips(el, data);
+        }).catch(() => {});
+      }
+    }, { rootMargin: '240px 0px' })
+  : null;
 
 // ---------- AniList ----------
 async function anilistQuery(query, variables = {}) {
@@ -125,8 +148,31 @@ async function anilistQuery(query, variables = {}) {
 
 const SPOTLIGHT_QUERY = `query { Page(page: 1, perPage: 12) { media(type: ANIME, status: RELEASING, sort: TRENDING_DESC, isAdult: false) { id title { romaji english } coverImage { extraLarge large } bannerImage description(asHtml: false) format episodes seasonYear averageScore genres } } }`;
 const LATEST_QUERY = `query { Page(page: 1, perPage: 30) { media(type: ANIME, status: RELEASING, sort: POPULARITY_DESC, isAdult: false) { id title { romaji english } coverImage { extraLarge large } format averageScore seasonYear episodes nextAiringEpisode { episode airingAt } } } }`;
-const POPULAR_QUERY = `query { Page(page: 1, perPage: 18) { media(type: ANIME, sort: POPULARITY_DESC, isAdult: false) { id title { romaji english } coverImage { extraLarge large } format averageScore seasonYear episodes } } }`;
-const SCHEDULE_QUERY = `query { Page(page: 1, perPage: 40) { media(type: ANIME, status: RELEASING, sort: POPULARITY_DESC, isAdult: false) { id title { romaji english } coverImage { extraLarge large } bannerImage format averageScore nextAiringEpisode { episode airingAt timeUntilAiring } } } }`;
+const POPULAR_QUERY = `query { Page(page: 1, perPage: 18) { media(type: ANIME, sort: POPULARITY_DESC, isAdult: false) { id title { romaji english } coverImage { extraLarge large } format averageScore seasonYear } } }`;
+
+const TRENDING_QUERIES = {
+  day:   `query { Page(page: 1, perPage: 5) { media(type: ANIME, sort: TRENDING_DESC, isAdult: false) { id title { romaji english } coverImage { extraLarge large } format averageScore } } }`,
+  week:  `query { Page(page: 1, perPage: 5) { media(type: ANIME, sort: POPULARITY_DESC, isAdult: false) { id title { romaji english } coverImage { extraLarge large } format averageScore } } }`,
+  month: `query { Page(page: 1, perPage: 5) { media(type: ANIME, sort: FAVOURITES_DESC, isAdult: false) { id title { romaji english } coverImage { extraLarge large } format averageScore } } }`
+};
+
+const SCHEDULE_QUERY = `
+  query ($start: Int, $end: Int) {
+    Page(page: 1, perPage: 40) {
+      airingSchedules(airingAt_greater: $start, airingAt_lesser: $end, sort: TIME) {
+        episode
+        airingAt
+        media {
+          id
+          title { romaji english }
+          coverImage { extraLarge large }
+          format
+          isAdult
+        }
+      }
+    }
+  }
+`;
 
 function titleOf(media) { return media?.title?.english || media?.title?.romaji || 'Untitled'; }
 function formatFormat(format) {
@@ -320,7 +366,7 @@ function detectTitleOverflow(root) {
   });
 }
 
-// ---------- Grid renderer (with chip strip) ----------
+// ---------- Grid renderer (star / mic / eps chips only) ----------
 async function renderMediaGrid(gridEl, items, opts = {}) {
   gridEl.innerHTML = '';
   if (!items?.length) { gridEl.innerHTML = '<div class="home-empty">No data.</div>'; return; }
@@ -343,9 +389,6 @@ async function renderMediaGrid(gridEl, items, opts = {}) {
     const scoreChip = m.averageScore
       ? `<span class="home-card__chip home-card__chip--score"><span class="star">★</span>${m.averageScore}</span>`
       : '';
-    const formatChip = m.format
-      ? `<span class="home-card__chip home-card__chip--format">${formatFormat(m.format)}</span>`
-      : '';
 
     const ribbonLabel = resume.isResume ? 'Resume' : (resume.isRewatch ? 'Watch Again' : 'Watch');
 
@@ -364,7 +407,7 @@ async function renderMediaGrid(gridEl, items, opts = {}) {
         <div class="home-card__ribbon">${PLAY_ICON_SVG}<span>${ribbonLabel}</span></div>
         ${topBadge ? `<div class="home-card__badge">${chEscapeHtml(topBadge)}</div>` : ''}
         <div class="home-card__chiprow is-loading">
-          ${scoreChip}${formatChip}
+          ${scoreChip}
         </div>
       </div>
       ${titleWrap}
@@ -374,59 +417,206 @@ async function renderMediaGrid(gridEl, items, opts = {}) {
   });
 
   detectTitleOverflow(gridEl);
-
-  // Observe cards for availability fetch
   if (availObserver) {
-    gridEl.querySelectorAll('.home-card[data-anilist-id]').forEach(el => {
-      availObserver.observe(el);
-    });
+    gridEl.querySelectorAll('.home-card[data-anilist-id]').forEach(el => availObserver.observe(el));
   }
 }
 
-// ---------- Schedule ----------
-function renderSchedule(mediaList) {
-  const wrap = document.getElementById('scheduleList');
+// ---------- Top Trending module ----------
+async function renderTrending() {
+  const wrap = document.getElementById('trendingList');
+  if (!wrap) return;
+  wrap.innerHTML = '<div class="home-skeleton home-skeleton--row"></div><div class="home-skeleton home-skeleton--row"></div><div class="home-skeleton home-skeleton--row"></div>';
+
+  const query = TRENDING_QUERIES[currentTrendRange] || TRENDING_QUERIES.day;
+  let items = [];
+  try {
+    const data = await anilistQuery(query);
+    items = data?.Page?.media || [];
+  } catch (e) {
+    console.error('Trending fetch failed:', e);
+    wrap.innerHTML = '<div class="home-empty">Could not load.</div>';
+    return;
+  }
+  if (!items.length) { wrap.innerHTML = '<div class="home-empty">No data.</div>'; return; }
+
   wrap.innerHTML = '';
-  if (!mediaList?.length) { wrap.innerHTML = '<div class="home-empty">No upcoming episodes.</div>'; return; }
+  items.slice(0, 5).forEach((m, i) => {
+    const cover = m.coverImage?.extraLarge || m.coverImage?.large || '';
+    const item = document.createElement('a');
+    item.className = 'trend-item';
+    item.href = '/preview?id=' + m.id;
+    item.dataset.anilistId = m.id;
 
-  const upcoming = mediaList
-    .filter(m => m.nextAiringEpisode?.airingAt)
-    .map(m => ({ media: m, episode: m.nextAiringEpisode.episode, airingAt: m.nextAiringEpisode.airingAt }))
-    .sort((a, b) => a.airingAt - b.airingAt)
-    .slice(0, 8);
+    const scoreChip = m.averageScore
+      ? `<span class="trend-item__chip trend-item__chip--score"><span class="star" style="color:var(--ch-cream)">★</span>${m.averageScore}</span>`
+      : '';
 
-  if (!upcoming.length) { wrap.innerHTML = '<div class="home-empty">No upcoming episodes.</div>'; return; }
-
-  for (const s of upcoming) {
-    const m = s.media;
-    const bg = m.bannerImage || m.coverImage?.extraLarge || m.coverImage?.large || '';
-    const timeStr = chFormatTimeUntil(s.airingAt).replace('in ', '').toUpperCase();
-    const epStr = 'EP ' + s.episode;
-
-    const card = document.createElement('a');
-    card.className = 'schedule-card';
-    card.href = '/preview?id=' + m.id;
-    card.innerHTML = `
-      <div class="schedule-card__bg" style="background-image:url('${chEscapeHtml(bg)}')"></div>
-      <div class="schedule-card__scrim"></div>
-      <div class="schedule-card__time-flip">
-        <span>${chEscapeHtml(timeStr)}</span>
-        <span>${chEscapeHtml(epStr)}</span>
-      </div>
-      <div class="schedule-card__content">
-        <div class="schedule-card__when">
-          <span class="schedule-card__when-dot"></span>
-          Airing soon
+    item.innerHTML = `
+      <div class="trend-item__bg" style="background-image:url('${chEscapeHtml(cover)}')"></div>
+      <div class="trend-item__rank">${i + 1}</div>
+      <div class="trend-item__body">
+        <div class="trend-item__title">${chEscapeHtml(titleOf(m))}</div>
+        <div class="trend-item__meta">
+          ${m.averageScore ? `<span class="star">★</span><span class="score">${m.averageScore}</span>` : ''}
+          ${m.format ? `<span class="format">${formatFormat(m.format)}</span>` : ''}
         </div>
-        <div class="schedule-card__title">${chEscapeHtml(titleOf(m))}</div>
-        <div class="schedule-card__meta">${formatFormat(m.format)}${m.averageScore ? ' · ★ ' + m.averageScore : ''}</div>
-      </div>
-      <div class="schedule-card__play" aria-hidden="true">
-        <svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor"><polygon points="6 4 20 12 6 20"></polygon></svg>
+        <div class="trend-item__chips">${scoreChip}</div>
       </div>
     `;
-    wrap.appendChild(card);
+    wrap.appendChild(item);
+  });
+
+  if (trendAvailObserver) {
+    wrap.querySelectorAll('.trend-item[data-anilist-id]').forEach(el => trendAvailObserver.observe(el));
   }
+}
+
+function wireTrendTabs() {
+  const tabs = document.getElementById('trendTabs');
+  if (!tabs) return;
+  tabs.addEventListener('click', (e) => {
+    const btn = e.target.closest('.sidebar-tab');
+    if (!btn) return;
+    const range = btn.dataset.range;
+    if (!range || range === currentTrendRange) return;
+    currentTrendRange = range;
+    tabs.querySelectorAll('.sidebar-tab').forEach(b => b.classList.toggle('is-active', b === btn));
+    renderTrending();
+  });
+}
+
+// ---------- Schedule module ----------
+function getThreeDayWindow() {
+  const days = [];
+  const now = new Date();
+  for (let offset = -1; offset <= 1; offset++) {
+    const d = new Date(now);
+    d.setDate(now.getDate() + offset);
+    d.setHours(0, 0, 0, 0);
+    days.push(d);
+  }
+  return days;
+}
+
+function renderScheduleTabs(days, activeIdx) {
+  const tabs = document.getElementById('scheduleTabs');
+  if (!tabs) return;
+  const dayNames = ['SUN','MON','TUE','WED','THU','FRI','SAT'];
+  tabs.innerHTML = '';
+  days.forEach((d, i) => {
+    const btn = document.createElement('button');
+    btn.type = 'button';
+    btn.className = 'sidebar-day-tab' + (i === activeIdx ? ' is-active' : '');
+    btn.dataset.idx = i;
+    btn.innerHTML = `
+      <span class="sidebar-day-tab__day">${dayNames[d.getDay()]}</span>
+      <span class="sidebar-day-tab__num">${d.getDate()}</span>
+    `;
+    btn.addEventListener('click', () => {
+      currentScheduleDay = i;
+      loadSchedule();
+    });
+    tabs.appendChild(btn);
+  });
+}
+
+async function loadSchedule() {
+  const wrap = document.getElementById('scheduleList');
+  if (!wrap) return;
+
+  const days = getThreeDayWindow();
+  renderScheduleTabs(days, currentScheduleDay);
+
+  const day = days[currentScheduleDay];
+  const start = Math.floor(day.getTime() / 1000);
+  const end = start + 86400;
+
+  wrap.innerHTML = '<div class="home-skeleton home-skeleton--row" style="margin:8px"></div><div class="home-skeleton home-skeleton--row" style="margin:8px"></div><div class="home-skeleton home-skeleton--row" style="margin:8px"></div>';
+
+  let entries = [];
+  try {
+    const data = await anilistQuery(SCHEDULE_QUERY, { start, end });
+    entries = (data?.Page?.airingSchedules || []).filter(e => e.media && !e.media.isAdult);
+  } catch (e) {
+    console.error('Schedule fetch failed:', e);
+    wrap.innerHTML = '<div class="home-empty" style="margin:12px">Could not load.</div>';
+    return;
+  }
+
+  if (!entries.length) {
+    wrap.innerHTML = '<div class="home-empty" style="margin:12px">Nothing airing this day.</div>';
+    return;
+  }
+
+  wrap.innerHTML = '';
+
+  const nowSec = Math.floor(Date.now() / 1000);
+  const isToday = currentScheduleDay === 1; // index 1 = today
+
+  let nowLineInserted = false;
+
+  for (const e of entries) {
+    // Insert current-time line before the first item that airs in the future
+    if (isToday && !nowLineInserted && e.airingAt > nowSec) {
+      const line = document.createElement('div');
+      line.className = 'schedule-now-line';
+      wrap.appendChild(line);
+      nowLineInserted = true;
+    }
+
+    const m = e.media;
+    const t = new Date(e.airingAt * 1000);
+    const hh = String(t.getHours()).padStart(2, '0');
+    const mm = String(t.getMinutes()).padStart(2, '0');
+    const isPast = e.airingAt < nowSec;
+    const isNow  = isToday && !isPast && (e.airingAt - nowSec) < 60 * 60; // within an hour
+
+    const row = document.createElement('a');
+    row.className = 'schedule-row' + (isNow ? ' is-now' : '');
+    if (isPast) row.style.opacity = '0.55';
+    row.href = '/preview?id=' + m.id;
+
+    row.innerHTML = `
+      <span class="schedule-row__time">${hh}:${mm}</span>
+      <span class="schedule-row__title">${chEscapeHtml(titleOf(m))}</span>
+      ${m.format ? `<span class="schedule-row__format">${formatFormat(m.format)}</span>` : '<span></span>'}
+      <span class="schedule-row__ep">EP ${e.episode}</span>
+    `;
+    wrap.appendChild(row);
+  }
+
+  // If today and we never hit a future item, put the line at bottom.
+  if (isToday && !nowLineInserted) {
+    const line = document.createElement('div');
+    line.className = 'schedule-now-line';
+    wrap.appendChild(line);
+  }
+}
+
+function startScheduleClock() {
+  const el = document.getElementById('scheduleClock');
+  if (!el) return;
+  function tick() {
+    const d = new Date();
+    const yyyy = d.getFullYear();
+    const mm = String(d.getMonth() + 1).padStart(2, '0');
+    const dd = String(d.getDate()).padStart(2, '0');
+    const hh = String(d.getHours()).padStart(2, '0');
+    const mn = String(d.getMinutes()).padStart(2, '0');
+    const ss = String(d.getSeconds()).padStart(2, '0');
+    el.textContent = `${yyyy}/${mm}/${dd} ${hh}:${mn}:${ss}`;
+  }
+  tick();
+  setInterval(tick, 1000);
+}
+
+function wireScheduleMore() {
+  const btn = document.getElementById('scheduleMore');
+  if (!btn) return;
+  btn.addEventListener('click', () => {
+    if (typeof showToast === 'function') showToast('Full schedule page coming soon');
+  });
 }
 
 // ---------- Boot ----------
@@ -460,13 +650,14 @@ async function initHome() {
     document.getElementById('popularGrid').innerHTML = '<div class="home-empty">Could not load.</div>';
   }
 
-  try {
-    const sched = await anilistQuery(SCHEDULE_QUERY);
-    renderSchedule(sched?.Page?.media || []);
-  } catch (err) {
-    console.error('Schedule fetch failed:', err);
-    document.getElementById('scheduleList').innerHTML = '<div class="home-empty">Could not load.</div>';
-  }
+  // Sidebar modules
+  renderTrending();
+  wireTrendTabs();
+
+  currentScheduleDay = 1; // today
+  loadSchedule();
+  startScheduleClock();
+  wireScheduleMore();
 
   if (typeof mountReportButton === 'function') mountReportButton('Global — Home page');
 
