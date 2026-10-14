@@ -16,6 +16,17 @@
   <main class="watch-main">
     <div class="ch-container">
 
+      <!-- Broken episode banner -->
+      <div class="watch-banner" id="watchBanner">
+        <div class="watch-banner__icon">
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="13"/><circle cx="12" cy="16.5" r="1" fill="currentColor" stroke="none"/></svg>
+        </div>
+        <div class="watch-banner__text">
+          If the episode isn't working, please report it — we'll fix it as soon as possible.
+        </div>
+        <button type="button" class="watch-banner__btn" id="watchBannerReport">Report</button>
+      </div>
+
       <div class="watch-top">
         <div class="watch-top__player">
           <div class="watch-player-wrap">
@@ -24,6 +35,7 @@
             </div>
             <div class="watch-player-badge" id="watchBadge">Loading…</div>
           </div>
+
           <div class="watch-controls" id="watchControls">
             <button class="watch-toggle watch-toggle--accent" id="btnAutoSkip" type="button">
               <span class="watch-toggle__dot"></span><span>Auto Skip</span>
@@ -35,13 +47,17 @@
               <span class="watch-toggle__dot"></span><span>Auto Play</span>
             </button>
             <span class="watch-controls__sep"></span>
-            <button class="watch-toggle watch-toggle--audio" id="btnSub" type="button">Sub</button>
-            <button class="watch-toggle watch-toggle--audio" id="btnDub" type="button">Dub</button>
-            <span class="watch-controls__sep"></span>
             <button class="watch-toggle watch-toggle--failover" id="btnFailover" type="button" title="Skip current source and try the next">
               <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><polyline points="13 17 18 12 13 7"/><polyline points="6 17 11 12 6 7"/></svg>
               Skip Source
             </button>
+          </div>
+
+          <!-- Server rows -->
+          <div class="watch-servers" id="watchServers">
+            <div class="watch-servers__loading">
+              <span class="ch-skel ch-skel-line" style="width:220px;display:inline-block"></span>
+            </div>
           </div>
         </div>
 
@@ -55,19 +71,40 @@
               <div class="ch-skel ch-skel-line" style="width:60%"></div>
               <div class="ch-skel ch-skel-line" style="width:40%; margin-top:8px;"></div>
               <div class="ch-skel ch-skel-line" style="width:55%; margin-top:8px;"></div>
-              <div class="ch-skel ch-skel-line" style="width:45%; margin-top:8px;"></div>
             </div>
           </div>
         </aside>
       </div>
 
       <section class="watch-info">
-        <h1 class="watch-title" id="watchTitle">Loading…</h1>
+        <div class="watch-info__head">
+          <h1 class="watch-title" id="watchTitle">Loading…</h1>
+          <div class="watch-watching" id="watchWatching" hidden>
+            <span class="watch-watching__dot"></span>
+            <span class="watch-watching__num">—</span>
+            <span class="watch-watching__label">watching</span>
+          </div>
+        </div>
         <div class="watch-meta" id="watchMeta"></div>
         <div class="watch-actions">
           <a href="#" class="ch-btn ch-btn--quiet ch-btn--sm" id="watchPreviewLink">View Details</a>
           <button class="ch-btn ch-btn--ghost ch-btn--sm" id="watchWatchlistBtn" type="button">Add to List</button>
         </div>
+      </section>
+
+      <!-- Next episode countdown -->
+      <section class="watch-countdown" id="watchCountdown" hidden>
+        <div class="watch-countdown__icon">
+          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <circle cx="12" cy="12" r="9"/>
+            <polyline points="12 7 12 12 15 14"/>
+          </svg>
+        </div>
+        <div class="watch-countdown__body">
+          <div class="watch-countdown__label">Next episode airs</div>
+          <div class="watch-countdown__date" id="watchCountdownDate">—</div>
+        </div>
+        <div class="watch-countdown__timer" id="watchCountdownTimer">—</div>
       </section>
 
       <div class="watch-bottom">
@@ -93,14 +130,14 @@
           </div>
           <div class="watch-similar-list" id="watchSimilarList">
             <div class="watch-similar-skel">
-              <div class="ch-skel" style="width:56px; height:80px;"></div>
+              <div class="ch-skel" style="width:60px; height:90px;"></div>
               <div style="flex:1;">
                 <div class="ch-skel ch-skel-line" style="width:80%"></div>
                 <div class="ch-skel ch-skel-line" style="width:50%; margin-top:8px;"></div>
               </div>
             </div>
             <div class="watch-similar-skel">
-              <div class="ch-skel" style="width:56px; height:80px;"></div>
+              <div class="ch-skel" style="width:60px; height:90px;"></div>
               <div style="flex:1;">
                 <div class="ch-skel ch-skel-line" style="width:70%"></div>
                 <div class="ch-skel ch-skel-line" style="width:40%; margin-top:8px;"></div>
