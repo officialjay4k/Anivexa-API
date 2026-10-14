@@ -194,21 +194,6 @@
   background: var(--ch-red-soft);
 }
 
-/* Lang toggle */
-.watch-toggle--lang {
-  min-width: 76px; justify-content: center;
-  font-weight: 900; letter-spacing: 0.08em;
-  text-transform: uppercase; font-size: 12px;
-}
-.watch-toggle--lang.active {
-  color: #fff;
-  border-color: var(--ch-red-bright);
-  background: linear-gradient(135deg, var(--ch-red-bright), var(--ch-red));
-  box-shadow: 0 0 24px var(--ch-red-glow), 0 6px 16px rgba(0,0,0,0.5);
-}
-.watch-toggle--lang:disabled { opacity: 0.28; cursor: not-allowed; }
-
-/* Servers */
 .watch-servers {
   display: flex; flex-direction: column; gap: 8px;
   padding: var(--s-3) var(--s-4);
@@ -259,13 +244,6 @@
   background: linear-gradient(135deg, var(--ch-red-bright), var(--ch-red));
   border-color: var(--ch-red-bright);
   box-shadow: 0 0 14px var(--ch-red-glow);
-}
-.watch-server-pill:disabled {
-  opacity: 0.4; cursor: default; transform: none;
-}
-.watch-server-pill:disabled:hover {
-  color: var(--ch-fg-dim);
-  border-color: rgba(222, 208, 179, 0.08);
 }
 .watch-server-pill__play {
   opacity: 0; width: 0;
@@ -447,11 +425,6 @@
   letter-spacing: 0.06em; text-transform: uppercase;
   color: var(--ch-red-bright);
   white-space: nowrap; flex-shrink: 0;
-  animation: watch-watching-fade 200ms var(--ease);
-}
-@keyframes watch-watching-fade {
-  from { opacity: 0; transform: translateY(-4px); }
-  to   { opacity: 1; transform: translateY(0); }
 }
 .watch-watching__dot {
   width: 6px; height: 6px; border-radius: 50%;
@@ -641,3 +614,6 @@
   .watch-controls__sep { display: none; }
   .watch-countdown__timer { font-size: 13px; }
 }
+
+/* CRITICAL: hidden attribute must beat display:flex */
+[hidden] { display: none !important; }
