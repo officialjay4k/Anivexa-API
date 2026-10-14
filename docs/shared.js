@@ -3,7 +3,7 @@
 // ============================================================
 
 const CH = {
-  API_BASE: 'https://cloudflare.4kun.top',
+  API_BASE: 'https://anivexa-api-production-46c4.up.railway.app',
   ANILIST_GRAPHQL: 'https://graphql.anilist.co',
   STORAGE_PROGRESS:  '4kun_progress',
   STORAGE_SETTINGS:  '4kun_settings',
@@ -69,7 +69,6 @@ function chResumeInfo(anilistId) {
   return { label: 'Resume Watching', href, isResume: true, isRewatch: false };
 }
 
-// ---------- page loader ----------
 let chPageLoaderEl = null;
 let chPageReadyFired = false;
 function chPageReady() {
