@@ -3,14 +3,114 @@
 // ============================================================
 
 const ANILIST_GRAPHQL = CH.ANILIST_GRAPHQL;
+const API_BASE = CH.API_BASE;
 const HERO_ROTATE_MS = 8000;
 const HERO_COUNT = 5;
+const AVAIL_CACHE_KEY = 'ch_avail_v1';
+const AVAIL_TTL_MS = 7 * 24 * 60 * 60 * 1000;
 
 let heroSlides = [];
 let heroIndex = 0;
 let heroTimer = null;
 let heroTmdbCache = [];
 
+// ---------- availability cache ----------
+const availCache = (() => {
+  try { return JSON.parse(localStorage.getItem(AVAIL_CACHE_KEY)) || {}; } catch { return {}; }
+})();
+const availInflight = new Map();
+
+function saveAvailCache() {
+  try { localStorage.setItem(AVAIL_CACHE_KEY, JSON.stringify(availCache)); } catch {}
+}
+
+function availGet(id) {
+  const e = availCache[String(id)];
+  if (!e) return null;
+  if (Date.now() - (e.ts || 0) > AVAIL_TTL_MS) return null;
+  return e;
+}
+
+async function fetchAvailability(anilistId) {
+  const id = String(anilistId);
+  const cached = availGet(id);
+  if (cached) return cached;
+
+  if (availInflight.has(id)) return availInflight.get(id);
+
+  const promise = (async () => {
+    let result = { eps: 0, sub: 0, dub: 0, ts: Date.now() };
+    try {
+      // One request hits both providers on the worker side.
+      const res = await fetch(`${API_BASE}/episodes/reanime/anikoto/${id}?map=false`, { cache: 'no-store' });
+      if (res.ok) {
+        const data = await res.json();
+        const pick = (key) => data?.[key]?.episodes || {};
+        const r = pick('reanime');
+        const a = pick('anikoto');
+        const subCount = Math.max((r.sub?.length || 0), (a.sub?.length || 0));
+        const dubCount = Math.max((r.dub?.length || 0), (a.dub?.length || 0));
+        result.sub = subCount;
+        result.dub = dubCount;
+        result.eps = Math.max(subCount, dubCount);
+      }
+    } catch (e) { /* silent — chips just won't show */ }
+
+    availCache[id] = result;
+    saveAvailCache();
+    return result;
+  })();
+
+  availInflight.set(id, promise);
+  try { return await promise; }
+  finally { availInflight.delete(id); }
+}
+
+// ---------- observers ----------
+const availObserver = (typeof IntersectionObserver !== 'undefined')
+  ? new IntersectionObserver((entries) => {
+      for (const entry of entries) {
+        if (!entry.isIntersecting) continue;
+        const el = entry.target;
+        const id = el.dataset.anilistId;
+        availObserver.unobserve(el);
+        if (!id) continue;
+
+        // Already cached? Render immediately.
+        const cached = availGet(id);
+        if (cached) { applyChips(el, cached); continue; }
+
+        fetchAvailability(id).then((data) => {
+          if (data && (data.eps || data.sub || data.dub)) applyChips(el, data);
+        }).catch(() => {});
+      }
+    }, { rootMargin: '240px 0px' })
+  : null;
+
+function applyChips(cardEl, avail) {
+  const chipRow = cardEl.querySelector('.home-card__chiprow');
+  if (!chipRow) return;
+
+  // Remove skeleton state if any.
+  chipRow.classList.remove('is-loading');
+
+  const tvIcon = '<svg width="9" height="9" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="7" width="18" height="12" rx="2"/><line x1="8" y1="3" x2="12" y2="7"/><line x1="16" y1="3" x2="12" y2="7"/></svg>';
+  const subIcon = '<svg width="9" height="9" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="5" width="18" height="14" rx="2"/><line x1="7" y1="14" x2="11" y2="14"/><line x1="7" y1="18" x2="17" y2="18"/></svg>';
+  const dubIcon = '<svg width="9" height="9" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><path d="M12 2a3 3 0 0 0-3 3v7a3 3 0 0 0 6 0V5a3 3 0 0 0-3-3z"/><path d="M19 10v2a7 7 0 0 1-14 0v-2"/><line x1="12" y1="19" x2="12" y2="22"/></svg>';
+
+  const chips = [];
+  if (avail.eps) chips.push(`<span class="home-card__chip">${tvIcon}${avail.eps}</span>`);
+  if (avail.sub) chips.push(`<span class="home-card__chip">${subIcon}${avail.sub}</span>`);
+  if (avail.dub) chips.push(`<span class="home-card__chip">${dubIcon}${avail.dub}</span>`);
+
+  // Preserve any existing score chip.
+  const existing = chipRow.querySelector('.home-card__chip--score');
+  chipRow.innerHTML = '';
+  if (existing) chipRow.appendChild(existing);
+  if (chips.length) chipRow.insertAdjacentHTML('beforeend', chips.join(''));
+}
+
+// ---------- AniList ----------
 async function anilistQuery(query, variables = {}) {
   const res = await fetch(ANILIST_GRAPHQL, {
     method: 'POST',
@@ -25,7 +125,7 @@ async function anilistQuery(query, variables = {}) {
 
 const SPOTLIGHT_QUERY = `query { Page(page: 1, perPage: 12) { media(type: ANIME, status: RELEASING, sort: TRENDING_DESC, isAdult: false) { id title { romaji english } coverImage { extraLarge large } bannerImage description(asHtml: false) format episodes seasonYear averageScore genres } } }`;
 const LATEST_QUERY = `query { Page(page: 1, perPage: 30) { media(type: ANIME, status: RELEASING, sort: POPULARITY_DESC, isAdult: false) { id title { romaji english } coverImage { extraLarge large } format averageScore seasonYear episodes nextAiringEpisode { episode airingAt } } } }`;
-const POPULAR_QUERY = `query { Page(page: 1, perPage: 18) { media(type: ANIME, sort: POPULARITY_DESC, isAdult: false) { id title { romaji english } coverImage { extraLarge large } format averageScore seasonYear } } }`;
+const POPULAR_QUERY = `query { Page(page: 1, perPage: 18) { media(type: ANIME, sort: POPULARITY_DESC, isAdult: false) { id title { romaji english } coverImage { extraLarge large } format averageScore seasonYear episodes } } }`;
 const SCHEDULE_QUERY = `query { Page(page: 1, perPage: 40) { media(type: ANIME, status: RELEASING, sort: POPULARITY_DESC, isAdult: false) { id title { romaji english } coverImage { extraLarge large } bannerImage format averageScore nextAiringEpisode { episode airingAt timeUntilAiring } } } }`;
 
 function titleOf(media) { return media?.title?.english || media?.title?.romaji || 'Untitled'; }
@@ -104,9 +204,7 @@ function renderSpotlight(i) {
     ? `<img class="home-hero__title-logo" src="${chEscapeHtml(tmdb.logoUrl)}" alt="${chEscapeHtml(titleOf(m))}" onerror="this.outerHTML='<h1 class=&quot;home-hero__title&quot;>${chEscapeHtml(titleOf(m))}</h1>'">`
     : `<h1 class="home-hero__title">${chEscapeHtml(titleOf(m))}</h1>`;
 
-  // Resume/Watch Again label
   const resume = chResumeInfo(m.id);
-  const ctaLabel = resume.label;
 
   spot.innerHTML = `
     <div class="home-hero__eyebrow">
@@ -119,7 +217,7 @@ function renderSpotlight(i) {
     <div class="home-hero__cta">
       <a href="${resume.href}" class="ch-btn ch-btn--primary ch-btn--lg">
         <svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor"><polygon points="6 4 20 12 6 20"></polygon></svg>
-        ${chEscapeHtml(ctaLabel)}
+        ${chEscapeHtml(resume.label)}
       </a>
       <a href="/preview?id=${m.id}" class="ch-btn ch-btn--ghost ch-btn--lg">More Info</a>
     </div>
@@ -222,6 +320,7 @@ function detectTitleOverflow(root) {
   });
 }
 
+// ---------- Grid renderer (with chip strip) ----------
 async function renderMediaGrid(gridEl, items, opts = {}) {
   gridEl.innerHTML = '';
   if (!items?.length) { gridEl.innerHTML = '<div class="home-empty">No data.</div>'; return; }
@@ -233,14 +332,21 @@ async function renderMediaGrid(gridEl, items, opts = {}) {
     const cover = m.coverImage?.extraLarge || m.coverImage?.large || '';
     const card = document.createElement('a');
     card.className = 'home-card';
+    card.dataset.anilistId = m.id;
     const resume = chResumeInfo(m.id);
     card.href = resume.href;
 
-    let badge = '';
-    if (opts.latestEp && m.nextAiringEpisode?.episode) badge = `<div class="home-card__badge">EP ${m.nextAiringEpisode.episode - 1}</div>`;
-    else if (opts.latestEp && m.episodes) badge = `<div class="home-card__badge">${m.episodes} EPS</div>`;
+    let topBadge = '';
+    if (opts.latestEp && m.nextAiringEpisode?.episode) topBadge = `EP ${m.nextAiringEpisode.episode - 1}`;
+    else if (opts.latestEp && m.episodes) topBadge = `${m.episodes} EPS`;
 
-    const scoreBadge = m.averageScore ? `<div class="home-card__score">★ ${m.averageScore}</div>` : '';
+    const scoreChip = m.averageScore
+      ? `<span class="home-card__chip home-card__chip--score"><span class="star">★</span>${m.averageScore}</span>`
+      : '';
+    const formatChip = m.format
+      ? `<span class="home-card__chip home-card__chip--format">${formatFormat(m.format)}</span>`
+      : '';
+
     const ribbonLabel = resume.isResume ? 'Resume' : (resume.isRewatch ? 'Watch Again' : 'Watch');
 
     const titleWrap = tmdb?.logoUrl
@@ -256,8 +362,10 @@ async function renderMediaGrid(gridEl, items, opts = {}) {
       <div class="home-card__thumb">
         <img src="${chEscapeHtml(cover)}" alt="" loading="lazy" onerror="this.style.visibility='hidden'">
         <div class="home-card__ribbon">${PLAY_ICON_SVG}<span>${ribbonLabel}</span></div>
-        ${badge}
-        ${scoreBadge}
+        ${topBadge ? `<div class="home-card__badge">${chEscapeHtml(topBadge)}</div>` : ''}
+        <div class="home-card__chiprow is-loading">
+          ${scoreChip}${formatChip}
+        </div>
       </div>
       ${titleWrap}
       <div class="home-card__meta">${formatFormat(m.format)}${m.seasonYear ? ' · ' + m.seasonYear : ''}</div>
@@ -266,9 +374,16 @@ async function renderMediaGrid(gridEl, items, opts = {}) {
   });
 
   detectTitleOverflow(gridEl);
+
+  // Observe cards for availability fetch
+  if (availObserver) {
+    gridEl.querySelectorAll('.home-card[data-anilist-id]').forEach(el => {
+      availObserver.observe(el);
+    });
+  }
 }
 
-// ---------- Schedule with flipped time ----------
+// ---------- Schedule ----------
 function renderSchedule(mediaList) {
   const wrap = document.getElementById('scheduleList');
   wrap.innerHTML = '';
@@ -285,8 +400,6 @@ function renderSchedule(mediaList) {
   for (const s of upcoming) {
     const m = s.media;
     const bg = m.bannerImage || m.coverImage?.extraLarge || m.coverImage?.large || '';
-
-    // Vertical time string — reads top to bottom on the left side
     const timeStr = chFormatTimeUntil(s.airingAt).replace('in ', '').toUpperCase();
     const epStr = 'EP ' + s.episode;
 
@@ -355,7 +468,6 @@ async function initHome() {
     document.getElementById('scheduleList').innerHTML = '<div class="home-empty">Could not load.</div>';
   }
 
-  // Global report button on home
   if (typeof mountReportButton === 'function') mountReportButton('Global — Home page');
 
   const hero = document.getElementById('homeHero');
