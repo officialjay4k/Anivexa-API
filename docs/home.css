@@ -171,19 +171,354 @@
   box-shadow: 0 0 14px var(--ch-red-glow);
 }
 
+/* ---------- Layout ---------- */
 .home-layout {
   display: grid;
-  grid-template-columns: minmax(0, 1fr) 340px;
+  grid-template-columns: minmax(0, 1fr) 360px;
   gap: var(--s-6); align-items: start;
 }
 @media (max-width: 1050px) { .home-layout { grid-template-columns: 1fr; } }
 .home-primary { min-width: 0; }
 .home-section { margin-bottom: var(--s-6); }
 .home-section:last-child { margin-bottom: 0; }
+.home-sidebar { display: flex; flex-direction: column; gap: var(--s-5); min-width: 0; }
 
-/* ============================================================
-   Cards — with chip strip
-   ============================================================ */
+/* ---------- Sidebar module shell ---------- */
+.sidebar-module {
+  background: var(--ch-glass);
+  border: 1px solid var(--ch-glass-stroke);
+  border-radius: var(--r-lg);
+  backdrop-filter: blur(14px); -webkit-backdrop-filter: blur(14px);
+  overflow: hidden;
+}
+.sidebar-module__head {
+  padding: var(--s-4) var(--s-4) var(--s-3);
+  border-bottom: 1px solid var(--ch-glass-stroke);
+  display: flex; align-items: center; justify-content: space-between; gap: var(--s-3);
+  background: linear-gradient(180deg, rgba(179,19,31,0.08), transparent);
+}
+.sidebar-module__title {
+  margin: 0;
+  font-size: 18px;
+  font-weight: 900;
+  color: #fff;
+  display: flex; align-items: center; gap: var(--s-3);
+  letter-spacing: -0.01em;
+}
+.sidebar-module__title::before {
+  content: '';
+  width: 3px; height: 18px;
+  background: var(--ch-red-bright);
+  border-radius: 2px;
+  box-shadow: 0 0 10px var(--ch-red-glow);
+}
+.sidebar-module__body {
+  padding: var(--s-3);
+  display: flex; flex-direction: column; gap: var(--s-2);
+}
+.sidebar-module__body--schedule {
+  padding: 0;
+  gap: 0;
+  max-height: 420px;
+  overflow-y: auto;
+  scrollbar-width: thin;
+}
+
+/* ---------- Trending tabs (Day/Week/Month) ---------- */
+.sidebar-tabs { display: flex; gap: 4px; }
+.sidebar-tab {
+  padding: 5px 10px;
+  font-size: 11px;
+  font-weight: 800;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--ch-fg-muted);
+  border-radius: var(--r-sm);
+  cursor: pointer;
+  transition: color 150ms var(--ease), background 150ms var(--ease);
+}
+.sidebar-tab:hover { color: #fff; }
+.sidebar-tab.is-active {
+  color: #fff;
+  background: rgba(179, 19, 31, 0.4);
+  box-shadow: 0 0 12px var(--ch-red-glow);
+}
+
+/* ---------- Trending list ---------- */
+.trend-item {
+  position: relative;
+  display: block;
+  min-height: 88px;
+  padding: 10px 12px 10px 76px;
+  border-radius: var(--r-md);
+  overflow: hidden;
+  cursor: pointer;
+  text-decoration: none;
+  color: inherit;
+  background: rgba(20, 8, 12, 0.55);
+  border: 1px solid var(--ch-glass-stroke);
+  transition: border-color 180ms var(--ease), transform 200ms var(--ease-pop), box-shadow 200ms var(--ease);
+}
+.trend-item:hover {
+  border-color: var(--ch-border-hi);
+  transform: translateX(-2px);
+  box-shadow: 0 6px 22px rgba(0,0,0,0.55), 0 0 22px var(--ch-red-glow);
+}
+.trend-item__bg {
+  position: absolute; inset: 0;
+  background-size: cover;
+  background-position: right center;
+  opacity: 0.22;
+  filter: grayscale(0.4);
+  transition: opacity 300ms var(--ease), filter 300ms var(--ease);
+  pointer-events: none;
+}
+.trend-item:hover .trend-item__bg {
+  opacity: 0.4;
+  filter: grayscale(0);
+}
+.trend-item__bg::after {
+  content: '';
+  position: absolute; inset: 0;
+  background: linear-gradient(90deg, rgba(20,8,12,0.95) 0%, rgba(20,8,12,0.5) 60%, transparent 100%);
+}
+
+.trend-item__rank {
+  position: absolute;
+  left: 10px; top: 50%;
+  transform: translateY(-50%);
+  font-size: 52px;
+  font-weight: 900;
+  line-height: 0.85;
+  letter-spacing: -0.06em;
+  color: transparent;
+  -webkit-text-stroke: 2px rgba(222, 208, 179, 0.25);
+  font-variant-numeric: tabular-nums;
+  z-index: 2;
+  pointer-events: none;
+}
+.trend-item:nth-child(1) .trend-item__rank {
+  -webkit-text-stroke: 2px #e5c56b;
+  text-shadow: 0 0 20px rgba(229, 197, 107, 0.35);
+}
+.trend-item:nth-child(2) .trend-item__rank {
+  -webkit-text-stroke: 2px #c0c0c0;
+  text-shadow: 0 0 16px rgba(192, 192, 192, 0.3);
+}
+.trend-item:nth-child(3) .trend-item__rank {
+  -webkit-text-stroke: 2px #cd7f32;
+  text-shadow: 0 0 16px rgba(205, 127, 50, 0.3);
+}
+
+.trend-item__body {
+  position: relative;
+  z-index: 3;
+  display: flex; flex-direction: column; gap: 4px;
+  min-width: 0;
+}
+.trend-item__title {
+  font-size: 13px;
+  font-weight: 800;
+  color: #fff;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  text-shadow: 0 2px 8px rgba(0,0,0,0.9);
+}
+.trend-item__meta {
+  display: flex; align-items: center; gap: 8px;
+  font-size: 11px; font-weight: 700;
+  color: var(--ch-fg-muted);
+}
+.trend-item__meta .star { color: var(--ch-cream); }
+.trend-item__meta .score { color: var(--ch-cream); font-weight: 800; }
+.trend-item__meta .format {
+  padding: 1px 6px;
+  font-size: 9px;
+  font-weight: 900;
+  letter-spacing: 0.06em;
+  border-radius: 3px;
+  background: rgba(222, 208, 179, 0.12);
+  color: var(--ch-cream);
+}
+.trend-item__chips {
+  display: flex; gap: 4px; flex-wrap: wrap;
+}
+.trend-item__chip {
+  display: inline-flex; align-items: center; gap: 3px;
+  padding: 1px 6px;
+  font-size: 10px; font-weight: 800;
+  border-radius: 3px;
+  background: rgba(5, 2, 3, 0.65);
+  color: #fff;
+  font-variant-numeric: tabular-nums;
+  line-height: 1.4;
+}
+.trend-item__chip svg { opacity: 0.85; }
+.trend-item__chip--muted { opacity: 0.45; }
+
+/* ---------- Schedule day tabs ---------- */
+.sidebar-day-tabs {
+  display: flex;
+  gap: 4px;
+  padding: var(--s-3) var(--s-3) 6px;
+  border-bottom: 1px solid var(--ch-glass-stroke);
+}
+.sidebar-day-tab {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 2px;
+  padding: 6px 4px;
+  border-radius: var(--r-sm);
+  cursor: pointer;
+  background: transparent;
+  border: 1px solid transparent;
+  transition: background 150ms var(--ease), border-color 150ms var(--ease);
+  font-family: inherit;
+}
+.sidebar-day-tab:hover { background: rgba(179, 19, 31, 0.15); }
+.sidebar-day-tab.is-active {
+  background: linear-gradient(180deg, rgba(124, 191, 63, 0.15), rgba(124, 191, 63, 0.05));
+  border-color: rgba(124, 191, 63, 0.5);
+}
+.sidebar-day-tab__day {
+  font-size: 10px;
+  font-weight: 800;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: var(--ch-fg-subtle);
+}
+.sidebar-day-tab.is-active .sidebar-day-tab__day { color: #7cbf3f; }
+.sidebar-day-tab__num {
+  font-size: 18px;
+  font-weight: 900;
+  color: #fff;
+  line-height: 1;
+  font-variant-numeric: tabular-nums;
+}
+.sidebar-day-tab.is-active .sidebar-day-tab__num { color: #7cbf3f; }
+
+/* ---------- Schedule rows ---------- */
+.schedule-row {
+  position: relative;
+  display: grid;
+  grid-template-columns: 56px minmax(0, 1fr) auto auto;
+  gap: 8px;
+  align-items: center;
+  padding: 10px 12px;
+  border-bottom: 1px solid rgba(222, 208, 179, 0.05);
+  text-decoration: none;
+  color: inherit;
+  transition: background 150ms var(--ease);
+  cursor: pointer;
+}
+.schedule-row:hover { background: rgba(179, 19, 31, 0.12); }
+.schedule-row:last-child { border-bottom: none; }
+
+.schedule-row__time {
+  font-size: 11px;
+  font-weight: 800;
+  color: var(--ch-fg-muted);
+  font-variant-numeric: tabular-nums;
+  letter-spacing: 0.02em;
+}
+.schedule-row.is-now .schedule-row__time {
+  color: #7cbf3f;
+  text-shadow: 0 0 10px rgba(124, 191, 63, 0.5);
+}
+.schedule-row__title {
+  font-size: 13px;
+  font-weight: 700;
+  color: #fff;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  text-shadow: 0 1px 4px rgba(0,0,0,0.8);
+}
+.schedule-row__format {
+  padding: 2px 6px;
+  font-size: 9px;
+  font-weight: 900;
+  letter-spacing: 0.06em;
+  border-radius: 3px;
+  background: rgba(5, 2, 3, 0.6);
+  color: var(--ch-fg-muted);
+  border: 1px solid rgba(222, 208, 179, 0.08);
+}
+.schedule-row__ep {
+  font-size: 10px;
+  font-weight: 900;
+  letter-spacing: 0.06em;
+  color: var(--ch-fg-muted);
+  text-transform: uppercase;
+}
+.schedule-row__tag {
+  padding: 1px 5px;
+  font-size: 9px;
+  font-weight: 900;
+  letter-spacing: 0.06em;
+  border-radius: 3px;
+  text-transform: uppercase;
+}
+.schedule-row__tag--dub {
+  background: rgba(74, 184, 230, 0.2);
+  color: #4ab8e6;
+}
+.schedule-row__tag--delayed {
+  background: rgba(229, 9, 20, 0.18);
+  color: #ff6b6b;
+}
+
+/* Current time marker line */
+.schedule-now-line {
+  position: relative;
+  height: 2px;
+  margin: 4px 12px;
+  background: linear-gradient(90deg, transparent, #7cbf3f 15%, #7cbf3f 85%, transparent);
+  box-shadow: 0 0 12px rgba(124, 191, 63, 0.7);
+}
+.schedule-now-line::before {
+  content: '';
+  position: absolute;
+  left: 0; top: -3px;
+  width: 8px; height: 8px;
+  border-radius: 50%;
+  background: #7cbf3f;
+  box-shadow: 0 0 10px #7cbf3f;
+}
+
+/* Foot (clock + more) */
+.schedule-foot {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: var(--s-2) var(--s-4);
+  border-top: 1px solid var(--ch-glass-stroke);
+  background: rgba(5, 2, 3, 0.3);
+}
+.schedule-clock {
+  font-size: 11px;
+  font-weight: 700;
+  color: var(--ch-fg-muted);
+  font-variant-numeric: tabular-nums;
+  letter-spacing: 0.02em;
+}
+.schedule-more {
+  font-size: 11px;
+  font-weight: 800;
+  color: var(--ch-fg-muted);
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  padding: 4px 8px;
+  border-radius: var(--r-sm);
+  transition: color 150ms var(--ease), background 150ms var(--ease);
+  cursor: pointer;
+}
+.schedule-more:hover { color: #fff; background: rgba(179, 19, 31, 0.25); }
+
+/* ---------- Cards ---------- */
 .home-card {
   display: flex; flex-direction: column; gap: var(--s-2);
   cursor: pointer; text-decoration: none; color: inherit;
@@ -203,7 +538,6 @@
 }
 .home-card__thumb img { width: 100%; height: 100%; object-fit: cover; display: block; }
 
-/* Ribbon (existing) */
 .home-card__ribbon {
   position: absolute; top: 0; left: 0; right: 0;
   padding: 10px 0;
@@ -218,7 +552,6 @@
 .home-card:hover .home-card__ribbon { transform: translateY(0); pointer-events: auto; }
 .home-card__ribbon svg { filter: drop-shadow(0 0 4px rgba(255,255,255,0.5)); }
 
-/* Top badge (EP count on Latest) */
 .home-card__badge {
   position: absolute; top: 8px; left: 8px;
   padding: 3px 8px; font-size: 10px; font-weight: 800;
@@ -230,32 +563,24 @@
 }
 .home-card:hover .home-card__badge { top: 42px; }
 
-/* Progress bar (Continue Watching) */
 .home-card__progress {
   position: absolute; left: 0; right: 0; bottom: 0; height: 3px;
   background: rgba(5, 2, 3, 0.7); z-index: 2;
 }
-.home-card__progress-fill {
-  height: 100%; background: var(--ch-red-bright);
-  box-shadow: 0 0 8px var(--ch-red-glow);
-}
+.home-card__progress-fill { height: 100%; background: var(--ch-red-bright); box-shadow: 0 0 8px var(--ch-red-glow); }
 
-/* Chip row — bottom strip on poster */
+/* ---------- Chip row (star / mic / eps only) ---------- */
 .home-card__chiprow {
   position: absolute;
   left: 8px; right: 8px; bottom: 8px;
   display: flex; flex-wrap: wrap; gap: 4px;
   z-index: 3;
   pointer-events: none;
-  transition: bottom 300ms var(--ease);
 }
-.home-card:hover .home-card__chiprow { bottom: 10px; }
-
 .home-card__chip {
   display: inline-flex; align-items: center; gap: 3px;
   padding: 2px 6px;
   font-size: 10px; font-weight: 800;
-  letter-spacing: 0.02em;
   border-radius: 4px;
   background: rgba(5, 2, 3, 0.85);
   backdrop-filter: blur(6px); -webkit-backdrop-filter: blur(6px);
@@ -265,14 +590,9 @@
   line-height: 1;
 }
 .home-card__chip svg { color: var(--ch-cream); flex-shrink: 0; }
+.home-card__chip--muted { opacity: 0.4; }
 .home-card__chip--score .star { color: var(--ch-cream); margin-right: 1px; }
-.home-card__chip--format {
-  letter-spacing: 0.06em;
-  text-transform: uppercase;
-  font-size: 9px;
-}
 
-/* Chip row loading skeleton — shows 2 placeholder chips while fetching */
 .home-card__chiprow.is-loading::after {
   content: '';
   display: inline-block;
@@ -282,9 +602,7 @@
   animation: chip-pulse 1.4s ease-in-out infinite;
 }
 @keyframes chip-pulse { 0%, 100% { opacity: 0.4; } 50% { opacity: 0.8; } }
-.home-card__chiprow.is-loading .home-card__chip { opacity: 0.85; }
 
-/* Title wrap + logos */
 .home-card__title-wrap { position: relative; min-height: 40px; overflow: hidden; }
 .home-card__title-logo {
   display: block; max-width: 100%; max-height: 40px;
@@ -327,109 +645,6 @@
 }
 @media (max-width: 600px) { .home-grid { grid-template-columns: repeat(2, 1fr); } }
 
-/* ============================================================
-   Schedule (unchanged)
-   ============================================================ */
-.home-schedule { display: flex; flex-direction: column; gap: var(--s-3); }
-.schedule-card {
-  position: relative; display: block; height: 118px;
-  border-radius: var(--r-md); overflow: hidden;
-  border: 1px solid var(--ch-glass-stroke);
-  background: var(--ch-bg-2);
-  text-decoration: none; color: inherit; cursor: pointer;
-  transition: border-color 200ms var(--ease), transform 200ms var(--ease-pop), box-shadow 200ms var(--ease);
-}
-.schedule-card:hover {
-  border-color: var(--ch-red-bright);
-  transform: translateX(-4px);
-  box-shadow: 0 10px 30px rgba(0,0,0,0.75), var(--shadow-red);
-}
-.schedule-card__bg {
-  position: absolute; inset: 0;
-  background-size: cover; background-position: center 25%;
-  filter: grayscale(1) brightness(0.55);
-  transition: filter 400ms var(--ease), transform 500ms var(--ease);
-}
-.schedule-card:hover .schedule-card__bg {
-  filter: grayscale(0.15) brightness(0.9) saturate(1.15);
-  transform: scale(1.06);
-}
-.schedule-card__scrim {
-  position: absolute; inset: 0;
-  background:
-    linear-gradient(90deg, rgba(5,2,3,0.96) 0%, rgba(5,2,3,0.72) 45%, rgba(5,2,3,0.3) 100%),
-    linear-gradient(180deg, transparent 40%, rgba(5,2,3,0.75) 100%);
-  transition: background 400ms var(--ease);
-}
-.schedule-card__time-flip {
-  position: absolute; top: 0; left: 0; bottom: 0; width: 34px;
-  display: flex; flex-direction: column;
-  align-items: center; justify-content: space-between;
-  padding: 10px 0;
-  background: linear-gradient(180deg, rgba(179, 19, 31, 0.5), rgba(120, 10, 25, 0.6));
-  border-right: 1px solid rgba(217, 24, 40, 0.5);
-  z-index: 3;
-}
-.schedule-card__time-flip span {
-  writing-mode: vertical-rl; transform: rotate(180deg);
-  font-size: 10px; font-weight: 900; letter-spacing: 0.14em;
-  text-transform: uppercase; color: #fff;
-  text-shadow: 0 0 10px rgba(0,0,0,0.9);
-}
-.schedule-card__time-flip span:first-child {
-  color: var(--ch-red-bright);
-  text-shadow: 0 0 10px var(--ch-red-bright), 0 0 20px var(--ch-red-glow);
-}
-.schedule-card__content {
-  position: relative; z-index: 2; height: 100%;
-  padding: var(--s-3) 52px var(--s-3) 48px;
-  display: flex; flex-direction: column; justify-content: center; gap: 4px;
-}
-.schedule-card__when {
-  font-size: 10px; font-weight: 900; letter-spacing: 0.12em;
-  text-transform: uppercase; color: var(--ch-red-bright);
-  text-shadow: 0 0 12px var(--ch-red-glow);
-  display: flex; align-items: center; gap: 6px;
-}
-.schedule-card__when-dot {
-  width: 6px; height: 6px; border-radius: 50%;
-  background: var(--ch-red-bright);
-  box-shadow: 0 0 10px var(--ch-red-bright);
-  animation: schedule-pulse 1.6s ease-in-out infinite;
-}
-@keyframes schedule-pulse {
-  0%, 100% { opacity: 1; transform: scale(1); }
-  50%      { opacity: 0.5; transform: scale(0.8); }
-}
-.schedule-card__title {
-  font-size: 14px; font-weight: 800; line-height: 1.25;
-  color: var(--ch-white);
-  text-shadow: 0 2px 10px rgba(0,0,0,0.95);
-  display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden;
-}
-.schedule-card__meta {
-  font-size: 11px; font-weight: 600;
-  color: var(--ch-cream);
-  text-shadow: 0 2px 8px rgba(0,0,0,0.9);
-}
-.schedule-card__play {
-  position: absolute; right: 14px; top: 50%;
-  transform: translate(6px, -50%) scale(0.85);
-  z-index: 3; width: 38px; height: 38px;
-  border-radius: 50%; background: var(--ch-red); color: #fff;
-  display: flex; align-items: center; justify-content: center;
-  opacity: 0;
-  transition: opacity 220ms var(--ease), transform 260ms var(--ease-pop), box-shadow 220ms var(--ease);
-}
-.schedule-card__play svg { margin-left: 2px; }
-.schedule-card:hover .schedule-card__play {
-  opacity: 1; transform: translate(0, -50%) scale(1);
-  box-shadow: 0 0 24px var(--ch-red-glow);
-}
-
-/* ============================================================
-   Skeletons / empty
-   ============================================================ */
 .home-skeleton {
   position: relative; aspect-ratio: 2 / 3;
   border-radius: var(--r-md); background: var(--ch-bg-2);
@@ -441,7 +656,7 @@
   transform: translateX(-100%);
   animation: home-shimmer 1.6s ease-in-out infinite;
 }
-.home-skeleton--row { aspect-ratio: auto; height: 108px; }
+.home-skeleton--row { aspect-ratio: auto; height: 88px; }
 @keyframes home-shimmer { 0% { transform: translateX(-100%); } 100% { transform: translateX(100%); } }
 .home-empty {
   padding: var(--s-5); text-align: center;
