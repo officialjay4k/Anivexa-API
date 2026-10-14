@@ -8,7 +8,8 @@ const CH = {
   STORAGE_PROGRESS:  '4kun_progress',
   STORAGE_SETTINGS:  '4kun_settings',
   STORAGE_WATCHLIST: '4kun_watchlist',
-  STORAGE_USER:      '4kun_user'
+  STORAGE_USER:      '4kun_user',
+  DEBUG: false
 };
 window.CH = CH;
 
@@ -17,7 +18,6 @@ function chEscapeHtml(s) {
     '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;'
   }[c]));
 }
-
 function chFormatTime(seconds) {
   if (!seconds || isNaN(seconds)) return '0:00';
   const s = Math.floor(seconds % 60);
@@ -26,7 +26,6 @@ function chFormatTime(seconds) {
   const h = Math.floor(m / 60);
   return `${h}:${(m % 60) < 10 ? '0' : ''}${m % 60}:${s < 10 ? '0' : ''}${s}`;
 }
-
 function chFormatTimeAgo(unixSec) {
   const diff = Math.floor(Date.now() / 1000) - unixSec;
   if (diff < 60) return 'just now';
@@ -34,7 +33,6 @@ function chFormatTimeAgo(unixSec) {
   if (diff < 86400) return `${Math.floor(diff / 3600)}h ago`;
   return `${Math.floor(diff / 86400)}d ago`;
 }
-
 function chFormatTimeUntil(unixSec) {
   const diff = unixSec - Math.floor(Date.now() / 1000);
   if (diff <= 0) return 'now';
@@ -42,59 +40,46 @@ function chFormatTimeUntil(unixSec) {
   if (diff < 86400) return `in ${Math.floor(diff / 3600)}h`;
   return `in ${Math.floor(diff / 86400)}d`;
 }
-
 function chIsSignedIn() {
   try {
     const u = JSON.parse(localStorage.getItem(CH.STORAGE_USER) || 'null');
     return !!(u && u.username);
   } catch { return false; }
 }
-
 function chGetUser() {
   try { return JSON.parse(localStorage.getItem(CH.STORAGE_USER) || 'null'); }
   catch { return null; }
 }
-
 function chResumeInfo(anilistId) {
-  const fallback = { label: 'Watch Now', href: `/watch?id=${anilistId}&ep=1&audio=dub`, isResume: false, isRewatch: false };
+  const fallback = { label: 'Watch Now', href: `/watch?id=${anilistId}&ep=1&lang=dub`, isResume: false, isRewatch: false };
   if (!anilistId) return fallback;
-
   let store = {};
   try { store = JSON.parse(localStorage.getItem(CH.STORAGE_PROGRESS)) || {}; } catch {}
-
   let latest = null;
   for (const v of Object.values(store)) {
     if (!v || String(v.anilistId) !== String(anilistId)) continue;
     if (!latest || (v.updatedAt || 0) > (latest.updatedAt || 0)) latest = v;
   }
   if (!latest || !latest.currentTime || latest.currentTime < 5) return fallback;
-
-  const href = `/watch?id=${latest.anilistId}&ep=${latest.ep}&audio=${latest.audio || 'dub'}`;
+  const href = `/watch?id=${latest.anilistId}&ep=${latest.ep}&lang=${latest.audio || 'dub'}`;
   const finished = latest.duration > 0 && latest.currentTime / latest.duration >= 0.92;
   if (finished) {
-    return { label: 'Watch Again', href: `/watch?id=${latest.anilistId}&ep=1&audio=${latest.audio || 'dub'}`, isResume: false, isRewatch: true };
+    return { label: 'Watch Again', href: `/watch?id=${latest.anilistId}&ep=1&lang=${latest.audio || 'dub'}`, isResume: false, isRewatch: true };
   }
   return { label: 'Resume Watching', href, isResume: true, isRewatch: false };
 }
 
-// ============================================================
-// Page loader
-// ============================================================
+// ---------- page loader ----------
 let chPageLoaderEl = null;
 let chPageReadyFired = false;
-
 function chPageReady() {
   if (!chPageLoaderEl || chPageReadyFired) return;
   chPageReadyFired = true;
   chPageLoaderEl.classList.add('is-leaving');
-  setTimeout(() => {
-    if (chPageLoaderEl && chPageLoaderEl.parentNode) chPageLoaderEl.remove();
-  }, 450);
+  setTimeout(() => { if (chPageLoaderEl?.parentNode) chPageLoaderEl.remove(); }, 450);
 }
-
 (function initPageLoader() {
   if (document.getElementById('chPageLoader')) return;
-
   function create() {
     if (document.getElementById('chPageLoader')) return;
     chPageLoaderEl = document.createElement('div');
@@ -108,29 +93,20 @@ function chPageReady() {
       </div>
     `;
     document.body.appendChild(chPageLoaderEl);
-
-    // Failsafe: dismiss after 5s no matter what.
     setTimeout(chPageReady, 5000);
-    // Dismiss on window load + small delay (real page-ready event).
     window.addEventListener('load', () => setTimeout(chPageReady, 500));
   }
-
   if (document.body) create();
   else document.addEventListener('DOMContentLoaded', create);
 })();
 
-// ============================================================
-// Header
-// ============================================================
 function mountHeader() {
   const mount = document.getElementById('ch-header-mount');
   if (!mount) return;
-
   const path = window.location.pathname;
   const active = (p) => path === p ? ' is-active' : '';
   const signedIn = chIsSignedIn();
   const user = chGetUser();
-
   let navRight = '';
   if (signedIn) {
     const initial = (user?.username || 'U').charAt(0).toUpperCase();
@@ -152,10 +128,6 @@ function mountHeader() {
             <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="7" height="7"/><rect x="14" y="3" width="7" height="7"/><rect x="14" y="14" width="7" height="7"/><rect x="3" y="14" width="7" height="7"/></svg>
             Dashboard
           </a>
-          <a href="/settings" class="ch-pfp-menu__item">
-            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/></svg>
-            Edit Profile
-          </a>
           <button type="button" class="ch-pfp-menu__item ch-pfp-menu__item--danger" id="chLogout">
             <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"/><polyline points="16 17 21 12 16 7"/><line x1="21" y1="12" x2="9" y2="12"/></svg>
             Log Out
@@ -165,7 +137,6 @@ function mountHeader() {
   } else {
     navRight = `<a href="/settings" class="ch-btn ch-btn--primary ch-btn--sm">Sign In</a>`;
   }
-
   mount.innerHTML = `
     <header class="ch-header">
       <div class="ch-motif-strip"></div>
@@ -199,7 +170,6 @@ function mountHeader() {
       </div>
     </header>
   `;
-
   const form = document.getElementById('chSearchForm');
   const input = document.getElementById('chSearchInput');
   if (form && input) {
@@ -212,7 +182,6 @@ function mountHeader() {
       window.location.href = `/home?q=${encodeURIComponent(v)}`;
     });
   }
-
   const filterBtn = document.getElementById('chSearchFilter');
   if (filterBtn) {
     filterBtn.addEventListener('click', (e) => {
@@ -221,33 +190,18 @@ function mountHeader() {
       showToast('Filters coming soon');
     });
   }
-
   const pfpBtn = document.getElementById('chPfpBtn');
   const pfpMenu = document.getElementById('chPfpMenu');
   if (pfpBtn && pfpMenu) {
-    pfpBtn.addEventListener('click', (e) => {
-      e.stopPropagation();
-      pfpMenu.classList.toggle('is-open');
-    });
+    pfpBtn.addEventListener('click', (e) => { e.stopPropagation(); pfpMenu.classList.toggle('is-open'); });
     document.addEventListener('click', (e) => {
-      if (!pfpMenu.contains(e.target) && e.target !== pfpBtn) {
-        pfpMenu.classList.remove('is-open');
-      }
+      if (!pfpMenu.contains(e.target) && e.target !== pfpBtn) pfpMenu.classList.remove('is-open');
     });
   }
-
   const logout = document.getElementById('chLogout');
-  if (logout) {
-    logout.addEventListener('click', () => {
-      localStorage.removeItem(CH.STORAGE_USER);
-      window.location.reload();
-    });
-  }
+  if (logout) logout.addEventListener('click', () => { localStorage.removeItem(CH.STORAGE_USER); window.location.reload(); });
 }
 
-// ============================================================
-// Footer
-// ============================================================
 function mountFooter() {
   const mount = document.getElementById('ch-footer-mount');
   if (!mount) return;
@@ -283,17 +237,12 @@ function mountFooter() {
             <span class="g">4</span><span class="b">Kun</span>
           </a>
         </div>
-        <div class="ch-footer__legal">
-          © 2026 Cloud Hub · Not affiliated with any studio or distributor.
-        </div>
+        <div class="ch-footer__legal">© 2026 Cloud Hub · Not affiliated with any studio or distributor.</div>
       </div>
     </footer>
   `;
 }
 
-// ============================================================
-// Report — inline button + modal
-// ============================================================
 function mountInlineReport(mountSelector, context) {
   const mount = document.querySelector(mountSelector);
   if (!mount) return;
@@ -337,13 +286,8 @@ function openReportModal(context) {
       </div>
     `;
     document.body.appendChild(modal);
-
-    modal.addEventListener('click', (e) => {
-      if (e.target === modal) modal.classList.remove('is-open');
-    });
-    document.getElementById('chReportCancel').addEventListener('click', () => {
-      modal.classList.remove('is-open');
-    });
+    modal.addEventListener('click', (e) => { if (e.target === modal) modal.classList.remove('is-open'); });
+    document.getElementById('chReportCancel').addEventListener('click', () => modal.classList.remove('is-open'));
     document.getElementById('chReportSubmit').addEventListener('click', () => {
       const text = document.getElementById('chReportText').value.trim();
       if (!text) { showToast('Please describe the issue'); return; }
@@ -358,9 +302,6 @@ function openReportModal(context) {
   modal.classList.add('is-open');
 }
 
-// ============================================================
-// Toast
-// ============================================================
 function showToast(message, ms = 2200) {
   const existing = document.querySelector('.ch-toast');
   if (existing) existing.remove();
