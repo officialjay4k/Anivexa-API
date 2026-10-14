@@ -3,7 +3,7 @@
 // ============================================================
 
 const CH = {
-  API_BASE: 'https://anivexa-api-production-46c4.up.railway.app',
+  API_BASE: 'https://cloudhub.4kun.top',
   ANILIST_GRAPHQL: 'https://graphql.anilist.co',
   STORAGE_PROGRESS:  '4kun_progress',
   STORAGE_SETTINGS:  '4kun_settings',
