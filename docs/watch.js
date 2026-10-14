@@ -29,6 +29,12 @@ let saveTick = 0;
 let autoNextFired = false;
 let audioAvail = { sub: false, dub: false };
 let epCache = { sub: null, dub: null };
+let currentProvider = null;
+let countdownTimer = null;
+let watchingTimer = null;
+
+// Server cache — key: provider:anilistId:epNum:audio
+const serverCache = new Map();
 
 function parseParams() {
   const p = new URLSearchParams(location.search);
@@ -58,7 +64,7 @@ async function anilistQuery(query, variables) {
   return json.data;
 }
 
-const MEDIA_QUERY = 'query ($id: Int) { Media(id: $id, type: ANIME) { id title { romaji english } coverImage { extraLarge large } format episodes duration seasonYear averageScore description(asHtml: false) genres tags { id name rank isMediaSpoiler } } }';
+const MEDIA_QUERY = 'query ($id: Int) { Media(id: $id, type: ANIME) { id title { romaji english } coverImage { extraLarge large } format episodes duration seasonYear averageScore description(asHtml: false) genres tags { id name rank isMediaSpoiler } nextAiringEpisode { episode airingAt } } }';
 
 function titleOf(m) { return (m && m.title && (m.title.english || m.title.romaji)) || 'Untitled'; }
 function formatFormat(f) {
@@ -66,12 +72,7 @@ function formatFormat(f) {
   return f.replace(/_/g, ' ').replace(/\b\w/g, function (c) { return c.toUpperCase(); });
 }
 
-// ============================================================
-// Availability check: use /episodes list counts, PLUS probe /watch
-// for the first ep of each provider. A provider only counts for dub
-// if the /watch endpoint returns a stream. This prevents false-positive
-// dub labels (the "12 eps but shows nothing" bug).
-// ============================================================
+// ---------- availability ----------
 async function fetchProvidersEpisodes(anilistId) {
   const reqs = EP_FETCH_PROVIDERS.map(function (p) {
     return fetch(API_BASE + '/episodes/' + p + '/' + anilistId, { cache: 'no-store' })
@@ -90,7 +91,6 @@ async function fetchProvidersEpisodes(anilistId) {
   });
   const results = (await Promise.all(reqs)).filter(Boolean);
 
-  // Probe /watch for the first ep in each audio mode to confirm usability.
   const probeAudio = async function (audio) {
     for (const r of results) {
       const list = audio === 'sub' ? r.sub : r.dub;
@@ -108,14 +108,12 @@ async function fetchProvidersEpisodes(anilistId) {
   };
 
   const [subOk, dubOk] = await Promise.all([probeAudio('sub'), probeAudio('dub')]);
-
   return { results: results, hasSub: subOk, hasDub: dubOk };
 }
 
 function pickBestEpisodeList(results, audio, expectedCount) {
   let best = { provider: null, list: [] };
   if (!results.length) return best;
-
   const scoreList = function (list) {
     if (!list || !list.length) return -Infinity;
     if (expectedCount != null && expectedCount > 0) {
@@ -124,7 +122,6 @@ function pickBestEpisodeList(results, audio, expectedCount) {
     }
     return list.length;
   };
-
   let bestScore = -Infinity;
   for (const r of results) {
     const list = audio === 'sub' ? r.sub : r.dub;
@@ -134,9 +131,7 @@ function pickBestEpisodeList(results, audio, expectedCount) {
   return best;
 }
 
-// ============================================================
-// Render
-// ============================================================
+// ---------- render ----------
 function renderInfo() {
   if (!media) return;
   document.title = titleOf(media) + ' — Ep ' + currentEp + ' — Cloud Hub';
@@ -178,6 +173,43 @@ function renderInfo() {
     wlBtn.classList.toggle('ch-btn--ghost', !now);
     if (typeof showToast === 'function') showToast(now ? 'Added to your list' : 'Removed from your list');
   };
+
+  renderNextAiring();
+}
+
+function renderNextAiring() {
+  const box = document.getElementById('watchCountdown');
+  if (!box) return;
+  const next = media && media.nextAiringEpisode;
+  if (!next || !next.airingAt) { box.hidden = true; return; }
+  box.hidden = false;
+
+  const d = new Date(next.airingAt * 1000);
+  const months = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
+  const dateStr = months[d.getMonth()] + ' ' + d.getDate() + ', ' + d.getFullYear() +
+    ' · ' + String(d.getHours()).padStart(2, '0') + ':' + String(d.getMinutes()).padStart(2, '0') + ':' + String(d.getSeconds()).padStart(2, '0');
+  document.getElementById('watchCountdownDate').textContent = 'EP ' + next.episode + ' — ' + dateStr;
+
+  if (countdownTimer) clearInterval(countdownTimer);
+  function tick() {
+    const now = Math.floor(Date.now() / 1000);
+    let diff = next.airingAt - now;
+    const el = document.getElementById('watchCountdownTimer');
+    if (!el) return;
+    if (diff <= 0) { el.textContent = 'Aired'; return; }
+    const days = Math.floor(diff / 86400); diff -= days * 86400;
+    const hours = Math.floor(diff / 3600); diff -= hours * 3600;
+    const mins = Math.floor(diff / 60);
+    const secs = diff - mins * 60;
+    const parts = [];
+    if (days) parts.push(days + 'd');
+    if (hours || days) parts.push(hours + 'h');
+    if (mins || hours || days) parts.push(mins + 'm');
+    parts.push(secs + 's');
+    el.textContent = parts.join(' ');
+  }
+  tick();
+  countdownTimer = setInterval(tick, 1000);
 }
 
 function renderEpisodes() {
@@ -234,8 +266,8 @@ function renderEpisodes() {
     }
   }
 
-  const current = listEl.querySelector('.current');
-  if (current) try { current.scrollIntoView({ block: 'nearest' }); } catch (e) {}
+  const cur = listEl.querySelector('.current');
+  if (cur) try { cur.scrollIntoView({ block: 'nearest' }); } catch (e) {}
 }
 
 function goToEpisode(n) {
@@ -253,21 +285,6 @@ function refreshControls() {
   document.getElementById('btnAutoSkip').classList.toggle('active', !!appSettings.autoSkip);
   document.getElementById('btnAutoNext').classList.toggle('active', !!appSettings.autoNext);
   document.getElementById('btnAutoPlay').classList.toggle('active', !!appSettings.autoPlay);
-
-  const sub = document.getElementById('btnSub');
-  const dub = document.getElementById('btnDub');
-  sub.classList.toggle('active', currentAudio === 'sub');
-  dub.classList.toggle('active', currentAudio === 'dub');
-
-  // Availability: hide the unavailable, keep the current one always visible.
-  if (!audioAvail.sub && !audioAvail.dub) {
-    // Neither confirmed — show both so user can try.
-    sub.style.display = '';
-    dub.style.display = '';
-  } else {
-    sub.style.display = (audioAvail.sub || currentAudio === 'sub') ? '' : 'none';
-    dub.style.display = (audioAvail.dub || currentAudio === 'dub') ? '' : 'none';
-  }
 }
 
 function wireControls() {
@@ -288,12 +305,19 @@ function wireControls() {
     chPlayer.setSettings(appSettings);
     refreshControls();
   });
-  document.getElementById('btnSub').addEventListener('click', function () { switchAudio('sub'); });
-  document.getElementById('btnDub').addEventListener('click', function () { switchAudio('dub'); });
   document.getElementById('btnFailover').addEventListener('click', function () {
     saveNow();
     chPipeline.forceFailover();
   });
+
+  const bannerReport = document.getElementById('watchBannerReport');
+  if (bannerReport) {
+    bannerReport.addEventListener('click', function () {
+      if (typeof openReportModal === 'function') {
+        openReportModal('Watch — AniList ' + anilistId + ' ep ' + currentEp + ' (' + currentAudio + ')');
+      }
+    });
+  }
   refreshControls();
 }
 
@@ -311,14 +335,13 @@ function switchAudio(next) {
   chPlayer.setAudioPreference(next);
   refreshControls();
 
-  // Swap episode list instantly from cache if available.
   if (epCache[next]) {
     episodeList = epCache[next].list.slice();
     renderEpisodes();
   }
 
-  // Show skeleton again and start playback.
   showPlayerSkeleton();
+  renderServerRows(); // refresh to show skeleton for the new audio
   startPlayback();
 }
 
@@ -328,13 +351,9 @@ function saveNow() {
   if (!v.currentTime || v.currentTime < 5) return;
   if (!isFinite(v.duration) || v.duration <= 0) return;
   chProgress.set(
-    anilistId,
-    titleOf(media),
+    anilistId, titleOf(media),
     media && media.coverImage && (media.coverImage.extraLarge || media.coverImage.large),
-    currentEp,
-    currentAudio,
-    v.currentTime,
-    v.duration
+    currentEp, currentAudio, v.currentTime, v.duration
   );
 }
 
@@ -351,10 +370,8 @@ async function resolveSkipIntervals(anilistId, ep, watchData) {
     return (isFinite(s) && isFinite(e) && e > s) ? { startTime: s, endTime: e } : null;
   }
   if (s0.intro || s0.outro) {
-    const op = tryNum(s0.intro && (s0.intro.start != null ? s0.intro.start : s0.intro.startTime),
-                    s0.intro && (s0.intro.end != null ? s0.intro.end : s0.intro.endTime));
-    const ed = tryNum(s0.outro && (s0.outro.start != null ? s0.outro.start : s0.outro.startTime),
-                    s0.outro && (s0.outro.end != null ? s0.outro.end : s0.outro.endTime));
+    const op = tryNum(s0.intro && (s0.intro.start != null ? s0.intro.start : s0.intro.startTime), s0.intro && (s0.intro.end != null ? s0.intro.end : s0.intro.endTime));
+    const ed = tryNum(s0.outro && (s0.outro.start != null ? s0.outro.start : s0.outro.startTime), s0.outro && (s0.outro.end != null ? s0.outro.end : s0.outro.endTime));
     if (op || ed) return { op: op, ed: ed };
   }
   if (watchData && (watchData.intro || watchData.outro)) {
@@ -391,8 +408,150 @@ async function startPlayback() {
   await chPipeline.start({ anilistId: anilistId, ep: currentEp, audio: currentAudio });
 }
 
+// ---------- Watching counter ----------
+function fakeWatchers(seed) {
+  let h = 0;
+  const str = String(seed);
+  for (let i = 0; i < str.length; i++) h = ((h << 5) - h + str.charCodeAt(i)) | 0;
+  return 40 + (Math.abs(h) % 761);
+}
+function initWatchingCounter() {
+  const box = document.getElementById('watchWatching');
+  if (!box) return;
+  if (watchingTimer) clearInterval(watchingTimer);
+
+  const base = fakeWatchers(anilistId + ':' + currentEp);
+  const numEl = box.querySelector('.watch-watching__num');
+  if (!numEl) return;
+  numEl.textContent = base;
+  box.hidden = false;
+
+  watchingTimer = setInterval(function () {
+    const drift = Math.floor(Math.random() * 11) - 5;
+    const n = Math.max(20, base + drift);
+    numEl.textContent = n;
+  }, 5000);
+}
+
+// ---------- Server rows ----------
+async function getServersFor(provider, audio, epNum) {
+  const key = provider + ':' + anilistId + ':' + epNum + ':' + audio;
+  if (serverCache.has(key)) return serverCache.get(key);
+  const promise = (async function () {
+    try {
+      const epRes = await fetch(API_BASE + '/episodes/' + provider + '/' + anilistId, { cache: 'no-store' });
+      if (!epRes.ok) return [];
+      const data = await epRes.json();
+      const list = (data && data[provider] && data[provider].episodes && data[provider].episodes[audio]) || [];
+      const ep = list.find(function (e) { return Number(e.number) === Number(epNum); });
+      if (!ep) return [];
+      const epId = String(ep.id).split('/').pop();
+      const watchRes = await fetch(API_BASE + '/watch/' + provider + '/' + anilistId + '/' + audio + '/' + epId, { cache: 'no-store' });
+      if (!watchRes.ok) return [];
+      const wd = await watchRes.json();
+      return (wd && wd.streams ? wd.streams : []).map(function (s, i) {
+        return {
+          server: s.server || ('Server ' + (i + 1)),
+          url: s.url,
+          index: i,
+          audio: audio,
+          provider: provider
+        };
+      });
+    } catch (e) { return []; }
+  })();
+  serverCache.set(key, promise);
+  return promise;
+}
+
+async function renderServerRows() {
+  const wrap = document.getElementById('watchServers');
+  if (!wrap) return;
+
+  if (!currentProvider) {
+    wrap.innerHTML = '<div class="watch-servers__loading"><span class="ch-skel ch-skel-line" style="width:220px;display:inline-block"></span></div>';
+    return;
+  }
+
+  // Show skeleton for both rows while fetching
+  wrap.innerHTML = '<div class="watch-servers__loading"><span class="ch-skel ch-skel-line" style="width:220px;display:inline-block"></span></div>';
+
+  const [subServers, dubServers] = await Promise.all([
+    getServersFor(currentProvider, 'sub', currentEp),
+    getServersFor(currentProvider, 'dub', currentEp)
+  ]);
+
+  const state = chPipeline.getState();
+  const activeServer = state.currentEntry && state.currentEntry.stream && state.currentEntry.stream.server;
+
+  function buildRow(audio, servers, label) {
+    const row = document.createElement('div');
+    row.className = 'watch-server-row watch-server-row--' + audio;
+
+    const labelEl = document.createElement('div');
+    labelEl.className = 'watch-server-row__label';
+    labelEl.innerHTML = (audio === 'sub'
+      ? '<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="5" width="18" height="14" rx="2"/><line x1="7" y1="14" x2="11" y2="14"/><line x1="7" y1="18" x2="17" y2="18"/></svg>'
+      : '<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M12 2a3 3 0 0 0-3 3v7a3 3 0 0 0 6 0V5a3 3 0 0 0-3-3z"/><path d="M19 10v2a7 7 0 0 1-14 0v-2"/><line x1="12" y1="19" x2="12" y2="22"/></svg>')
+      + label;
+
+    const listEl = document.createElement('div');
+    listEl.className = 'watch-server-row__list';
+
+    if (!servers.length) {
+      const empty = document.createElement('span');
+      empty.className = 'watch-server-row__empty';
+      empty.textContent = 'No ' + audio + ' servers';
+      listEl.appendChild(empty);
+    } else {
+      servers.forEach(function (s) {
+        const btn = document.createElement('button');
+        btn.type = 'button';
+        btn.className = 'watch-server-pill';
+        if (audio === currentAudio && s.server === activeServer) {
+          btn.classList.add('is-active');
+        }
+        btn.innerHTML = '<span class="watch-server-pill__play"><svg width="8" height="8" viewBox="0 0 24 24" fill="currentColor"><polygon points="6 4 20 12 6 20"></polygon></svg></span><span>' + chEscapeHtml(s.server) + '</span>';
+        btn.addEventListener('click', function () {
+          handleServerClick(audio, s.server);
+        });
+        listEl.appendChild(btn);
+      });
+    }
+
+    row.appendChild(labelEl);
+    row.appendChild(listEl);
+    return row;
+  }
+
+  wrap.innerHTML = '';
+  wrap.appendChild(buildRow('sub', subServers, 'Sub'));
+  wrap.appendChild(buildRow('dub', dubServers, 'Dub'));
+}
+
+function handleServerClick(audio, serverName) {
+  if (audio === currentAudio) {
+    // Same audio — try jumping to that server within workList
+    const jumped = chPipeline.jumpTo(currentProvider, serverName);
+    if (!jumped) {
+      // Not in workList yet (still background-fetching) — fallback to failover spam
+      // Simplest: just show a toast and let user retry in a moment
+      if (typeof showToast === 'function') showToast('Server not loaded yet — try again in a moment');
+    }
+  } else {
+    // Different audio — switch, and once stream fires, try jumping
+    pendingServerJump = { audio: audio, serverName: serverName };
+    switchAudio(audio);
+  }
+}
+
+let pendingServerJump = null;
+
+// ---------- Pipeline events ----------
 chPipeline.on('stream', async function (data) {
   const entry = data.entry;
+  currentProvider = entry.provider;
+
   const badge = document.getElementById('watchBadge');
   if (badge) {
     const providerIdx = chPipeline.getState().workList.indexOf(entry);
@@ -444,13 +603,9 @@ chPipeline.on('stream', async function (data) {
         if (!isFinite(t) || t < 5) return;
         if (!isFinite(d) || d <= 0) return;
         chProgress.set(
-          anilistId,
-          titleOf(media),
+          anilistId, titleOf(media),
           media && media.coverImage && (media.coverImage.extraLarge || media.coverImage.large),
-          currentEp,
-          currentAudio,
-          t,
-          d
+          currentEp, currentAudio, t, d
         );
       },
       onEnded: function () {
@@ -471,6 +626,18 @@ chPipeline.on('stream', async function (data) {
       onDestroy: function () { saveNow(); }
     }
   });
+
+  // Render server rows now that we know the provider
+  renderServerRows();
+
+  // Pending server jump?
+  if (pendingServerJump && pendingServerJump.audio === currentAudio) {
+    const target = pendingServerJump;
+    pendingServerJump = null;
+    setTimeout(function () {
+      chPipeline.jumpTo(currentProvider, target.serverName);
+    }, 300);
+  }
 });
 
 chPipeline.on('audio', function () { refreshControls(); });
@@ -498,9 +665,7 @@ chPipeline.on('exhausted', function () {
   container.appendChild(iframe);
 });
 
-// ============================================================
-// Similar anime — no box, free layout, with timeout
-// ============================================================
+// ---------- Similar anime ----------
 const SIMILAR_RECS_QUERY = 'query ($id: Int) { Media(id: $id, type: ANIME) { recommendations(perPage: 10, sort: RATING_DESC) { nodes { mediaRecommendation { id title { romaji english } coverImage { large extraLarge } format averageScore seasonYear } } } } }';
 const SIMILAR_TAG_QUERY = 'query ($tag: String) { Page(page: 1, perPage: 12) { media(type: ANIME, tag: $tag, sort: POPULARITY_DESC, isAdult: false) { id title { romaji english } coverImage { large extraLarge } format averageScore seasonYear } } }';
 
@@ -568,9 +733,7 @@ async function renderSimilar(mediaArg) {
   }
 }
 
-// ============================================================
-// Boot
-// ============================================================
+// ---------- Boot ----------
 async function initWatch() {
   const params = parseParams();
   if (!params.id) {
@@ -587,7 +750,6 @@ async function initWatch() {
   chPlayer.setAudioPreference(currentAudio);
 
   wireControls();
-  if (typeof mountReportButton === 'function') mountReportButton('Watch page — ' + anilistId);
 
   const mediaPromise = anilistQuery(MEDIA_QUERY, { id: Number(anilistId) }).catch(function (e) { console.error(e); return null; });
   const epsPromise = fetchProvidersEpisodes(anilistId).catch(function () { return { results: [], hasSub: false, hasDub: false }; });
@@ -599,27 +761,20 @@ async function initWatch() {
     return;
   }
   renderInfo();
+  initWatchingCounter();
 
   const fetched = await epsPromise;
   audioAvail = { sub: fetched.hasSub, dub: fetched.hasDub };
 
-  // Auto-correct if requested audio unavailable.
   if (currentAudio === 'dub' && !audioAvail.dub && audioAvail.sub) {
-    currentAudio = 'sub';
-    appSettings.audio = 'sub';
-    saveSettings(appSettings);
-    updateUrlParams({ audio: 'sub' });
-    chPlayer.setAudioPreference('sub');
+    currentAudio = 'sub'; appSettings.audio = 'sub'; saveSettings(appSettings);
+    updateUrlParams({ audio: 'sub' }); chPlayer.setAudioPreference('sub');
   } else if (currentAudio === 'sub' && !audioAvail.sub && audioAvail.dub) {
-    currentAudio = 'dub';
-    appSettings.audio = 'dub';
-    saveSettings(appSettings);
-    updateUrlParams({ audio: 'dub' });
-    chPlayer.setAudioPreference('dub');
+    currentAudio = 'dub'; appSettings.audio = 'dub'; saveSettings(appSettings);
+    updateUrlParams({ audio: 'dub' }); chPlayer.setAudioPreference('dub');
   }
   refreshControls();
 
-  // Cache both lists.
   epCache.sub = pickBestEpisodeList(fetched.results, 'sub', media.episodes);
   epCache.dub = pickBestEpisodeList(fetched.results, 'dub', media.episodes);
   const chosen = currentAudio === 'sub' ? epCache.sub : epCache.dub;
