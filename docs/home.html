@@ -75,16 +75,40 @@
       </div>
 
       <aside class="home-sidebar">
-        <section class="home-section" id="schedule">
-          <header class="ch-section-head">
-            <h2 class="ch-section-title">Airing Soon</h2>
+
+        <section class="sidebar-module" id="trendingModule">
+          <header class="sidebar-module__head">
+            <h2 class="sidebar-module__title">Top Trending</h2>
+            <div class="sidebar-tabs" id="trendTabs">
+              <button class="sidebar-tab is-active" data-range="day">Day</button>
+              <button class="sidebar-tab" data-range="week">Week</button>
+              <button class="sidebar-tab" data-range="month">Month</button>
+            </div>
           </header>
-          <div class="home-schedule" id="scheduleList">
+          <div class="sidebar-module__body" id="trendingList">
+            <div class="home-skeleton home-skeleton--row"></div>
             <div class="home-skeleton home-skeleton--row"></div>
             <div class="home-skeleton home-skeleton--row"></div>
             <div class="home-skeleton home-skeleton--row"></div>
           </div>
         </section>
+
+        <section class="sidebar-module" id="scheduleModule">
+          <header class="sidebar-module__head">
+            <h2 class="sidebar-module__title">Schedule</h2>
+          </header>
+          <div class="sidebar-day-tabs" id="scheduleTabs"></div>
+          <div class="sidebar-module__body sidebar-module__body--schedule" id="scheduleList">
+            <div class="home-skeleton home-skeleton--row"></div>
+            <div class="home-skeleton home-skeleton--row"></div>
+            <div class="home-skeleton home-skeleton--row"></div>
+          </div>
+          <div class="schedule-foot">
+            <span class="schedule-clock" id="scheduleClock">—</span>
+            <button class="schedule-more" type="button" id="scheduleMore">More ▾</button>
+          </div>
+        </section>
+
       </aside>
 
     </div>
