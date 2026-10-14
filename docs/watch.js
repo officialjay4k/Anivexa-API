@@ -74,9 +74,6 @@ function formatFormat(f) {
   return f.replace(/_/g, ' ').replace(/\b\w/g, function (c) { return c.toUpperCase(); });
 }
 
-// ============================================================
-// Fetch providers episodes + availability
-// ============================================================
 async function fetchProvidersEpisodes(anilistId) {
   const reqs = EP_FETCH_PROVIDERS.map(function (p) {
     const url = API_BASE + '/episodes/' + p + '/' + anilistId;
@@ -96,7 +93,6 @@ async function fetchProvidersEpisodes(anilistId) {
   });
   const results = (await Promise.all(reqs)).filter(Boolean);
 
-  // Probe availability
   const probeAudio = async function (audio) {
     for (const r of results) {
       const list = audio === 'sub' ? r.sub : r.dub;
@@ -117,7 +113,6 @@ async function fetchProvidersEpisodes(anilistId) {
   return { results: results, hasSub: subOk, hasDub: dubOk };
 }
 
-// Cap: if nextAiringEpisode exists, only episodes <= episode-1 have aired.
 function computeAiredCap(media) {
   if (!media) return null;
   const next = media.nextAiringEpisode;
@@ -137,7 +132,6 @@ function pickBestEpisodeList(results, audio, media) {
     return mediaEps;
   })();
 
-  // Filter candidate lists down to aired eps
   const filterAired = function (list) {
     if (!list || !list.length) return [];
     if (airedCap == null) return list;
@@ -163,9 +157,6 @@ function pickBestEpisodeList(results, audio, media) {
   return best;
 }
 
-// ============================================================
-// Render
-// ============================================================
 function renderInfo() {
   if (!media) return;
   document.title = titleOf(media) + ' — Ep ' + currentEp + ' — Cloud Hub';
@@ -211,7 +202,6 @@ function renderInfo() {
   renderNextAiring();
 }
 
-// Countdown — always show for RELEASING shows with a next episode, regardless of current ep.
 function renderNextAiring() {
   const box = document.getElementById('watchCountdown');
   if (!box) return;
@@ -219,8 +209,7 @@ function renderNextAiring() {
   if (!next || !next.airingAt) { box.hidden = true; return; }
 
   const nowSec = Math.floor(Date.now() / 1000);
-  if (next.airingAt <= nowSec - 3600) { box.hidden = true; return; } // stale data, don't show
-
+  if (next.airingAt <= nowSec - 3600) { box.hidden = true; return; }
   box.hidden = false;
 
   const d = new Date(next.airingAt * 1000);
@@ -325,7 +314,6 @@ function goToEpisode(n) {
   startPlayback();
 }
 
-// Lang toggles removed from top bar; server rows handle it.
 function refreshControls() {
   const btnAutoSkip = document.getElementById('btnAutoSkip');
   const btnAutoNext = document.getElementById('btnAutoNext');
@@ -456,11 +444,12 @@ function showUnavailable(reason) {
   hidePlayerSkeleton();
   const container = document.getElementById('watchPlayer');
   if (!container) return;
-  container.querySelectorAll('.artplayer-app, iframe').forEach(function (el) { el.remove(); });
+  container.querySelectorAll('.artplayer-app, iframe, .watch-unavailable').forEach(function (el) { el.remove(); });
   const badge = document.getElementById('watchBadge');
   if (badge) { badge.textContent = 'Not available'; badge.className = 'watch-player-badge'; }
 
   const msg = document.createElement('div');
+  msg.className = 'watch-unavailable';
   msg.style.cssText = 'position:absolute;inset:0;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:12px;color:#fff;text-align:center;padding:24px;';
   msg.innerHTML = `
     <svg width="42" height="42" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" style="color:rgba(217,24,40,0.9)">
@@ -483,89 +472,68 @@ async function startPlayback() {
   await chPipeline.start({ anilistId: anilistId, ep: currentEp, audio: currentAudio });
 }
 
-async function getServersFor(provider, audio, epNum) {
-  const key = provider + ':' + anilistId + ':' + epNum + ':' + audio;
-  if (serverCache.has(key)) return serverCache.get(key);
-  const promise = (async function () {
-    try {
-      const epRes = await fetch(API_BASE + '/episodes/' + provider + '/' + anilistId, { cache: 'no-store' });
-      if (!epRes.ok) return [];
-      const data = await epRes.json();
-      const list = (data && data[provider] && data[provider].episodes && data[provider].episodes[audio]) || [];
-      const ep = list.find(function (e) { return Number(e.number) === Number(epNum); });
-      if (!ep) return [];
-      const epId = String(ep.id).split('/').pop();
-      const watchRes = await fetch(API_BASE + '/watch/' + provider + '/' + anilistId + '/' + audio + '/' + epId, { cache: 'no-store' });
-      if (!watchRes.ok) return [];
-      const wd = await watchRes.json();
-      return (wd && wd.streams ? wd.streams : []).map(function (s, i) {
-        return { server: s.server || ('Server ' + (i + 1)), url: s.url, index: i, audio: audio, provider: provider };
-      });
-    } catch (e) { return []; }
-  })();
-  serverCache.set(key, promise);
-  return promise;
-}
-
+// ============================================================
+// Server rows — simplified to HD-1 / HD-2
+// ============================================================
 async function renderServerRows() {
   const wrap = document.getElementById('watchServers');
   if (!wrap) return;
-  if (!currentProvider) {
-    wrap.innerHTML = '<div class="watch-servers__loading"><span class="ch-skel ch-skel-line" style="width:220px;display:inline-block"></span></div>';
-    return;
-  }
-  wrap.innerHTML = '<div class="watch-servers__loading"><span class="ch-skel ch-skel-line" style="width:220px;display:inline-block"></span></div>';
-
-  const [subServers, dubServers] = await Promise.all([
-    getServersFor(currentProvider, 'sub', currentEp),
-    getServersFor(currentProvider, 'dub', currentEp)
-  ]);
 
   const state = chPipeline.getState();
-  const activeServer = state.currentEntry && state.currentEntry.stream && state.currentEntry.stream.server;
+  const workIndex = state.workIndex;
 
-  function buildRow(audio, servers, label) {
+  // HD-1 = play the chain / HD-2 = advance the chain
+  function buildRow(audio, label) {
     const row = document.createElement('div');
     row.className = 'watch-server-row watch-server-row--' + audio;
+
     const labelEl = document.createElement('div');
     labelEl.className = 'watch-server-row__label';
     labelEl.innerHTML = (audio === 'sub'
       ? '<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="5" width="18" height="14" rx="2"/><line x1="7" y1="14" x2="11" y2="14"/><line x1="7" y1="18" x2="17" y2="18"/></svg>'
       : '<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M12 2a3 3 0 0 0-3 3v7a3 3 0 0 0 6 0V5a3 3 0 0 0-3-3z"/><path d="M19 10v2a7 7 0 0 1-14 0v-2"/><line x1="12" y1="19" x2="12" y2="22"/></svg>')
       + label;
+
     const listEl = document.createElement('div');
     listEl.className = 'watch-server-row__list';
-    if (!servers.length) {
-      const empty = document.createElement('span');
-      empty.className = 'watch-server-row__empty';
-      empty.textContent = 'No ' + audio + ' servers';
-      listEl.appendChild(empty);
-    } else {
-      servers.forEach(function (s) {
-        const btn = document.createElement('button');
-        btn.type = 'button';
-        btn.className = 'watch-server-pill';
-        if (audio === currentAudio && s.server === activeServer) btn.classList.add('is-active');
-        btn.innerHTML = '<span class="watch-server-pill__play"><svg width="8" height="8" viewBox="0 0 24 24" fill="currentColor"><polygon points="6 4 20 12 6 20"></polygon></svg></span><span>' + chEscapeHtml(s.server) + '</span>';
-        btn.addEventListener('click', function () { handleServerClick(audio, s.server); });
-        listEl.appendChild(btn);
-      });
-    }
+
+    // is this audio currently active?
+    const isActiveAudio = audio === currentAudio;
+    const isAvailable = audio === 'sub' ? audioAvail.sub : audioAvail.dub;
+
+    // HD-1
+    const btn1 = document.createElement('button');
+    btn1.type = 'button';
+    btn1.className = 'watch-server-pill';
+    if (isActiveAudio && workIndex === 0) btn1.classList.add('is-active');
+    btn1.disabled = !isAvailable && !isActiveAudio;
+    btn1.innerHTML = '<span class="watch-server-pill__play"><svg width="8" height="8" viewBox="0 0 24 24" fill="currentColor"><polygon points="6 4 20 12 6 20"></polygon></svg></span><span>HD-1</span>';
+    btn1.addEventListener('click', function () { handleServerClick(audio, 'HD-1'); });
+
+    // HD-2
+    const btn2 = document.createElement('button');
+    btn2.type = 'button';
+    btn2.className = 'watch-server-pill';
+    if (isActiveAudio && workIndex >= 1) btn2.classList.add('is-active');
+    btn2.disabled = !isAvailable && !isActiveAudio;
+    btn2.innerHTML = '<span class="watch-server-pill__play"><svg width="8" height="8" viewBox="0 0 24 24" fill="currentColor"><polygon points="6 4 20 12 6 20"></polygon></svg></span><span>HD-2</span>';
+    btn2.addEventListener('click', function () { handleServerClick(audio, 'HD-2'); });
+
+    listEl.appendChild(btn1);
+    listEl.appendChild(btn2);
     row.appendChild(labelEl);
     row.appendChild(listEl);
     return row;
   }
 
   wrap.innerHTML = '';
-  wrap.appendChild(buildRow('sub', subServers, 'Sub'));
-  wrap.appendChild(buildRow('dub', dubServers, 'Dub'));
+  wrap.appendChild(buildRow('sub', 'Sub'));
+  wrap.appendChild(buildRow('dub', 'Dub'));
 }
 
 function handleServerClick(audio, serverName) {
-  if (audio === currentAudio) {
-    const jumped = chPipeline.jumpTo(currentProvider, serverName);
-    if (!jumped && typeof showToast === 'function') showToast('Server not loaded yet — try again in a moment');
-  } else {
+  // Different audio — switch first, then act on new stream
+  if (audio !== currentAudio) {
     if (audio === 'sub' && !audioAvail.sub) {
       if (typeof showToast === 'function') showToast('Sub is not available for this title');
       return;
@@ -576,6 +544,17 @@ function handleServerClick(audio, serverName) {
     }
     pendingServerJump = { audio: audio, serverName: serverName };
     switchAudio(audio);
+    return;
+  }
+
+  // Same audio
+  if (serverName === 'HD-2') {
+    saveNow();
+    chPipeline.forceFailover();
+  } else {
+    // HD-1 — restart the chain from scratch
+    saveNow();
+    chPipeline.restart();
   }
 }
 
@@ -638,7 +617,6 @@ chPipeline.on('stream', async function (data) {
       onEnded: function () {
         if (!appSettings.autoNext || autoNextFired) return;
         autoNextFired = true;
-        const state = chPipeline.getState();
         const next = currentEp + 1;
         const found = episodeList.find(function (e) { return Number(e.number) === next; });
         if (!found) return;
@@ -660,7 +638,9 @@ chPipeline.on('stream', async function (data) {
   if (pendingServerJump && pendingServerJump.audio === currentAudio) {
     const target = pendingServerJump;
     pendingServerJump = null;
-    setTimeout(function () { chPipeline.jumpTo(currentProvider, target.serverName); }, 300);
+    if (target.serverName === 'HD-2') {
+      setTimeout(function () { chPipeline.forceFailover(); }, 300);
+    }
   }
 });
 
@@ -744,8 +724,14 @@ async function renderSimilar(mediaArg) {
 }
 
 // ============================================================
-// Boot
+// Watching counter — shows 1 for the current title
 // ============================================================
+function initWatchingCounter() {
+  const box = document.getElementById('watchWatching');
+  if (!box) return;
+  box.hidden = false;
+}
+
 async function initWatch() {
   const params = parseParams();
   if (!params.id) {
@@ -773,21 +759,19 @@ async function initWatch() {
     return;
   }
   renderInfo();
+  initWatchingCounter();
 
   const fetched = await epsPromise;
   audioAvail = { sub: fetched.hasSub, dub: fetched.hasDub };
 
-  // If neither sub nor dub available, hard-stop
   if (!audioAvail.sub && !audioAvail.dub) {
     showUnavailable('No streams are available for this title yet.');
     document.getElementById('watchEpList').innerHTML = '<div class="watch-ep-loading">Not available.</div>';
     document.getElementById('watchEpCount').textContent = '—';
-    // Still fire similar
     renderSimilar(media).catch(function () {});
     return;
   }
 
-  // Auto-switch if requested audio isn't available
   if (currentAudio === 'dub' && !audioAvail.dub && audioAvail.sub) {
     currentAudio = 'sub'; appSettings.audio = 'sub'; saveSettings(appSettings);
     updateUrlParams({ lang: 'sub' }); chPlayer.setAudioPreference('sub');
@@ -802,7 +786,6 @@ async function initWatch() {
   const chosen = currentAudio === 'sub' ? epCache.sub : epCache.dub;
   episodeList = (chosen.list || []).slice().sort(function (a, b) { return Number(a.number) - Number(b.number); });
 
-  // If the requested ep isn't in the list, snap to the last available ep.
   const epExists = episodeList.find(function (e) { return Number(e.number) === Number(currentEp); });
   if (!epExists && episodeList.length) {
     currentEp = Number(episodeList[episodeList.length - 1].number);
@@ -811,6 +794,7 @@ async function initWatch() {
   }
 
   renderEpisodes();
+  renderServerRows();
 
   window.addEventListener('beforeunload', saveNow);
   renderSimilar(media).catch(function (e) { console.warn('Similar render error:', e); });
