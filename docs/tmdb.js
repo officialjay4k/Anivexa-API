@@ -6,8 +6,24 @@ const TMDB_API_KEY = 'c369a47ceeb50fba4557e4da9ac9390b';
 
 const TMDB_BASE = 'https://api.themoviedb.org/3';
 const TMDB_IMG  = 'https://image.tmdb.org/t/p';
-const TMDB_CACHE_KEY = 'ch_tmdb_cache_v4';
+const TMDB_CACHE_KEY = 'ch_tmdb_cache_v5';
 const TMDB_CACHE_TTL_MS = 7 * 24 * 60 * 60 * 1000;
+const TMDB_DEBUG = false; // set true to log match decisions to console
+
+// Nuke any old cache keys from previous versions.
+(function nukeOldCaches() {
+  try {
+    const toRemove = [];
+    for (let i = 0; i < localStorage.length; i++) {
+      const k = localStorage.key(i);
+      if (k && k.indexOf('ch_tmdb_cache_') === 0 && k !== TMDB_CACHE_KEY) {
+        toRemove.push(k);
+      }
+    }
+    for (const k of toRemove) localStorage.removeItem(k);
+    if (TMDB_DEBUG && toRemove.length) console.log('[TMDB] nuked old caches:', toRemove);
+  } catch {}
+})();
 
 let tmdbCache = (() => {
   try { return JSON.parse(localStorage.getItem(TMDB_CACHE_KEY)) || {}; }
@@ -45,7 +61,6 @@ async function tmdbFetch(path, params = {}) {
   return res.json();
 }
 
-// Normalize a title for comparison: lowercase, strip punctuation.
 function tmdbNorm(s) {
   return String(s || '').toLowerCase()
     .replace(/[^a-z0-9\s]/g, ' ')
@@ -53,7 +68,6 @@ function tmdbNorm(s) {
     .trim();
 }
 
-// Simple similarity: fraction of words in common (Jaccard-ish, weighted toward containment).
 function tmdbTitleScore(a, b) {
   const na = tmdbNorm(a);
   const nb = tmdbNorm(b);
@@ -72,64 +86,59 @@ function tmdbTitleScore(a, b) {
   return overlap / total;
 }
 
-// Extract a year from a TMDB result. TV uses first_air_date, movie uses release_date.
 function tmdbResultYear(r) {
   const d = r.first_air_date || r.release_date || '';
   const m = String(d).match(/^(\d{4})/);
   return m ? parseInt(m[1], 10) : null;
 }
 
-// Score one candidate result against what we're looking for.
+// Heavier scoring: penalize any title mismatch aggressively.
 function scoreCandidate(r, query, year, format) {
   const titleFields = [r.name, r.original_name, r.title, r.original_title].filter(Boolean);
   let titleScore = 0;
   for (const t of titleFields) titleScore = Math.max(titleScore, tmdbTitleScore(query, t));
-  if (titleScore < 0.35) return -Infinity;  // reject wildly different results
+  if (titleScore < 0.6) return -Infinity;
 
-  let score = titleScore * 60;
+  let score = titleScore * 100;
 
-  // Year match
   const rYear = tmdbResultYear(r);
   if (year && rYear) {
     const diff = Math.abs(rYear - year);
-    if (diff === 0) score += 30;
-    else if (diff === 1) score += 18;
-    else if (diff <= 3) score += 6;
+    if (diff === 0) score += 50;
+    else if (diff === 1) score += 30;
+    else if (diff <= 3) score += 12;
     else if (diff <= 6) score += 0;
-    else score -= 25;
-  } else if (!year) {
-    // No year to compare — small nudge for very old or very new doesn't apply.
+    else score -= 50;
   }
 
-  // Format intent
   const isMovieFormat = format === 'MOVIE' || format === 'SPECIAL';
-  if (isMovieFormat && r.title && !r.name) score += 8;   // movie result
-  if (!isMovieFormat && r.name && !r.title) score += 8;   // tv result
+  if (isMovieFormat && r.title && !r.name) score += 10;
+  if (!isMovieFormat && r.name && !r.title) score += 10;
 
-  // Popularity — reject ghosts with 0 popularity
-  if ((r.popularity || 0) === 0 && (r.vote_count || 0) === 0) score -= 40;
+  if ((r.popularity || 0) === 0 && (r.vote_count || 0) === 0) score -= 60;
 
-  // Small popularity tiebreaker (log scale so it doesn't overwhelm)
   if (r.popularity && r.popularity > 0) {
-    score += Math.min(20, Math.log10(r.popularity + 1) * 6);
+    score += Math.min(30, Math.log10(r.popularity + 1) * 8);
   }
   if (r.vote_count && r.vote_count > 0) {
-    score += Math.min(12, Math.log10(r.vote_count + 1) * 3);
+    score += Math.min(20, Math.log10(r.vote_count + 1) * 5);
   }
 
   return score;
 }
 
-// Pick the best candidate from TMDB search results.
 function pickBestResult(results, query, year, format) {
   if (!Array.isArray(results) || !results.length) return null;
   let best = null;
   let bestScore = -Infinity;
+  const scored = [];
   for (const r of results) {
     const s = scoreCandidate(r, query, year, format);
+    scored.push({ score: s, title: r.name || r.title, year: tmdbResultYear(r), id: r.id });
     if (s > bestScore) { bestScore = s; best = r; }
   }
-  return bestScore > 20 ? best : null;
+  if (TMDB_DEBUG) console.log('[TMDB] scored candidates for', query, year, scored.sort((a,b) => b.score - a.score).slice(0, 5));
+  return bestScore > 40 ? best : null;
 }
 
 async function tmdbLookup(title, year, format) {
@@ -140,19 +149,16 @@ async function tmdbLookup(title, year, format) {
 
   const isMovie = format === 'MOVIE' || format === 'SPECIAL';
 
-  // Ordered search attempts. Prefer the format-consistent endpoint first.
   const tries = isMovie
     ? [
-        { kind: 'movie', path: '/search/movie', params: { query: title, year: year || '', primary_release_year: year || '' } },
+        { kind: 'movie', path: '/search/movie', params: { query: title, primary_release_year: year || '' } },
         { kind: 'movie', path: '/search/movie', params: { query: title } },
         { kind: 'tv',    path: '/search/tv',    params: { query: title, first_air_date_year: year || '' } },
-        { kind: 'tv',    path: '/search/tv',    params: { query: title } },
       ]
     : [
         { kind: 'tv',    path: '/search/tv',    params: { query: title, first_air_date_year: year || '' } },
         { kind: 'tv',    path: '/search/tv',    params: { query: title } },
         { kind: 'movie', path: '/search/movie', params: { query: title, year: year || '' } },
-        { kind: 'movie', path: '/search/movie', params: { query: title } },
       ];
 
   for (const t of tries) {
@@ -176,8 +182,20 @@ async function tmdbLookup(title, year, format) {
         return ordered[0]?.file_path || null;
       };
 
+      // For logos: prefer English, then null, then widest. Also filter out
+      // absurdly tall/square logos (spinoff symbols, fan art) which usually
+      // have aspect ratio close to 1.
       const pickLogo = () => {
-        const list = images?.logos || [];
+        const list = (images?.logos || []).filter(l => {
+          const w = l.width || 0;
+          const h = l.height || 0;
+          if (!w || !h) return false;
+          const ar = w / h;
+          // Real anime wordmarks are usually wider than tall (ar > 1.5).
+          // Reject square symbols and portraits.
+          return ar >= 1.4;
+        });
+        if (!list.length) return null;
         const ordered = [...list].sort((a, b) => {
           const aEn = a.iso_639_1 === 'en' ? 2 : (a.iso_639_1 == null ? 1 : 0);
           const bEn = b.iso_639_1 === 'en' ? 2 : (b.iso_639_1 == null ? 1 : 0);
@@ -200,6 +218,8 @@ async function tmdbLookup(title, year, format) {
           : (fallbackBackdrop ? `${TMDB_IMG}/w1920${fallbackBackdrop}` : null),
         logoUrl: logoFile ? `${TMDB_IMG}/w500${logoFile}` : null
       };
+
+      if (TMDB_DEBUG) console.log('[TMDB] matched', title, year, '→', data);
 
       tmdbPutCached(title, year, data);
       return data;
