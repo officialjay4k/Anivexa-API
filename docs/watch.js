@@ -7,7 +7,6 @@ const API_BASE = CH.API_BASE;
 const SETTINGS_KEY = CH.STORAGE_SETTINGS;
 const EP_FETCH_PROVIDERS = ['reanime', 'anikoto', 'animegg', 'aniwaves', 'senshi', 'anizone', 'kaa'];
 const CARD_LAYOUT_THRESHOLD = 12;
-const COUNTDOWN_VISIBLE_WINDOW_SEC = 30 * 86400;
 
 const DEFAULTS = { autoSkip: false, autoNext: false, autoPlay: false, subtitlesOn: false, audio: 'dub' };
 function loadSettings() {
@@ -33,6 +32,7 @@ let epCache = { sub: null, dub: null };
 let currentProvider = null;
 let countdownTimer = null;
 let pendingServerJump = null;
+let playbackUnavailable = false;
 
 const serverCache = new Map();
 
@@ -66,7 +66,7 @@ async function anilistQuery(query, variables) {
   return json.data;
 }
 
-const MEDIA_QUERY = 'query ($id: Int) { Media(id: $id, type: ANIME) { id title { romaji english } coverImage { extraLarge large } format episodes duration seasonYear averageScore description(asHtml: false) genres tags { id name rank isMediaSpoiler } nextAiringEpisode { episode airingAt } } }';
+const MEDIA_QUERY = 'query ($id: Int) { Media(id: $id, type: ANIME) { id title { romaji english } coverImage { extraLarge large } format episodes duration seasonYear averageScore description(asHtml: false) genres tags { id name rank isMediaSpoiler } status nextAiringEpisode { episode airingAt } } }';
 
 function titleOf(m) { return (m && m.title && (m.title.english || m.title.romaji)) || 'Untitled'; }
 function formatFormat(f) {
@@ -74,39 +74,29 @@ function formatFormat(f) {
   return f.replace(/_/g, ' ').replace(/\b\w/g, function (c) { return c.toUpperCase(); });
 }
 
+// ============================================================
+// Fetch providers episodes + availability
+// ============================================================
 async function fetchProvidersEpisodes(anilistId) {
   const reqs = EP_FETCH_PROVIDERS.map(function (p) {
     const url = API_BASE + '/episodes/' + p + '/' + anilistId;
     return fetch(url, { cache: 'no-store' })
-      .then(function (res) {
-        if (!res.ok) {
-          if (CH.DEBUG) console.warn('[eps] ' + p + ' HTTP ' + res.status);
-          return null;
-        }
-        return res.json();
-      })
+      .then(function (res) { return res.ok ? res.json() : null; })
       .then(function (data) {
         if (!data) return null;
         const block = data[p];
-        if (!block) return null;
-        if (block.error) {
-          if (CH.DEBUG) console.warn('[eps] ' + p + ' error: ' + block.error);
-          return null;
-        }
+        if (!block || block.error) return null;
         return {
           provider: p,
           sub: (block.episodes && block.episodes.sub) || [],
           dub: (block.episodes && block.episodes.dub) || []
         };
       })
-      .catch(function (e) {
-        if (CH.DEBUG) console.warn('[eps] ' + p + ' fetch failed: ' + e.message);
-        return null;
-      });
+      .catch(function () { return null; });
   });
   const results = (await Promise.all(reqs)).filter(Boolean);
-  if (CH.DEBUG) console.log('[eps] providers returned', results.length, 'results:', results.map(function (r) { return r.provider + '(s' + r.sub.length + '/d' + r.dub.length + ')'; }));
 
+  // Probe availability
   const probeAudio = async function (audio) {
     for (const r of results) {
       const list = audio === 'sub' ? r.sub : r.dub;
@@ -127,9 +117,33 @@ async function fetchProvidersEpisodes(anilistId) {
   return { results: results, hasSub: subOk, hasDub: dubOk };
 }
 
-function pickBestEpisodeList(results, audio, expectedCount) {
+// Cap: if nextAiringEpisode exists, only episodes <= episode-1 have aired.
+function computeAiredCap(media) {
+  if (!media) return null;
+  const next = media.nextAiringEpisode;
+  if (next && Number.isFinite(Number(next.episode))) return Number(next.episode) - 1;
+  return null;
+}
+
+function pickBestEpisodeList(results, audio, media) {
   let best = { provider: null, list: [] };
   if (!results.length) return best;
+
+  const airedCap = computeAiredCap(media);
+  const expectedCount = (function () {
+    const mediaEps = media && Number.isFinite(media.episodes) ? media.episodes : null;
+    if (airedCap != null && mediaEps != null) return Math.min(mediaEps, airedCap);
+    if (airedCap != null) return airedCap;
+    return mediaEps;
+  })();
+
+  // Filter candidate lists down to aired eps
+  const filterAired = function (list) {
+    if (!list || !list.length) return [];
+    if (airedCap == null) return list;
+    return list.filter(function (e) { return Number(e.number) <= airedCap; });
+  };
+
   const scoreList = function (list) {
     if (!list || !list.length) return -Infinity;
     if (expectedCount != null && expectedCount > 0) {
@@ -138,15 +152,20 @@ function pickBestEpisodeList(results, audio, expectedCount) {
     }
     return list.length;
   };
+
   let bestScore = -Infinity;
   for (const r of results) {
-    const list = audio === 'sub' ? r.sub : r.dub;
+    const raw = audio === 'sub' ? r.sub : r.dub;
+    const list = filterAired(raw);
     const s = scoreList(list);
     if (s > bestScore) { bestScore = s; best = { provider: r.provider, list: list }; }
   }
   return best;
 }
 
+// ============================================================
+// Render
+// ============================================================
 function renderInfo() {
   if (!media) return;
   document.title = titleOf(media) + ' — Ep ' + currentEp + ' — Cloud Hub';
@@ -192,19 +211,16 @@ function renderInfo() {
   renderNextAiring();
 }
 
+// Countdown — always show for RELEASING shows with a next episode, regardless of current ep.
 function renderNextAiring() {
   const box = document.getElementById('watchCountdown');
   if (!box) return;
   const next = media && media.nextAiringEpisode;
   if (!next || !next.airingAt) { box.hidden = true; return; }
 
-  const lastAiredEp = Number(next.episode) - 1;
-  const isCaughtUp = Number(currentEp) === lastAiredEp;
   const nowSec = Math.floor(Date.now() / 1000);
-  const secsUntil = next.airingAt - nowSec;
-  const soon = secsUntil > 0 && secsUntil < COUNTDOWN_VISIBLE_WINDOW_SEC;
+  if (next.airingAt <= nowSec - 3600) { box.hidden = true; return; } // stale data, don't show
 
-  if (!isCaughtUp || !soon) { box.hidden = true; return; }
   box.hidden = false;
 
   const d = new Date(next.airingAt * 1000);
@@ -215,8 +231,8 @@ function renderNextAiring() {
 
   if (countdownTimer) clearInterval(countdownTimer);
   function tick() {
-    const now = Math.floor(Date.now() / 1000);
-    let diff = next.airingAt - now;
+    const n = Math.floor(Date.now() / 1000);
+    let diff = next.airingAt - n;
     const el = document.getElementById('watchCountdownTimer');
     if (!el) return;
     if (diff <= 0) { el.textContent = 'Aired'; return; }
@@ -295,8 +311,13 @@ function renderEpisodes() {
 
 function goToEpisode(n) {
   if (n === currentEp) return;
+  const found = episodeList.find(function (e) { return Number(e.number) === Number(n); });
+  if (!found) {
+    if (typeof showToast === 'function') showToast('Episode ' + n + ' isn\'t available');
+    return;
+  }
   saveNow();
-  currentEp = n;
+  currentEp = Number(n);
   autoNextFired = false;
   updateUrlParams({ ep: currentEp });
   renderInfo();
@@ -304,21 +325,14 @@ function goToEpisode(n) {
   startPlayback();
 }
 
+// Lang toggles removed from top bar; server rows handle it.
 function refreshControls() {
-  document.getElementById('btnAutoSkip').classList.toggle('active', !!appSettings.autoSkip);
-  document.getElementById('btnAutoNext').classList.toggle('active', !!appSettings.autoNext);
-  document.getElementById('btnAutoPlay').classList.toggle('active', !!appSettings.autoPlay);
-
-  const btnSub = document.getElementById('btnSub');
-  const btnDub = document.getElementById('btnDub');
-  if (btnSub) {
-    btnSub.classList.toggle('active', currentAudio === 'sub');
-    btnSub.disabled = !audioAvail.sub && currentAudio !== 'sub';
-  }
-  if (btnDub) {
-    btnDub.classList.toggle('active', currentAudio === 'dub');
-    btnDub.disabled = !audioAvail.dub && currentAudio !== 'dub';
-  }
+  const btnAutoSkip = document.getElementById('btnAutoSkip');
+  const btnAutoNext = document.getElementById('btnAutoNext');
+  const btnAutoPlay = document.getElementById('btnAutoPlay');
+  if (btnAutoSkip) btnAutoSkip.classList.toggle('active', !!appSettings.autoSkip);
+  if (btnAutoNext) btnAutoNext.classList.toggle('active', !!appSettings.autoNext);
+  if (btnAutoPlay) btnAutoPlay.classList.toggle('active', !!appSettings.autoPlay);
 }
 
 function wireControls() {
@@ -339,17 +353,10 @@ function wireControls() {
     chPlayer.setSettings(appSettings);
     refreshControls();
   });
-
-  const btnSub = document.getElementById('btnSub');
-  const btnDub = document.getElementById('btnDub');
-  if (btnSub) btnSub.addEventListener('click', function () { switchAudio('sub'); });
-  if (btnDub) btnDub.addEventListener('click', function () { switchAudio('dub'); });
-
   document.getElementById('btnFailover').addEventListener('click', function () {
     saveNow();
     chPipeline.forceFailover();
   });
-
   const bannerReport = document.getElementById('watchBannerReport');
   if (bannerReport) {
     bannerReport.addEventListener('click', function () {
@@ -364,14 +371,13 @@ function wireControls() {
 function switchAudio(next) {
   if (next === currentAudio) return;
   if (next === 'sub' && !audioAvail.sub) {
-    if (typeof showToast === 'function') showToast('Sub is not available for this episode');
+    if (typeof showToast === 'function') showToast('Sub is not available for this title');
     return;
   }
   if (next === 'dub' && !audioAvail.dub) {
-    if (typeof showToast === 'function') showToast('Dub is not available for this episode');
+    if (typeof showToast === 'function') showToast('Dub is not available for this title');
     return;
   }
-
   saveNow();
   currentAudio = next;
   appSettings.audio = next;
@@ -385,7 +391,6 @@ function switchAudio(next) {
     episodeList = epCache[next].list.slice();
     renderEpisodes();
   }
-
   showPlayerSkeleton();
   renderServerRows();
   startPlayback();
@@ -446,7 +451,31 @@ function hidePlayerSkeleton() {
   skel.style.display = 'none';
 }
 
+function showUnavailable(reason) {
+  playbackUnavailable = true;
+  hidePlayerSkeleton();
+  const container = document.getElementById('watchPlayer');
+  if (!container) return;
+  container.querySelectorAll('.artplayer-app, iframe').forEach(function (el) { el.remove(); });
+  const badge = document.getElementById('watchBadge');
+  if (badge) { badge.textContent = 'Not available'; badge.className = 'watch-player-badge'; }
+
+  const msg = document.createElement('div');
+  msg.style.cssText = 'position:absolute;inset:0;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:12px;color:#fff;text-align:center;padding:24px;';
+  msg.innerHTML = `
+    <svg width="42" height="42" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" style="color:rgba(217,24,40,0.9)">
+      <circle cx="12" cy="12" r="10"/>
+      <line x1="12" y1="8" x2="12" y2="12"/>
+      <circle cx="12" cy="16" r="0.6" fill="currentColor"/>
+    </svg>
+    <div style="font-size:15px;font-weight:800">${chEscapeHtml(reason || 'This anime isn\'t available right now.')}</div>
+    <div style="font-size:12px;color:rgba(246,244,245,0.55)">Try again later, or view the details page.</div>
+  `;
+  container.appendChild(msg);
+}
+
 async function startPlayback() {
+  if (playbackUnavailable) return;
   autoNextFired = false;
   const badge = document.getElementById('watchBadge');
   if (badge) { badge.textContent = 'Loading…'; badge.className = 'watch-player-badge'; }
@@ -537,6 +566,14 @@ function handleServerClick(audio, serverName) {
     const jumped = chPipeline.jumpTo(currentProvider, serverName);
     if (!jumped && typeof showToast === 'function') showToast('Server not loaded yet — try again in a moment');
   } else {
+    if (audio === 'sub' && !audioAvail.sub) {
+      if (typeof showToast === 'function') showToast('Sub is not available for this title');
+      return;
+    }
+    if (audio === 'dub' && !audioAvail.dub) {
+      if (typeof showToast === 'function') showToast('Dub is not available for this title');
+      return;
+    }
     pendingServerJump = { audio: audio, serverName: serverName };
     switchAudio(audio);
   }
@@ -571,7 +608,7 @@ chPipeline.on('stream', async function (data) {
 
   const container = document.getElementById('watchPlayer');
   if (container) {
-    container.querySelectorAll('.artplayer-app, iframe').forEach(function (el) { el.remove(); });
+    container.querySelectorAll('.artplayer-app, iframe, .watch-unavailable').forEach(function (el) { el.remove(); });
   }
 
   playerApi = await chPlayer.mount({
@@ -603,7 +640,8 @@ chPipeline.on('stream', async function (data) {
         autoNextFired = true;
         const state = chPipeline.getState();
         const next = currentEp + 1;
-        if (next > state.maxEp) return;
+        const found = episodeList.find(function (e) { return Number(e.number) === next; });
+        if (!found) return;
         saveNow();
         currentEp = next;
         updateUrlParams({ ep: currentEp });
@@ -626,26 +664,20 @@ chPipeline.on('stream', async function (data) {
   }
 });
 
-chPipeline.on('audio', function () { refreshControls(); });
+chPipeline.on('audio', function () {});
 chPipeline.on('status', function (payload) {
   const lvl = payload.level === 'error' ? '[error]' : payload.level === 'warn' ? '[warn]' : '[pipe]';
   console.log(lvl + ' ' + payload.message);
 });
 
 chPipeline.on('exhausted', function () {
-  hidePlayerSkeleton();
-  const container = document.getElementById('watchPlayer');
-  if (!container) return;
-  container.querySelectorAll('.artplayer-app, iframe').forEach(function (el) { el.remove(); });
-  const badge = document.getElementById('watchBadge');
-  if (badge) { badge.textContent = 'IFRAME FALLBACK'; badge.className = 'watch-player-badge iframe'; }
-  const iframe = document.createElement('iframe');
-  iframe.src = 'https://megaplay.buzz/stream/ani/' + anilistId + '/' + currentEp + '/' + currentAudio;
-  iframe.setAttribute('allow', 'autoplay; encrypted-media; picture-in-picture; fullscreen');
-  iframe.setAttribute('referrerpolicy', 'origin');
-  container.appendChild(iframe);
+  if (playbackUnavailable) return;
+  showUnavailable('No stream could be loaded for this episode.');
 });
 
+// ============================================================
+// Similar anime
+// ============================================================
 const SIMILAR_RECS_QUERY = 'query ($id: Int) { Media(id: $id, type: ANIME) { recommendations(perPage: 10, sort: RATING_DESC) { nodes { mediaRecommendation { id title { romaji english } coverImage { large extraLarge } format averageScore seasonYear } } } } }';
 const SIMILAR_TAG_QUERY = 'query ($tag: String) { Page(page: 1, perPage: 12) { media(type: ANIME, tag: $tag, sort: POPULARITY_DESC, isAdult: false) { id title { romaji english } coverImage { large extraLarge } format averageScore seasonYear } } }';
 
@@ -711,6 +743,9 @@ async function renderSimilar(mediaArg) {
   }
 }
 
+// ============================================================
+// Boot
+// ============================================================
 async function initWatch() {
   const params = parseParams();
   if (!params.id) {
@@ -741,8 +776,18 @@ async function initWatch() {
 
   const fetched = await epsPromise;
   audioAvail = { sub: fetched.hasSub, dub: fetched.hasDub };
-  if (CH.DEBUG) console.log('[boot] audioAvail', audioAvail, 'results', fetched.results.length);
 
+  // If neither sub nor dub available, hard-stop
+  if (!audioAvail.sub && !audioAvail.dub) {
+    showUnavailable('No streams are available for this title yet.');
+    document.getElementById('watchEpList').innerHTML = '<div class="watch-ep-loading">Not available.</div>';
+    document.getElementById('watchEpCount').textContent = '—';
+    // Still fire similar
+    renderSimilar(media).catch(function () {});
+    return;
+  }
+
+  // Auto-switch if requested audio isn't available
   if (currentAudio === 'dub' && !audioAvail.dub && audioAvail.sub) {
     currentAudio = 'sub'; appSettings.audio = 'sub'; saveSettings(appSettings);
     updateUrlParams({ lang: 'sub' }); chPlayer.setAudioPreference('sub');
@@ -752,11 +797,19 @@ async function initWatch() {
   }
   refreshControls();
 
-  epCache.sub = pickBestEpisodeList(fetched.results, 'sub', media.episodes);
-  epCache.dub = pickBestEpisodeList(fetched.results, 'dub', media.episodes);
+  epCache.sub = pickBestEpisodeList(fetched.results, 'sub', media);
+  epCache.dub = pickBestEpisodeList(fetched.results, 'dub', media);
   const chosen = currentAudio === 'sub' ? epCache.sub : epCache.dub;
   episodeList = (chosen.list || []).slice().sort(function (a, b) { return Number(a.number) - Number(b.number); });
-  if (CH.DEBUG) console.log('[boot] using provider', chosen.provider, 'with', episodeList.length, 'episodes');
+
+  // If the requested ep isn't in the list, snap to the last available ep.
+  const epExists = episodeList.find(function (e) { return Number(e.number) === Number(currentEp); });
+  if (!epExists && episodeList.length) {
+    currentEp = Number(episodeList[episodeList.length - 1].number);
+    updateUrlParams({ ep: currentEp });
+    renderInfo();
+  }
+
   renderEpisodes();
 
   window.addEventListener('beforeunload', saveNow);
