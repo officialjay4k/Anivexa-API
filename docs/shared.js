@@ -3,7 +3,7 @@
 // ============================================================
 
 const CH = {
-  API_BASE: 'https://anivexa-api-production-46c4.up.railway.app',
+  API_BASE: 'https://cloudflare.4kun.top',
   ANILIST_GRAPHQL: 'https://graphql.anilist.co',
   STORAGE_PROGRESS:  '4kun_progress',
   STORAGE_SETTINGS:  '4kun_settings',
@@ -55,9 +55,6 @@ function chGetUser() {
   catch { return null; }
 }
 
-// ---------- Resume / watch-again helper ----------
-// Returns { label, href } given an anilistId.
-// Checks progress for any audio, latest episode saved.
 function chResumeInfo(anilistId) {
   const fallback = { label: 'Watch Now', href: `/watch?id=${anilistId}&ep=1&audio=dub`, isResume: false, isRewatch: false };
   if (!anilistId) return fallback;
@@ -65,7 +62,6 @@ function chResumeInfo(anilistId) {
   let store = {};
   try { store = JSON.parse(localStorage.getItem(CH.STORAGE_PROGRESS)) || {}; } catch {}
 
-  // Find most recent entry for this show
   let latest = null;
   for (const v of Object.values(store)) {
     if (!v || String(v.anilistId) !== String(anilistId)) continue;
@@ -81,7 +77,51 @@ function chResumeInfo(anilistId) {
   return { label: 'Resume Watching', href, isResume: true, isRewatch: false };
 }
 
-// ---------- Header ----------
+// ============================================================
+// Page loader
+// ============================================================
+let chPageLoaderEl = null;
+let chPageReadyFired = false;
+
+function chPageReady() {
+  if (!chPageLoaderEl || chPageReadyFired) return;
+  chPageReadyFired = true;
+  chPageLoaderEl.classList.add('is-leaving');
+  setTimeout(() => {
+    if (chPageLoaderEl && chPageLoaderEl.parentNode) chPageLoaderEl.remove();
+  }, 450);
+}
+
+(function initPageLoader() {
+  if (document.getElementById('chPageLoader')) return;
+
+  function create() {
+    if (document.getElementById('chPageLoader')) return;
+    chPageLoaderEl = document.createElement('div');
+    chPageLoaderEl.id = 'chPageLoader';
+    chPageLoaderEl.className = 'ch-page-loader';
+    chPageLoaderEl.innerHTML = `
+      <div class="ch-page-loader__inner">
+        <div class="ch-page-loader__mark"></div>
+        <div class="ch-page-loader__name">Cloud Hub</div>
+        <div class="ch-page-loader__bar"><div class="ch-page-loader__bar-fill"></div></div>
+      </div>
+    `;
+    document.body.appendChild(chPageLoaderEl);
+
+    // Failsafe: dismiss after 5s no matter what.
+    setTimeout(chPageReady, 5000);
+    // Dismiss on window load + small delay (real page-ready event).
+    window.addEventListener('load', () => setTimeout(chPageReady, 500));
+  }
+
+  if (document.body) create();
+  else document.addEventListener('DOMContentLoaded', create);
+})();
+
+// ============================================================
+// Header
+// ============================================================
 function mountHeader() {
   const mount = document.getElementById('ch-header-mount');
   if (!mount) return;
@@ -91,7 +131,6 @@ function mountHeader() {
   const signedIn = chIsSignedIn();
   const user = chGetUser();
 
-  // Nav: Home, Dashboard. Settings is now inside PFP dropdown.
   let navRight = '';
   if (signedIn) {
     const initial = (user?.username || 'U').charAt(0).toUpperCase();
@@ -161,7 +200,6 @@ function mountHeader() {
     </header>
   `;
 
-  // Search
   const form = document.getElementById('chSearchForm');
   const input = document.getElementById('chSearchInput');
   if (form && input) {
@@ -175,7 +213,6 @@ function mountHeader() {
     });
   }
 
-  // Filter button
   const filterBtn = document.getElementById('chSearchFilter');
   if (filterBtn) {
     filterBtn.addEventListener('click', (e) => {
@@ -185,7 +222,6 @@ function mountHeader() {
     });
   }
 
-  // PFP dropdown
   const pfpBtn = document.getElementById('chPfpBtn');
   const pfpMenu = document.getElementById('chPfpMenu');
   if (pfpBtn && pfpMenu) {
@@ -209,7 +245,9 @@ function mountHeader() {
   }
 }
 
-// ---------- Footer ----------
+// ============================================================
+// Footer
+// ============================================================
 function mountFooter() {
   const mount = document.getElementById('ch-footer-mount');
   if (!mount) return;
@@ -253,21 +291,32 @@ function mountFooter() {
   `;
 }
 
-// ---------- Report button (global stub) ----------
-function mountReportButton(context) {
-  if (document.getElementById('chReportBtn')) return;
-  const btn = document.createElement('button');
-  btn.type = 'button';
-  btn.className = 'ch-report-btn';
-  btn.id = 'chReportBtn';
-  btn.innerHTML = `
-    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round">
-      <path d="M4 22V4a2 2 0 0 1 2-2h11l-1.5 4L17 10H6"/>
-    </svg>
-    <span>${context || 'Report Issue'}</span>
+// ============================================================
+// Report — inline button + modal
+// ============================================================
+function mountInlineReport(mountSelector, context) {
+  const mount = document.querySelector(mountSelector);
+  if (!mount) return;
+  if (mount.dataset.hasReport) return;
+  mount.dataset.hasReport = '1';
+  mount.innerHTML = `
+    <div class="report-strip">
+      <div class="report-strip__text">
+        <strong>Something broken?</strong>
+        <span>Help us fix it — report issues with any page or player.</span>
+      </div>
+      <button type="button" class="report-strip__btn" id="chInlineReportBtn">
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round">
+          <line x1="12" y1="8" x2="12" y2="13"/>
+          <circle cx="12" cy="17" r="1" fill="currentColor" stroke="none"/>
+          <path d="M10.29 3.86 1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"/>
+        </svg>
+        ! Report
+      </button>
+    </div>
   `;
-  btn.addEventListener('click', () => openReportModal(context));
-  document.body.appendChild(btn);
+  const btn = document.getElementById('chInlineReportBtn');
+  if (btn) btn.addEventListener('click', () => openReportModal(context));
 }
 
 function openReportModal(context) {
@@ -305,11 +354,13 @@ function openReportModal(context) {
   }
   document.getElementById('chReportSub').textContent = context
     ? `Context: ${context}`
-    : 'Tell us what\'s wrong. We read every report.';
+    : "Tell us what's wrong. We read every report.";
   modal.classList.add('is-open');
 }
 
-// ---------- Toast ----------
+// ============================================================
+// Toast
+// ============================================================
 function showToast(message, ms = 2200) {
   const existing = document.querySelector('.ch-toast');
   if (existing) existing.remove();
@@ -322,7 +373,9 @@ function showToast(message, ms = 2200) {
 
 window.showToast = showToast;
 window.chResumeInfo = chResumeInfo;
-window.mountReportButton = mountReportButton;
+window.mountInlineReport = mountInlineReport;
+window.openReportModal = openReportModal;
+window.chPageReady = chPageReady;
 
 document.addEventListener('DOMContentLoaded', () => {
   mountHeader();
