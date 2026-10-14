@@ -402,4 +402,297 @@ async function renderMediaGrid(gridEl, items, opts = {}) {
 
     const ribbonLabel = resume.isResume ? 'Resume' : (resume.isRewatch ? 'Watch Again' : 'Watch');
 
-    const titleWrap =
+    const titleWrap = tmdb?.logoUrl
+      ? `<div class="home-card__title-wrap">
+           <img class="home-card__title-logo" src="${chEscapeHtml(tmdb.logoUrl)}" alt="${chEscapeHtml(titleOf(m))}" loading="lazy">
+           <div class="home-card__title-text">${chEscapeHtml(titleOf(m))}</div>
+         </div>`
+      : `<div class="home-card__title-wrap">
+           <div class="home-card__title-text" style="opacity:1;">${chEscapeHtml(titleOf(m))}</div>
+         </div>`;
+
+    card.innerHTML = `
+      <div class="home-card__thumb">
+        <img src="${chEscapeHtml(cover)}" alt="" loading="lazy" onerror="this.style.visibility='hidden'">
+        <div class="home-card__ribbon">${PLAY_ICON_SVG}<span>${ribbonLabel}</span></div>
+        ${topBadge ? `<div class="home-card__badge">${chEscapeHtml(topBadge)}</div>` : ''}
+        <div class="home-card__chiprow is-loading">
+          ${scoreChip}
+        </div>
+      </div>
+      ${titleWrap}
+      <div class="home-card__meta">${formatFormat(m.format)}${m.seasonYear ? ' · ' + m.seasonYear : ''}</div>
+    `;
+    gridEl.appendChild(card);
+  });
+
+  detectTitleOverflow(gridEl);
+  if (availObserver) {
+    gridEl.querySelectorAll('.home-card[data-anilist-id]').forEach(el => availObserver.observe(el));
+  }
+}
+
+// ---------- Trending ----------
+async function renderTrending() {
+  const wrap = document.getElementById('trendingList');
+  if (!wrap) return;
+  wrap.innerHTML = '<div class="home-skeleton home-skeleton--row"></div><div class="home-skeleton home-skeleton--row"></div><div class="home-skeleton home-skeleton--row"></div>';
+
+  const query = TRENDING_QUERIES[currentTrendRange] || TRENDING_QUERIES.day;
+  let items = [];
+  try {
+    const data = await anilistQuery(query);
+    items = data?.Page?.media || [];
+  } catch (e) {
+    console.error('Trending fetch failed:', e);
+    wrap.innerHTML = '<div class="home-empty">Could not load.</div>';
+    return;
+  }
+  if (!items.length) { wrap.innerHTML = '<div class="home-empty">No data.</div>'; return; }
+
+  wrap.innerHTML = '';
+  items.slice(0, 5).forEach((m, i) => {
+    const cover = m.coverImage?.extraLarge || m.coverImage?.large || '';
+    const item = document.createElement('a');
+    item.className = 'trend-item';
+    item.href = '/preview?id=' + m.id;
+    item.dataset.anilistId = m.id;
+
+    const scoreChip = m.averageScore
+      ? `<span class="trend-item__chip trend-item__chip--score"><span style="color:var(--ch-cream)">★</span>${m.averageScore}</span>`
+      : '';
+
+    item.innerHTML = `
+      <div class="trend-item__bg" style="background-image:url('${chEscapeHtml(cover)}')"></div>
+      <div class="trend-item__rank">${i + 1}</div>
+      <div class="trend-item__body">
+        <div class="trend-item__title">${chEscapeHtml(titleOf(m))}</div>
+        <div class="trend-item__meta">
+          ${m.averageScore ? `<span class="star">★</span><span class="score">${m.averageScore}</span>` : ''}
+          ${m.format ? `<span class="format">${formatFormat(m.format)}</span>` : ''}
+        </div>
+        <div class="trend-item__chips">${scoreChip}</div>
+      </div>
+      <div class="trend-item__play">${PLAY_ICON_SMALL}</div>
+    `;
+    wrap.appendChild(item);
+  });
+
+  if (trendAvailObserver) {
+    wrap.querySelectorAll('.trend-item[data-anilist-id]').forEach(el => trendAvailObserver.observe(el));
+  }
+}
+
+function wireTrendTabs() {
+  const tabs = document.getElementById('trendTabs');
+  if (!tabs) return;
+  tabs.addEventListener('click', (e) => {
+    const btn = e.target.closest('.sidebar-tab');
+    if (!btn) return;
+    const range = btn.dataset.range;
+    if (!range || range === currentTrendRange) return;
+    currentTrendRange = range;
+    tabs.querySelectorAll('.sidebar-tab').forEach(b => b.classList.toggle('is-active', b === btn));
+    renderTrending();
+  });
+}
+
+// ---------- Schedule ----------
+function getThreeDayWindow() {
+  const days = [];
+  const now = new Date();
+  for (let offset = -1; offset <= 1; offset++) {
+    const d = new Date(now);
+    d.setDate(now.getDate() + offset);
+    d.setHours(0, 0, 0, 0);
+    days.push(d);
+  }
+  return days;
+}
+
+function renderScheduleTabs(days, activeIdx) {
+  const tabs = document.getElementById('scheduleTabs');
+  if (!tabs) return;
+  const dayNames = ['SUN','MON','TUE','WED','THU','FRI','SAT'];
+  tabs.innerHTML = '';
+  days.forEach((d, i) => {
+    const btn = document.createElement('button');
+    btn.type = 'button';
+    btn.className = 'sidebar-day-tab' + (i === activeIdx ? ' is-active' : '');
+    btn.dataset.idx = i;
+    btn.innerHTML = `
+      <span class="sidebar-day-tab__day">${dayNames[d.getDay()]}</span>
+      <span class="sidebar-day-tab__num">${d.getDate()}</span>
+    `;
+    btn.addEventListener('click', () => {
+      currentScheduleDay = i;
+      loadSchedule();
+    });
+    tabs.appendChild(btn);
+  });
+}
+
+async function loadSchedule() {
+  const wrap = document.getElementById('scheduleList');
+  if (!wrap) return;
+
+  const days = getThreeDayWindow();
+  renderScheduleTabs(days, currentScheduleDay);
+
+  const day = days[currentScheduleDay];
+  const start = Math.floor(day.getTime() / 1000);
+  const end = start + 86400;
+
+  wrap.innerHTML = '<div class="home-skeleton home-skeleton--row" style="margin:8px"></div><div class="home-skeleton home-skeleton--row" style="margin:8px"></div>';
+
+  let entries = [];
+  try {
+    const data = await anilistQuery(SCHEDULE_QUERY, { start, end });
+    entries = (data?.Page?.airingSchedules || []).filter(e => e.media && !e.media.isAdult);
+  } catch (e) {
+    console.error('Schedule fetch failed:', e);
+    wrap.innerHTML = '<div class="home-empty" style="margin:12px">Could not load.</div>';
+    return;
+  }
+
+  if (!entries.length) {
+    wrap.innerHTML = '<div class="home-empty" style="margin:12px">Nothing airing this day.</div>';
+    return;
+  }
+
+  wrap.innerHTML = '';
+
+  const nowSec = Math.floor(Date.now() / 1000);
+  const isToday = currentScheduleDay === 1;
+  let nowLineInserted = false;
+
+  for (const e of entries) {
+    if (isToday && !nowLineInserted && e.airingAt > nowSec) {
+      const line = document.createElement('div');
+      line.className = 'schedule-now-line';
+      wrap.appendChild(line);
+      nowLineInserted = true;
+    }
+
+    const m = e.media;
+    const t = new Date(e.airingAt * 1000);
+    const hh = String(t.getHours()).padStart(2, '0');
+    const mm = String(t.getMinutes()).padStart(2, '0');
+    const isPast = e.airingAt < nowSec;
+    const isNow  = isToday && !isPast && (e.airingAt - nowSec) < 60 * 60;
+
+    const row = document.createElement('a');
+    row.className = 'schedule-row' + (isNow ? ' is-now' : '');
+    if (isPast) row.style.opacity = '0.55';
+    row.href = '/preview?id=' + m.id;
+
+    row.innerHTML = `
+      <span class="schedule-row__time">${hh}:${mm}</span>
+      <span class="schedule-row__title"><span class="schedule-row__title-inner">${chEscapeHtml(titleOf(m))}</span></span>
+      ${m.format ? `<span class="schedule-row__format">${formatFormat(m.format)}</span>` : '<span></span>'}
+      <span class="schedule-row__ep">EP ${e.episode}</span>
+    `;
+    wrap.appendChild(row);
+  }
+
+  if (isToday && !nowLineInserted) {
+    const line = document.createElement('div');
+    line.className = 'schedule-now-line';
+    wrap.appendChild(line);
+  }
+
+  // Detect overflow for scroll-on-hover
+  detectScheduleOverflow(wrap);
+}
+
+function startScheduleClock() {
+  const el = document.getElementById('scheduleClock');
+  if (!el) return;
+  function tick() {
+    const d = new Date();
+    const yyyy = d.getFullYear();
+    const mm = String(d.getMonth() + 1).padStart(2, '0');
+    const dd = String(d.getDate()).padStart(2, '0');
+    const hh = String(d.getHours()).padStart(2, '0');
+    const mn = String(d.getMinutes()).padStart(2, '0');
+    const ss = String(d.getSeconds()).padStart(2, '0');
+    el.textContent = `${yyyy}/${mm}/${dd} ${hh}:${mn}:${ss}`;
+  }
+  tick();
+  setInterval(tick, 1000);
+}
+
+function wireScheduleMore() {
+  const btn = document.getElementById('scheduleMore');
+  if (!btn) return;
+  btn.addEventListener('click', () => {
+    if (typeof showToast === 'function') showToast('Full schedule page coming soon');
+  });
+}
+
+// ---------- Boot ----------
+async function initHome() {
+  renderContinue();
+
+  try {
+    const spot = await anilistQuery(SPOTLIGHT_QUERY);
+    const media = spot?.Page?.media || [];
+    await renderHero(media);
+  } catch (err) { console.error('Spotlight fetch failed:', err); }
+
+  try {
+    const latest = await anilistQuery(LATEST_QUERY);
+    const items = (latest?.Page?.media || [])
+      .filter(m => m.nextAiringEpisode)
+      .sort((a, b) => (b.nextAiringEpisode?.airingAt || 0) - (a.nextAiringEpisode?.airingAt || 0))
+      .slice(0, 12);
+    renderMediaGrid(document.getElementById('latestGrid'), items, { latestEp: true });
+  } catch (err) {
+    console.error('Latest fetch failed:', err);
+    document.getElementById('latestGrid').innerHTML = '<div class="home-empty">Could not load.</div>';
+  }
+
+  try {
+    const popular = await anilistQuery(POPULAR_QUERY);
+    const items = popular?.Page?.media || [];
+    renderMediaGrid(document.getElementById('popularGrid'), items.slice(0, 12));
+  } catch (err) {
+    console.error('Popular fetch failed:', err);
+    document.getElementById('popularGrid').innerHTML = '<div class="home-empty">Could not load.</div>';
+  }
+
+  renderTrending();
+  wireTrendTabs();
+
+  currentScheduleDay = 1;
+  loadSchedule();
+  startScheduleClock();
+  wireScheduleMore();
+
+  // Inline report strip
+  if (typeof mountInlineReport === 'function') {
+    mountInlineReport('#reportMount', 'Global — Home page');
+  }
+
+  const hero = document.getElementById('homeHero');
+  const prev = document.getElementById('heroPrev');
+  const next = document.getElementById('heroNext');
+  if (prev) prev.addEventListener('click', () => goToSlide(heroIndex - 1));
+  if (next) next.addEventListener('click', () => goToSlide(heroIndex + 1));
+  if (hero) {
+    hero.addEventListener('mouseenter', stopHeroRotation);
+    hero.addEventListener('mouseleave', startHeroRotation);
+  }
+
+  window.addEventListener('resize', () => {
+    detectTitleOverflow(document.getElementById('continueRow'));
+    detectTitleOverflow(document.getElementById('latestGrid'));
+    detectTitleOverflow(document.getElementById('popularGrid'));
+    detectScheduleOverflow(document.getElementById('scheduleList'));
+  });
+
+  // Dismiss page loader now that home content is up
+  if (typeof chPageReady === 'function') chPageReady();
+}
+
+document.addEventListener('DOMContentLoaded', initHome);
