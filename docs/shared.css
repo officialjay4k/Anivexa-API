@@ -448,4 +448,106 @@ h1, h2, h3, h4, h5, h6 {
   box-shadow: 0 20px 60px rgba(0,0,0,0.9), 0 0 40px var(--ch-red-glow);
 }
 .ch-report-modal__title {
-  font-size: 18px;
+  font-size: 18px; font-weight: 800; color: var(--ch-white);
+  margin: 0 0 var(--s-2);
+}
+.ch-report-modal__sub {
+  font-size: 13px; color: var(--ch-fg-muted); margin-bottom: var(--s-4);
+}
+.ch-report-modal__textarea {
+  width: 100%; min-height: 120px; padding: var(--s-3);
+  background: var(--ch-bg-2); border: 1px solid var(--ch-border-soft);
+  border-radius: var(--r-md); color: var(--ch-fg);
+  font-family: inherit; font-size: 14px; resize: vertical;
+  outline: none;
+  transition: border-color var(--dur) var(--ease);
+}
+.ch-report-modal__textarea:focus {
+  border-color: var(--ch-border-hi);
+  box-shadow: 0 0 0 3px var(--ch-red-faint);
+}
+.ch-report-modal__actions {
+  display: flex; gap: var(--s-2); justify-content: flex-end;
+  margin-top: var(--s-4);
+}
+
+.ch-footer {
+  margin-top: var(--s-8);
+  border-top: 1px solid var(--ch-glass-stroke);
+  background: var(--ch-bg-1);
+}
+.ch-footer__inner {
+  padding-block: var(--s-7) var(--s-6);
+  display: flex; flex-wrap: wrap; gap: var(--s-6);
+  justify-content: space-between; align-items: flex-start;
+}
+.ch-footer__brand { flex: 2 1 260px; min-width: 240px; max-width: 340px; }
+.ch-footer__brand img {
+  height: 68px; width: auto;
+  transform: scaleY(1.12); transform-origin: left center;
+  margin-bottom: var(--s-4);
+  filter: drop-shadow(0 0 14px rgba(179, 19, 31, 0.35));
+}
+.ch-footer__brand p { font-size: 13px; color: var(--ch-fg-muted); margin: 0; line-height: 1.6; }
+.ch-footer__col { min-width: 140px; }
+.ch-footer__col h4 {
+  font-size: 12px; font-weight: 800; letter-spacing: 0.15em;
+  text-transform: uppercase; color: var(--ch-red-bright); margin-bottom: var(--s-3);
+}
+.ch-footer__col a {
+  position: relative; display: block; padding: 4px 0;
+  font-size: 13px; color: var(--ch-fg-muted);
+  transition: color var(--dur) var(--ease), padding-left 260ms var(--ease);
+}
+.ch-footer__col a::before {
+  content: ''; position: absolute; left: 0; top: 50%;
+  width: 6px; height: 6px; border-radius: 50%;
+  background: var(--ch-red-bright);
+  box-shadow: 0 0 10px var(--ch-red-bright), 0 0 20px var(--ch-red-glow);
+  opacity: 0; transform: translate(-8px, -50%) scale(0.4);
+  transition: opacity 260ms var(--ease), transform 320ms var(--ease-pop);
+}
+.ch-footer__col a:hover { color: var(--ch-cream); padding-left: 16px; }
+.ch-footer__col a:hover::before { opacity: 1; transform: translate(0, -50%) scale(1); }
+.ch-footer__bottom {
+  padding-block: var(--s-5);
+  border-top: 1px solid var(--ch-glass-stroke);
+  display: flex; justify-content: space-between; flex-wrap: wrap;
+  align-items: center; gap: var(--s-4);
+}
+.ch-footer__madeby {
+  display: flex; align-items: baseline; gap: 8px;
+  font-size: 14px; color: var(--ch-fg-muted);
+}
+.ch-footer__madeby-label { font-size: 12px; letter-spacing: 0.05em; }
+.ch-madeby-brand {
+  font-weight: 900; font-size: 22px; letter-spacing: -0.02em;
+  display: inline-flex; align-items: baseline; cursor: pointer;
+  transition: transform 300ms var(--ease-pop);
+}
+.ch-madeby-brand:hover { transform: scale(1.1); }
+.ch-madeby-brand .g { color: var(--ch-green); text-shadow: 0 0 12px rgba(124, 191, 63, 0.5); }
+.ch-madeby-brand .b { color: var(--ch-blue); text-shadow: 0 0 12px rgba(74, 184, 230, 0.5); }
+.ch-footer__legal { font-size: 12px; color: var(--ch-fg-subtle); }
+
+.ch-toast {
+  position: fixed; bottom: 24px; left: 50%;
+  transform: translateX(-50%);
+  padding: 10px 20px;
+  background: var(--ch-bg-3);
+  border: 1px solid var(--ch-border-hi);
+  border-radius: var(--r-md);
+  color: var(--ch-white); font-size: 13px;
+  box-shadow: var(--shadow-lg); z-index: 1000;
+  animation: ch-toast-in 200ms var(--ease);
+}
+@keyframes ch-toast-in {
+  from { opacity: 0; transform: translate(-50%, 12px); }
+  to   { opacity: 1; transform: translate(-50%, 0); }
+}
+
+.ch-sr-only {
+  position: absolute; width: 1px; height: 1px;
+  padding: 0; margin: -1px; overflow: hidden;
+  clip: rect(0,0,0,0); border: 0;
+}
