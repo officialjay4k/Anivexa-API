@@ -1,13 +1,10 @@
 // ============================================================
 // Cloud Hub — player.js
-// Mounts Artplayer + hls.js for a stream. Owns the CC menu,
-// skip button, progress markers, preview tooltip, +/- 5s.
 // ============================================================
 
 const chPlayer = (function () {
   const FALLBACK_FONT_URL = 'https://cdn.jsdelivr.net/fontsource/fonts/roboto@latest/latin-400-normal.woff2';
 
-  // Read lazily so this file loads even if pipeline.js is late.
   function getMaxFragmentErrors() {
     if (typeof chPipeline !== 'undefined' && chPipeline && chPipeline.MAX_UNIQUE_FRAGMENT_ERRORS) {
       return chPipeline.MAX_UNIQUE_FRAGMENT_ERRORS;
@@ -27,8 +24,19 @@ const chPlayer = (function () {
   let currentAudioPref = 'dub';
   let settingsRef = null;
 
-  const ICON_REW = '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="width:24px;height:24px;display:block;"><path d="M12 5V1L7 6l5 5V7"/><path d="M20 12a8 8 0 1 1-2.34-5.66"/><text x="12" y="16" text-anchor="middle" font-size="8" fill="currentColor" stroke="none" font-weight="700" font-family="system-ui">5</text></svg>';
-  const ICON_FWD = '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="width:24px;height:24px;display:block;"><path d="M12 5V1l5 5-5 5V7"/><path d="M4 12a8 8 0 1 0 2.34-5.66"/><text x="12" y="16" text-anchor="middle" font-size="8" fill="currentColor" stroke="none" font-weight="700" font-family="system-ui">5</text></svg>';
+  // Cleaner icons: outline circle arrow with a solid "5" in the middle.
+  const ICON_REW = `
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 40 40" style="width:32px;height:32px;display:block;">
+      <path d="M14 8 L6 16 L14 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"/>
+      <path d="M6 16 H22 A10 10 0 1 1 12 26" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round" opacity="0.55"/>
+      <text x="24" y="27" text-anchor="middle" font-size="15" font-weight="900" font-family="system-ui, sans-serif" fill="currentColor" stroke="none">5</text>
+    </svg>`;
+  const ICON_FWD = `
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 40 40" style="width:32px;height:32px;display:block;">
+      <path d="M26 8 L34 16 L26 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"/>
+      <path d="M34 16 H18 A10 10 0 1 0 28 26" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round" opacity="0.55"/>
+      <text x="16" y="27" text-anchor="middle" font-size="15" font-weight="900" font-family="system-ui, sans-serif" fill="currentColor" stroke="none">5</text>
+    </svg>`;
 
   function ensurePreviewTooltip() {
     let el = document.querySelector('.watch-preview-tip');
@@ -54,10 +62,7 @@ const chPlayer = (function () {
     destroyPreview();
     const el = ensurePreviewTooltip();
     const video = el.querySelector('video');
-    if (isMp4) {
-      video.src = streamUrl;
-      return;
-    }
+    if (isMp4) { video.src = streamUrl; return; }
     if (window.Hls && Hls.isSupported()) {
       const h = new Hls({ enableWorker: true, autoStartLoad: false, capLevelToPlayerSize: true });
       previewHls = h;
@@ -73,12 +78,10 @@ const chPlayer = (function () {
     const rect = progressEl.getBoundingClientRect();
     const ratio = Math.max(0, Math.min(1, (e.clientX - rect.left) / rect.width));
     const t = ratio * art.duration;
-
     const tip = ensurePreviewTooltip();
     const timeEl = tip.querySelector('.watch-preview-tip__time');
     const video = tip.querySelector('video');
     timeEl.textContent = chFormatTime(t);
-
     const now = Date.now();
     if (now - previewLastSeek > 80) {
       previewLastSeek = now;
@@ -126,8 +129,7 @@ const chPlayer = (function () {
     const inEd = skipIntervals.ed && t >= skipIntervals.ed.startTime && t < skipIntervals.ed.endTime;
     if (!inOp && !inEd) {
       if (skipBtn) skipBtn.style.display = 'none';
-      skipFired.op = false;
-      skipFired.ed = false;
+      skipFired.op = false; skipFired.ed = false;
       return;
     }
     const interval = inOp ? skipIntervals.op : skipIntervals.ed;
@@ -135,20 +137,14 @@ const chPlayer = (function () {
     const key = inOp ? 'op' : 'ed';
     const autoSkip = !!(settingsRef && settingsRef.autoSkip);
     if (autoSkip) {
-      if (!skipFired[key]) {
-        skipFired[key] = true;
-        art.currentTime = interval.endTime;
-      }
+      if (!skipFired[key]) { skipFired[key] = true; art.currentTime = interval.endTime; }
       if (skipBtn) skipBtn.style.display = 'none';
       return;
     }
     if (skipBtn) {
       skipBtn.textContent = 'Skip ' + label + ' ➔';
       skipBtn.style.display = 'block';
-      skipBtn.onclick = function (e) {
-        e.stopPropagation();
-        art.currentTime = interval.endTime;
-      };
+      skipBtn.onclick = function (e) { e.stopPropagation(); art.currentTime = interval.endTime; };
     }
   }
 
@@ -158,7 +154,6 @@ const chPlayer = (function () {
     if (!inner) return;
     inner.querySelectorAll('.watch-marker').forEach(function (el) { el.remove(); });
     if (!art.duration || !isFinite(art.duration)) return;
-
     function add(interval, label) {
       if (!interval) return;
       const start = Math.max(0, interval.startTime);
@@ -170,16 +165,11 @@ const chPlayer = (function () {
       m.className = 'watch-marker';
       m.title = label;
       Object.assign(m.style, {
-        position: 'absolute',
-        left: left + '%',
-        width: width + '%',
-        top: '0',
-        height: '100%',
+        position: 'absolute', left: left + '%', width: width + '%',
+        top: '0', height: '100%',
         background: 'linear-gradient(90deg, #e50914, #ff2b3a)',
-        opacity: '0.85',
-        borderRadius: '2px',
-        pointerEvents: 'none',
-        zIndex: '25'
+        opacity: '0.85', borderRadius: '2px',
+        pointerEvents: 'none', zIndex: '25'
       });
       inner.appendChild(m);
     }
@@ -206,8 +196,7 @@ const chPlayer = (function () {
     let workerBlobUrl = null;
     try {
       wasmBlobUrl = await fetchAsBlobUrl(chSubs.proxyStatic('subtitles-octopus-worker.wasm'), {
-        expectWasm: true,
-        mimeType: 'application/wasm'
+        expectWasm: true, mimeType: 'application/wasm'
       });
     } catch (e) {}
     try {
@@ -231,7 +220,6 @@ const chPlayer = (function () {
     settingsRef = opts.settings || {};
     currentAudioPref = (opts.settings && opts.settings.audio) || 'dub';
     const isMp4 = !!opts.isMp4;
-
     const callbacks = opts.callbacks || {};
     const { wasmBlobUrl, workerBlobUrl } = await prepareLibassAssets(isMp4);
 
@@ -267,6 +255,8 @@ const chPlayer = (function () {
       hotkey: true,
       theme: '#e50914',
       lang: 'en',
+      // Disable right-click context menu entirely
+      contextmenu: [],
       moreVideoAttr: { crossOrigin: 'anonymous' },
       controls: [
         {
@@ -335,8 +325,7 @@ const chPlayer = (function () {
             const wantDub = currentAudioPref === 'dub';
             const dubRe = /\b(dub|english|eng)\b/i;
             const subRe = /\b(japanese|jap|native|sub)\b/i;
-            let bestIdx = 0;
-            let bestScore = -Infinity;
+            let bestIdx = 0, bestScore = -Infinity;
             for (let i = 0; i < tracks.length; i++) {
               const t = tracks[i];
               const label = (t.name || '') + ' ' + (t.lang || '');
@@ -414,6 +403,15 @@ const chPlayer = (function () {
 
     return await new Promise(function (resolve) {
       art = new Artplayer(artConfig);
+
+      // Kill right-click on the player element entirely (belt + suspenders)
+      if (art.template && art.template.$player) {
+        art.template.$player.addEventListener('contextmenu', function (e) {
+          e.preventDefault();
+          e.stopPropagation();
+          return false;
+        });
+      }
 
       art.on('ready', function () {
         mountSkipButton();
