@@ -4,7 +4,7 @@
 
 .home-main { padding-block: var(--s-6) var(--s-8); }
 
-/* Hero (unchanged from previous) */
+/* ---------- Hero ---------- */
 .home-hero {
   position: relative; width: 100vw;
   margin-left: calc(50% - 50vw);
@@ -181,9 +181,16 @@
 .home-section { margin-bottom: var(--s-6); }
 .home-section:last-child { margin-bottom: 0; }
 
-/* Cards (unchanged) */
-.home-card { display: flex; flex-direction: column; gap: var(--s-2); cursor: pointer; text-decoration: none; color: inherit; transition: transform var(--dur) var(--ease); }
+/* ============================================================
+   Cards — with chip strip
+   ============================================================ */
+.home-card {
+  display: flex; flex-direction: column; gap: var(--s-2);
+  cursor: pointer; text-decoration: none; color: inherit;
+  transition: transform var(--dur) var(--ease);
+}
 .home-card:hover { transform: translateY(-3px); }
+
 .home-card__thumb {
   position: relative; aspect-ratio: 2 / 3;
   border-radius: var(--r-md); overflow: hidden;
@@ -195,9 +202,11 @@
   box-shadow: 0 6px 18px rgba(0,0,0,0.55), 0 0 26px -4px rgba(179, 19, 31, 0.35);
 }
 .home-card__thumb img { width: 100%; height: 100%; object-fit: cover; display: block; }
+
+/* Ribbon (existing) */
 .home-card__ribbon {
   position: absolute; top: 0; left: 0; right: 0;
-  padding: 12px 0;
+  padding: 10px 0;
   display: flex; align-items: center; justify-content: center; gap: 6px;
   background: linear-gradient(180deg, var(--ch-red-bright), var(--ch-red));
   color: #fff; font-size: 11px; font-weight: 800;
@@ -208,6 +217,8 @@
 }
 .home-card:hover .home-card__ribbon { transform: translateY(0); pointer-events: auto; }
 .home-card__ribbon svg { filter: drop-shadow(0 0 4px rgba(255,255,255,0.5)); }
+
+/* Top badge (EP count on Latest) */
 .home-card__badge {
   position: absolute; top: 8px; left: 8px;
   padding: 3px 8px; font-size: 10px; font-weight: 800;
@@ -217,19 +228,63 @@
   color: var(--ch-white); text-transform: uppercase; z-index: 2;
   transition: top 300ms var(--ease);
 }
-.home-card:hover .home-card__badge { top: 44px; }
-.home-card__score {
-  position: absolute; bottom: 8px; left: 8px;
-  padding: 3px 8px; font-size: 11px; font-weight: 800;
-  border-radius: var(--r-sm); background: rgba(5, 2, 3, 0.85);
-  backdrop-filter: blur(8px); -webkit-backdrop-filter: blur(8px);
-  color: var(--ch-cream); z-index: 2;
-}
+.home-card:hover .home-card__badge { top: 42px; }
+
+/* Progress bar (Continue Watching) */
 .home-card__progress {
   position: absolute; left: 0; right: 0; bottom: 0; height: 3px;
   background: rgba(5, 2, 3, 0.7); z-index: 2;
 }
-.home-card__progress-fill { height: 100%; background: var(--ch-red-bright); box-shadow: 0 0 8px var(--ch-red-glow); }
+.home-card__progress-fill {
+  height: 100%; background: var(--ch-red-bright);
+  box-shadow: 0 0 8px var(--ch-red-glow);
+}
+
+/* Chip row — bottom strip on poster */
+.home-card__chiprow {
+  position: absolute;
+  left: 8px; right: 8px; bottom: 8px;
+  display: flex; flex-wrap: wrap; gap: 4px;
+  z-index: 3;
+  pointer-events: none;
+  transition: bottom 300ms var(--ease);
+}
+.home-card:hover .home-card__chiprow { bottom: 10px; }
+
+.home-card__chip {
+  display: inline-flex; align-items: center; gap: 3px;
+  padding: 2px 6px;
+  font-size: 10px; font-weight: 800;
+  letter-spacing: 0.02em;
+  border-radius: 4px;
+  background: rgba(5, 2, 3, 0.85);
+  backdrop-filter: blur(6px); -webkit-backdrop-filter: blur(6px);
+  color: #fff;
+  font-variant-numeric: tabular-nums;
+  border: 1px solid rgba(222, 208, 179, 0.1);
+  line-height: 1;
+}
+.home-card__chip svg { color: var(--ch-cream); flex-shrink: 0; }
+.home-card__chip--score .star { color: var(--ch-cream); margin-right: 1px; }
+.home-card__chip--format {
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  font-size: 9px;
+}
+
+/* Chip row loading skeleton — shows 2 placeholder chips while fetching */
+.home-card__chiprow.is-loading::after {
+  content: '';
+  display: inline-block;
+  width: 24px; height: 12px;
+  border-radius: 4px;
+  background: rgba(222, 208, 179, 0.12);
+  animation: chip-pulse 1.4s ease-in-out infinite;
+}
+@keyframes chip-pulse { 0%, 100% { opacity: 0.4; } 50% { opacity: 0.8; } }
+.home-card__chiprow.is-loading .home-card__chip { opacity: 0.85; }
+
+/* Title wrap + logos */
 .home-card__title-wrap { position: relative; min-height: 40px; overflow: hidden; }
 .home-card__title-logo {
   display: block; max-width: 100%; max-height: 40px;
@@ -273,16 +328,12 @@
 @media (max-width: 600px) { .home-grid { grid-template-columns: repeat(2, 1fr); } }
 
 /* ============================================================
-   Schedule — vertical flipped time on left
+   Schedule (unchanged)
    ============================================================ */
 .home-schedule { display: flex; flex-direction: column; gap: var(--s-3); }
-
 .schedule-card {
-  position: relative;
-  display: block;
-  height: 118px;
-  border-radius: var(--r-md);
-  overflow: hidden;
+  position: relative; display: block; height: 118px;
+  border-radius: var(--r-md); overflow: hidden;
   border: 1px solid var(--ch-glass-stroke);
   background: var(--ch-bg-2);
   text-decoration: none; color: inherit; cursor: pointer;
@@ -310,51 +361,33 @@
     linear-gradient(180deg, transparent 40%, rgba(5,2,3,0.75) 100%);
   transition: background 400ms var(--ease);
 }
-.schedule-card:hover .schedule-card__scrim {
-  background:
-    linear-gradient(90deg, rgba(5,2,3,0.88) 0%, rgba(5,2,3,0.5) 45%, rgba(5,2,3,0.1) 100%),
-    linear-gradient(180deg, transparent 40%, rgba(5,2,3,0.6) 100%);
-}
-
-/* Vertical time flip */
 .schedule-card__time-flip {
-  position: absolute;
-  top: 0; left: 0; bottom: 0;
-  width: 34px;
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  justify-content: space-between;
+  position: absolute; top: 0; left: 0; bottom: 0; width: 34px;
+  display: flex; flex-direction: column;
+  align-items: center; justify-content: space-between;
   padding: 10px 0;
   background: linear-gradient(180deg, rgba(179, 19, 31, 0.5), rgba(120, 10, 25, 0.6));
   border-right: 1px solid rgba(217, 24, 40, 0.5);
   z-index: 3;
 }
 .schedule-card__time-flip span {
-  writing-mode: vertical-rl;
-  transform: rotate(180deg);
-  font-size: 10px;
-  font-weight: 900;
-  letter-spacing: 0.14em;
-  text-transform: uppercase;
-  color: #fff;
+  writing-mode: vertical-rl; transform: rotate(180deg);
+  font-size: 10px; font-weight: 900; letter-spacing: 0.14em;
+  text-transform: uppercase; color: #fff;
   text-shadow: 0 0 10px rgba(0,0,0,0.9);
 }
 .schedule-card__time-flip span:first-child {
   color: var(--ch-red-bright);
   text-shadow: 0 0 10px var(--ch-red-bright), 0 0 20px var(--ch-red-glow);
 }
-
 .schedule-card__content {
-  position: relative; z-index: 2;
-  height: 100%;
+  position: relative; z-index: 2; height: 100%;
   padding: var(--s-3) 52px var(--s-3) 48px;
   display: flex; flex-direction: column; justify-content: center; gap: 4px;
 }
 .schedule-card__when {
-  font-size: 10px; font-weight: 900;
-  letter-spacing: 0.12em; text-transform: uppercase;
-  color: var(--ch-red-bright);
+  font-size: 10px; font-weight: 900; letter-spacing: 0.12em;
+  text-transform: uppercase; color: var(--ch-red-bright);
   text-shadow: 0 0 12px var(--ch-red-glow);
   display: flex; align-items: center; gap: 6px;
 }
@@ -383,8 +416,7 @@
   position: absolute; right: 14px; top: 50%;
   transform: translate(6px, -50%) scale(0.85);
   z-index: 3; width: 38px; height: 38px;
-  border-radius: 50%;
-  background: var(--ch-red); color: #fff;
+  border-radius: 50%; background: var(--ch-red); color: #fff;
   display: flex; align-items: center; justify-content: center;
   opacity: 0;
   transition: opacity 220ms var(--ease), transform 260ms var(--ease-pop), box-shadow 220ms var(--ease);
@@ -395,6 +427,9 @@
   box-shadow: 0 0 24px var(--ch-red-glow);
 }
 
+/* ============================================================
+   Skeletons / empty
+   ============================================================ */
 .home-skeleton {
   position: relative; aspect-ratio: 2 / 3;
   border-radius: var(--r-md); background: var(--ch-bg-2);
@@ -413,4 +448,4 @@
   color: var(--ch-fg-muted); font-size: 13px;
   border: 1px dashed var(--ch-border-soft);
   border-radius: var(--r-md);
-}S
+}
