@@ -7,6 +7,7 @@ const API_BASE = CH.API_BASE;
 const SETTINGS_KEY = CH.STORAGE_SETTINGS;
 const EP_FETCH_PROVIDERS = ['reanime', 'anikoto', 'animegg', 'aniwaves', 'senshi', 'anizone', 'kaa'];
 const CARD_LAYOUT_THRESHOLD = 12;
+const COUNTDOWN_VISIBLE_WINDOW_SEC = 30 * 86400; // only show countdown if next ep airs within 30 days
 
 const DEFAULTS = { autoSkip: false, autoNext: false, autoPlay: false, subtitlesOn: false, audio: 'dub' };
 function loadSettings() {
@@ -32,23 +33,26 @@ let epCache = { sub: null, dub: null };
 let currentProvider = null;
 let countdownTimer = null;
 let watchingTimer = null;
+let pendingServerJump = null;
 
-// Server cache — key: provider:anilistId:epNum:audio
 const serverCache = new Map();
 
 function parseParams() {
   const p = new URLSearchParams(location.search);
+  // Accept both legacy `audio=` and new `lang=` params
+  const langRaw = p.get('lang') || p.get('audio') || 'dub';
   return {
     id: p.get('id'),
     ep: parseInt(p.get('ep') || '1', 10) || 1,
-    audio: p.get('audio') === 'sub' ? 'sub' : 'dub'
+    lang: langRaw === 'sub' ? 'sub' : 'dub'
   };
 }
 function updateUrlParams(opts) {
   const p = new URLSearchParams(location.search);
   p.set('id', anilistId);
   if (opts.ep != null) p.set('ep', opts.ep);
-  if (opts.audio != null) p.set('audio', opts.audio);
+  if (opts.lang != null) p.set('lang', opts.lang);
+  p.delete('audio'); // clean up old param
   history.replaceState(null, '', location.pathname + '?' + p.toString());
 }
 
@@ -72,25 +76,46 @@ function formatFormat(f) {
   return f.replace(/_/g, ' ').replace(/\b\w/g, function (c) { return c.toUpperCase(); });
 }
 
-// ---------- availability ----------
+// ============================================================
+// Fetch providers episodes — with diagnostics
+// ============================================================
 async function fetchProvidersEpisodes(anilistId) {
   const reqs = EP_FETCH_PROVIDERS.map(function (p) {
-    return fetch(API_BASE + '/episodes/' + p + '/' + anilistId, { cache: 'no-store' })
-      .then(function (res) { return res.ok ? res.json() : null; })
+    const url = API_BASE + '/episodes/' + p + '/' + anilistId;
+    return fetch(url, { cache: 'no-store' })
+      .then(function (res) {
+        if (!res.ok) {
+          if (CH.DEBUG) console.warn('[eps] ' + p + ' HTTP ' + res.status);
+          return null;
+        }
+        return res.json();
+      })
       .then(function (data) {
         if (!data) return null;
         const block = data[p];
-        if (!block || block.error) return null;
+        if (!block) {
+          if (CH.DEBUG) console.warn('[eps] ' + p + ' no block');
+          return null;
+        }
+        if (block.error) {
+          if (CH.DEBUG) console.warn('[eps] ' + p + ' error: ' + block.error);
+          return null;
+        }
         return {
           provider: p,
           sub: (block.episodes && block.episodes.sub) || [],
           dub: (block.episodes && block.episodes.dub) || []
         };
       })
-      .catch(function () { return null; });
+      .catch(function (e) {
+        if (CH.DEBUG) console.warn('[eps] ' + p + ' fetch failed: ' + e.message);
+        return null;
+      });
   });
   const results = (await Promise.all(reqs)).filter(Boolean);
+  if (CH.DEBUG) console.log('[eps] providers returned', results.length, 'results:', results.map(function (r) { return r.provider + '(s' + r.sub.length + '/d' + r.dub.length + ')'; }));
 
+  // Probe audio availability — but only if we have any results
   const probeAudio = async function (audio) {
     for (const r of results) {
       const list = audio === 'sub' ? r.sub : r.dub;
@@ -131,7 +156,9 @@ function pickBestEpisodeList(results, audio, expectedCount) {
   return best;
 }
 
-// ---------- render ----------
+// ============================================================
+// Render
+// ============================================================
 function renderInfo() {
   if (!media) return;
   document.title = titleOf(media) + ' — Ep ' + currentEp + ' — Cloud Hub';
@@ -182,6 +209,17 @@ function renderNextAiring() {
   if (!box) return;
   const next = media && media.nextAiringEpisode;
   if (!next || !next.airingAt) { box.hidden = true; return; }
+
+  // Only show if:
+  // 1) the user is on the last aired episode (caught up), AND
+  // 2) the next episode airs within the visible window
+  const lastAiredEp = Number(next.episode) - 1;
+  const isCaughtUp = Number(currentEp) === lastAiredEp;
+  const nowSec = Math.floor(Date.now() / 1000);
+  const secsUntil = next.airingAt - nowSec;
+  const soon = secsUntil > 0 && secsUntil < COUNTDOWN_VISIBLE_WINDOW_SEC;
+
+  if (!isCaughtUp || !soon) { box.hidden = true; return; }
   box.hidden = false;
 
   const d = new Date(next.airingAt * 1000);
@@ -285,6 +323,18 @@ function refreshControls() {
   document.getElementById('btnAutoSkip').classList.toggle('active', !!appSettings.autoSkip);
   document.getElementById('btnAutoNext').classList.toggle('active', !!appSettings.autoNext);
   document.getElementById('btnAutoPlay').classList.toggle('active', !!appSettings.autoPlay);
+
+  // Lang buttons — active state + disable if not available
+  const btnSub = document.getElementById('btnSub');
+  const btnDub = document.getElementById('btnDub');
+  if (btnSub) {
+    btnSub.classList.toggle('active', currentAudio === 'sub');
+    btnSub.disabled = !audioAvail.sub && currentAudio !== 'sub';
+  }
+  if (btnDub) {
+    btnDub.classList.toggle('active', currentAudio === 'dub');
+    btnDub.disabled = !audioAvail.dub && currentAudio !== 'dub';
+  }
 }
 
 function wireControls() {
@@ -305,6 +355,13 @@ function wireControls() {
     chPlayer.setSettings(appSettings);
     refreshControls();
   });
+
+  // LANG BUTTONS — this is the fix. These were missing.
+  const btnSub = document.getElementById('btnSub');
+  const btnDub = document.getElementById('btnDub');
+  if (btnSub) btnSub.addEventListener('click', function () { switchAudio('sub'); });
+  if (btnDub) btnDub.addEventListener('click', function () { switchAudio('dub'); });
+
   document.getElementById('btnFailover').addEventListener('click', function () {
     saveNow();
     chPipeline.forceFailover();
@@ -323,15 +380,21 @@ function wireControls() {
 
 function switchAudio(next) {
   if (next === currentAudio) return;
-  if (next === 'sub' && audioAvail.sub === false && audioAvail.dub === true) return;
-  if (next === 'dub' && audioAvail.dub === false && audioAvail.sub === true) return;
+  if (next === 'sub' && !audioAvail.sub) {
+    if (typeof showToast === 'function') showToast('Sub is not available for this episode');
+    return;
+  }
+  if (next === 'dub' && !audioAvail.dub) {
+    if (typeof showToast === 'function') showToast('Dub is not available for this episode');
+    return;
+  }
 
   saveNow();
   currentAudio = next;
   appSettings.audio = next;
   saveSettings(appSettings);
   autoNextFired = false;
-  updateUrlParams({ audio: next });
+  updateUrlParams({ lang: next });
   chPlayer.setAudioPreference(next);
   refreshControls();
 
@@ -341,7 +404,7 @@ function switchAudio(next) {
   }
 
   showPlayerSkeleton();
-  renderServerRows(); // refresh to show skeleton for the new audio
+  renderServerRows();
   startPlayback();
 }
 
@@ -419,13 +482,11 @@ function initWatchingCounter() {
   const box = document.getElementById('watchWatching');
   if (!box) return;
   if (watchingTimer) clearInterval(watchingTimer);
-
   const base = fakeWatchers(anilistId + ':' + currentEp);
   const numEl = box.querySelector('.watch-watching__num');
   if (!numEl) return;
   numEl.textContent = base;
   box.hidden = false;
-
   watchingTimer = setInterval(function () {
     const drift = Math.floor(Math.random() * 11) - 5;
     const n = Math.max(20, base + drift);
@@ -450,13 +511,7 @@ async function getServersFor(provider, audio, epNum) {
       if (!watchRes.ok) return [];
       const wd = await watchRes.json();
       return (wd && wd.streams ? wd.streams : []).map(function (s, i) {
-        return {
-          server: s.server || ('Server ' + (i + 1)),
-          url: s.url,
-          index: i,
-          audio: audio,
-          provider: provider
-        };
+        return { server: s.server || ('Server ' + (i + 1)), url: s.url, index: i, audio: audio, provider: provider };
       });
     } catch (e) { return []; }
   })();
@@ -467,13 +522,10 @@ async function getServersFor(provider, audio, epNum) {
 async function renderServerRows() {
   const wrap = document.getElementById('watchServers');
   if (!wrap) return;
-
   if (!currentProvider) {
     wrap.innerHTML = '<div class="watch-servers__loading"><span class="ch-skel ch-skel-line" style="width:220px;display:inline-block"></span></div>';
     return;
   }
-
-  // Show skeleton for both rows while fetching
   wrap.innerHTML = '<div class="watch-servers__loading"><span class="ch-skel ch-skel-line" style="width:220px;display:inline-block"></span></div>';
 
   const [subServers, dubServers] = await Promise.all([
@@ -487,17 +539,14 @@ async function renderServerRows() {
   function buildRow(audio, servers, label) {
     const row = document.createElement('div');
     row.className = 'watch-server-row watch-server-row--' + audio;
-
     const labelEl = document.createElement('div');
     labelEl.className = 'watch-server-row__label';
     labelEl.innerHTML = (audio === 'sub'
       ? '<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="5" width="18" height="14" rx="2"/><line x1="7" y1="14" x2="11" y2="14"/><line x1="7" y1="18" x2="17" y2="18"/></svg>'
       : '<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M12 2a3 3 0 0 0-3 3v7a3 3 0 0 0 6 0V5a3 3 0 0 0-3-3z"/><path d="M19 10v2a7 7 0 0 1-14 0v-2"/><line x1="12" y1="19" x2="12" y2="22"/></svg>')
       + label;
-
     const listEl = document.createElement('div');
     listEl.className = 'watch-server-row__list';
-
     if (!servers.length) {
       const empty = document.createElement('span');
       empty.className = 'watch-server-row__empty';
@@ -508,17 +557,12 @@ async function renderServerRows() {
         const btn = document.createElement('button');
         btn.type = 'button';
         btn.className = 'watch-server-pill';
-        if (audio === currentAudio && s.server === activeServer) {
-          btn.classList.add('is-active');
-        }
+        if (audio === currentAudio && s.server === activeServer) btn.classList.add('is-active');
         btn.innerHTML = '<span class="watch-server-pill__play"><svg width="8" height="8" viewBox="0 0 24 24" fill="currentColor"><polygon points="6 4 20 12 6 20"></polygon></svg></span><span>' + chEscapeHtml(s.server) + '</span>';
-        btn.addEventListener('click', function () {
-          handleServerClick(audio, s.server);
-        });
+        btn.addEventListener('click', function () { handleServerClick(audio, s.server); });
         listEl.appendChild(btn);
       });
     }
-
     row.appendChild(labelEl);
     row.appendChild(listEl);
     return row;
@@ -531,23 +575,14 @@ async function renderServerRows() {
 
 function handleServerClick(audio, serverName) {
   if (audio === currentAudio) {
-    // Same audio — try jumping to that server within workList
     const jumped = chPipeline.jumpTo(currentProvider, serverName);
-    if (!jumped) {
-      // Not in workList yet (still background-fetching) — fallback to failover spam
-      // Simplest: just show a toast and let user retry in a moment
-      if (typeof showToast === 'function') showToast('Server not loaded yet — try again in a moment');
-    }
+    if (!jumped && typeof showToast === 'function') showToast('Server not loaded yet — try again in a moment');
   } else {
-    // Different audio — switch, and once stream fires, try jumping
     pendingServerJump = { audio: audio, serverName: serverName };
     switchAudio(audio);
   }
 }
 
-let pendingServerJump = null;
-
-// ---------- Pipeline events ----------
 chPipeline.on('stream', async function (data) {
   const entry = data.entry;
   currentProvider = entry.provider;
@@ -602,11 +637,7 @@ chPipeline.on('stream', async function (data) {
         saveTick = now;
         if (!isFinite(t) || t < 5) return;
         if (!isFinite(d) || d <= 0) return;
-        chProgress.set(
-          anilistId, titleOf(media),
-          media && media.coverImage && (media.coverImage.extraLarge || media.coverImage.large),
-          currentEp, currentAudio, t, d
-        );
+        chProgress.set(anilistId, titleOf(media), media && media.coverImage && (media.coverImage.extraLarge || media.coverImage.large), currentEp, currentAudio, t, d);
       },
       onEnded: function () {
         if (!appSettings.autoNext || autoNextFired) return;
@@ -627,21 +658,16 @@ chPipeline.on('stream', async function (data) {
     }
   });
 
-  // Render server rows now that we know the provider
   renderServerRows();
 
-  // Pending server jump?
   if (pendingServerJump && pendingServerJump.audio === currentAudio) {
     const target = pendingServerJump;
     pendingServerJump = null;
-    setTimeout(function () {
-      chPipeline.jumpTo(currentProvider, target.serverName);
-    }, 300);
+    setTimeout(function () { chPipeline.jumpTo(currentProvider, target.serverName); }, 300);
   }
 });
 
 chPipeline.on('audio', function () { refreshControls(); });
-
 chPipeline.on('status', function (payload) {
   const lvl = payload.level === 'error' ? '[error]' : payload.level === 'warn' ? '[warn]' : '[pipe]';
   console.log(lvl + ' ' + payload.message);
@@ -653,10 +679,7 @@ chPipeline.on('exhausted', function () {
   if (!container) return;
   container.querySelectorAll('.artplayer-app, iframe').forEach(function (el) { el.remove(); });
   const badge = document.getElementById('watchBadge');
-  if (badge) {
-    badge.textContent = 'IFRAME FALLBACK';
-    badge.className = 'watch-player-badge iframe';
-  }
+  if (badge) { badge.textContent = 'IFRAME FALLBACK'; badge.className = 'watch-player-badge iframe'; }
   const iframe = document.createElement('iframe');
   iframe.src = 'https://megaplay.buzz/stream/ani/' + anilistId + '/' + currentEp + '/' + currentAudio;
   iframe.setAttribute('allow', 'autoplay; encrypted-media; picture-in-picture; fullscreen');
@@ -717,12 +740,10 @@ async function renderSimilar(mediaArg) {
     const a = document.createElement('a');
     a.className = 'watch-similar-item';
     a.href = '/preview?id=' + m.id;
-
     const metaBits = [];
     if (m.format) metaBits.push(formatFormat(m.format));
     if (m.seasonYear) metaBits.push(m.seasonYear);
     const scoreHtml = m.averageScore ? '<span class="watch-similar-item__score">★ ' + m.averageScore + '</span>' : '';
-
     a.innerHTML =
       '<div class="watch-similar-item__thumb"><img src="' + chEscapeHtml(cover) + '" alt="" loading="lazy"></div>' +
       '<div class="watch-similar-item__body">' +
@@ -744,7 +765,7 @@ async function initWatch() {
   }
   anilistId = params.id;
   currentEp = params.ep;
-  currentAudio = params.audio;
+  currentAudio = params.lang;
   appSettings.audio = currentAudio;
   saveSettings(appSettings);
   chPlayer.setAudioPreference(currentAudio);
@@ -752,7 +773,7 @@ async function initWatch() {
   wireControls();
 
   const mediaPromise = anilistQuery(MEDIA_QUERY, { id: Number(anilistId) }).catch(function (e) { console.error(e); return null; });
-  const epsPromise = fetchProvidersEpisodes(anilistId).catch(function () { return { results: [], hasSub: false, hasDub: false }; });
+  const epsPromise = fetchProvidersEpisodes(anilistId).catch(function (e) { console.error('eps fetch failed', e); return { results: [], hasSub: false, hasDub: false }; });
 
   const mediaData = await mediaPromise;
   media = mediaData && mediaData.Media;
@@ -765,13 +786,14 @@ async function initWatch() {
 
   const fetched = await epsPromise;
   audioAvail = { sub: fetched.hasSub, dub: fetched.hasDub };
+  if (CH.DEBUG) console.log('[boot] audioAvail', audioAvail, 'results', fetched.results.length);
 
   if (currentAudio === 'dub' && !audioAvail.dub && audioAvail.sub) {
     currentAudio = 'sub'; appSettings.audio = 'sub'; saveSettings(appSettings);
-    updateUrlParams({ audio: 'sub' }); chPlayer.setAudioPreference('sub');
+    updateUrlParams({ lang: 'sub' }); chPlayer.setAudioPreference('sub');
   } else if (currentAudio === 'sub' && !audioAvail.sub && audioAvail.dub) {
     currentAudio = 'dub'; appSettings.audio = 'dub'; saveSettings(appSettings);
-    updateUrlParams({ audio: 'dub' }); chPlayer.setAudioPreference('dub');
+    updateUrlParams({ lang: 'dub' }); chPlayer.setAudioPreference('dub');
   }
   refreshControls();
 
@@ -779,6 +801,7 @@ async function initWatch() {
   epCache.dub = pickBestEpisodeList(fetched.results, 'dub', media.episodes);
   const chosen = currentAudio === 'sub' ? epCache.sub : epCache.dub;
   episodeList = (chosen.list || []).slice().sort(function (a, b) { return Number(a.number) - Number(b.number); });
+  if (CH.DEBUG) console.log('[boot] using provider', chosen.provider, 'with', episodeList.length, 'episodes');
   renderEpisodes();
 
   window.addEventListener('beforeunload', saveNow);
