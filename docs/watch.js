@@ -7,7 +7,7 @@ const API_BASE = CH.API_BASE;
 const SETTINGS_KEY = CH.STORAGE_SETTINGS;
 const EP_FETCH_PROVIDERS = ['reanime', 'anikoto', 'animegg', 'aniwaves', 'senshi', 'anizone', 'kaa'];
 const CARD_LAYOUT_THRESHOLD = 12;
-const COUNTDOWN_VISIBLE_WINDOW_SEC = 30 * 86400; // only show countdown if next ep airs within 30 days
+const COUNTDOWN_VISIBLE_WINDOW_SEC = 30 * 86400;
 
 const DEFAULTS = { autoSkip: false, autoNext: false, autoPlay: false, subtitlesOn: false, audio: 'dub' };
 function loadSettings() {
@@ -32,14 +32,12 @@ let audioAvail = { sub: false, dub: false };
 let epCache = { sub: null, dub: null };
 let currentProvider = null;
 let countdownTimer = null;
-let watchingTimer = null;
 let pendingServerJump = null;
 
 const serverCache = new Map();
 
 function parseParams() {
   const p = new URLSearchParams(location.search);
-  // Accept both legacy `audio=` and new `lang=` params
   const langRaw = p.get('lang') || p.get('audio') || 'dub';
   return {
     id: p.get('id'),
@@ -52,7 +50,7 @@ function updateUrlParams(opts) {
   p.set('id', anilistId);
   if (opts.ep != null) p.set('ep', opts.ep);
   if (opts.lang != null) p.set('lang', opts.lang);
-  p.delete('audio'); // clean up old param
+  p.delete('audio');
   history.replaceState(null, '', location.pathname + '?' + p.toString());
 }
 
@@ -76,9 +74,6 @@ function formatFormat(f) {
   return f.replace(/_/g, ' ').replace(/\b\w/g, function (c) { return c.toUpperCase(); });
 }
 
-// ============================================================
-// Fetch providers episodes — with diagnostics
-// ============================================================
 async function fetchProvidersEpisodes(anilistId) {
   const reqs = EP_FETCH_PROVIDERS.map(function (p) {
     const url = API_BASE + '/episodes/' + p + '/' + anilistId;
@@ -93,10 +88,7 @@ async function fetchProvidersEpisodes(anilistId) {
       .then(function (data) {
         if (!data) return null;
         const block = data[p];
-        if (!block) {
-          if (CH.DEBUG) console.warn('[eps] ' + p + ' no block');
-          return null;
-        }
+        if (!block) return null;
         if (block.error) {
           if (CH.DEBUG) console.warn('[eps] ' + p + ' error: ' + block.error);
           return null;
@@ -115,7 +107,6 @@ async function fetchProvidersEpisodes(anilistId) {
   const results = (await Promise.all(reqs)).filter(Boolean);
   if (CH.DEBUG) console.log('[eps] providers returned', results.length, 'results:', results.map(function (r) { return r.provider + '(s' + r.sub.length + '/d' + r.dub.length + ')'; }));
 
-  // Probe audio availability — but only if we have any results
   const probeAudio = async function (audio) {
     for (const r of results) {
       const list = audio === 'sub' ? r.sub : r.dub;
@@ -156,9 +147,6 @@ function pickBestEpisodeList(results, audio, expectedCount) {
   return best;
 }
 
-// ============================================================
-// Render
-// ============================================================
 function renderInfo() {
   if (!media) return;
   document.title = titleOf(media) + ' — Ep ' + currentEp + ' — Cloud Hub';
@@ -210,9 +198,6 @@ function renderNextAiring() {
   const next = media && media.nextAiringEpisode;
   if (!next || !next.airingAt) { box.hidden = true; return; }
 
-  // Only show if:
-  // 1) the user is on the last aired episode (caught up), AND
-  // 2) the next episode airs within the visible window
   const lastAiredEp = Number(next.episode) - 1;
   const isCaughtUp = Number(currentEp) === lastAiredEp;
   const nowSec = Math.floor(Date.now() / 1000);
@@ -324,7 +309,6 @@ function refreshControls() {
   document.getElementById('btnAutoNext').classList.toggle('active', !!appSettings.autoNext);
   document.getElementById('btnAutoPlay').classList.toggle('active', !!appSettings.autoPlay);
 
-  // Lang buttons — active state + disable if not available
   const btnSub = document.getElementById('btnSub');
   const btnDub = document.getElementById('btnDub');
   if (btnSub) {
@@ -356,7 +340,6 @@ function wireControls() {
     refreshControls();
   });
 
-  // LANG BUTTONS — this is the fix. These were missing.
   const btnSub = document.getElementById('btnSub');
   const btnDub = document.getElementById('btnDub');
   if (btnSub) btnSub.addEventListener('click', function () { switchAudio('sub'); });
@@ -471,30 +454,6 @@ async function startPlayback() {
   await chPipeline.start({ anilistId: anilistId, ep: currentEp, audio: currentAudio });
 }
 
-// ---------- Watching counter ----------
-function fakeWatchers(seed) {
-  let h = 0;
-  const str = String(seed);
-  for (let i = 0; i < str.length; i++) h = ((h << 5) - h + str.charCodeAt(i)) | 0;
-  return 40 + (Math.abs(h) % 761);
-}
-function initWatchingCounter() {
-  const box = document.getElementById('watchWatching');
-  if (!box) return;
-  if (watchingTimer) clearInterval(watchingTimer);
-  const base = fakeWatchers(anilistId + ':' + currentEp);
-  const numEl = box.querySelector('.watch-watching__num');
-  if (!numEl) return;
-  numEl.textContent = base;
-  box.hidden = false;
-  watchingTimer = setInterval(function () {
-    const drift = Math.floor(Math.random() * 11) - 5;
-    const n = Math.max(20, base + drift);
-    numEl.textContent = n;
-  }, 5000);
-}
-
-// ---------- Server rows ----------
 async function getServersFor(provider, audio, epNum) {
   const key = provider + ':' + anilistId + ':' + epNum + ':' + audio;
   if (serverCache.has(key)) return serverCache.get(key);
@@ -683,12 +642,10 @@ chPipeline.on('exhausted', function () {
   const iframe = document.createElement('iframe');
   iframe.src = 'https://megaplay.buzz/stream/ani/' + anilistId + '/' + currentEp + '/' + currentAudio;
   iframe.setAttribute('allow', 'autoplay; encrypted-media; picture-in-picture; fullscreen');
-  iframe.setAttribute('allowfullscreen', 'true');
   iframe.setAttribute('referrerpolicy', 'origin');
   container.appendChild(iframe);
 });
 
-// ---------- Similar anime ----------
 const SIMILAR_RECS_QUERY = 'query ($id: Int) { Media(id: $id, type: ANIME) { recommendations(perPage: 10, sort: RATING_DESC) { nodes { mediaRecommendation { id title { romaji english } coverImage { large extraLarge } format averageScore seasonYear } } } } }';
 const SIMILAR_TAG_QUERY = 'query ($tag: String) { Page(page: 1, perPage: 12) { media(type: ANIME, tag: $tag, sort: POPULARITY_DESC, isAdult: false) { id title { romaji english } coverImage { large extraLarge } format averageScore seasonYear } } }';
 
@@ -754,7 +711,6 @@ async function renderSimilar(mediaArg) {
   }
 }
 
-// ---------- Boot ----------
 async function initWatch() {
   const params = parseParams();
   if (!params.id) {
@@ -782,7 +738,6 @@ async function initWatch() {
     return;
   }
   renderInfo();
-  initWatchingCounter();
 
   const fetched = await epsPromise;
   audioAvail = { sub: fetched.hasSub, dub: fetched.hasDub };
