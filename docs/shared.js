@@ -86,7 +86,11 @@ function chPageReady() {
     chPageLoaderEl.className = 'ch-page-loader';
     chPageLoaderEl.innerHTML = `
       <div class="ch-page-loader__inner">
-        <div class="ch-page-loader__mark"></div>
+        <div class="ch-page-loader__mark">
+          <svg viewBox="0 0 80 48" aria-hidden="true">
+            <path d="M 22 42 C 12 42 6 34 12 27 C 10 18 22 10 32 15 C 36 4 54 4 58 15 C 68 16 72 27 64 34 C 66 40 60 42 54 42 Z" fill="currentColor"/>
+          </svg>
+        </div>
         <div class="ch-page-loader__name">Cloud Hub</div>
         <div class="ch-page-loader__bar"><div class="ch-page-loader__bar-fill"></div></div>
       </div>
