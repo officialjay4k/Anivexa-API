@@ -1,11 +1,36 @@
 // ============================================================
 // Cloud Hub — auth.js
-// Auth + profile + watchlist + notification helpers.
 // ============================================================
 
 const chAuth = (() => {
   const sb = window.sb;
-  if (!sb) throw new Error('Supabase client missing');
+  if (!sb) {
+    console.warn('[auth] Supabase client missing — auth features disabled');
+    const noop = () => Promise.resolve({ ok: false, error: 'Auth unavailable' });
+    return {
+      client: null,
+      refresh: () => Promise.resolve({ user: null, profile: null }),
+      onAuthChange: () => {},
+      requireAuth: () => null,
+      signUp: noop, signIn: noop, signOut: () => Promise.resolve(),
+      checkUsernameAvailable: () => Promise.resolve({ ok: false, reason: 'error' }),
+      updateProfile: noop, uploadAvatar: noop,
+      fetchPublicProfile: () => Promise.resolve(null),
+      fetchWatchlist: () => Promise.resolve([]),
+      fetchNotifications: () => Promise.resolve([]),
+      markNotificationRead: () => Promise.resolve(),
+      markAllNotificationsRead: () => Promise.resolve(),
+      upsertWatchlistEntry: noop, removeWatchlistEntry: noop,
+      recomputeStats: () => Promise.resolve(null),
+      tierFromScore: () => 'Chunin',
+      formatUserId: (n) => String(n).padStart(3, '0'),
+      get user() { return null; },
+      get profile() { return null; }
+    };
+  }
+
+  // Username: 3-20 chars, letters/numbers/underscores/dots
+  const USERNAME_RE = /^[A-Za-z0-9_.]{3,20}$/;
 
   let cachedUser = null;
   let cachedProfile = null;
@@ -40,11 +65,10 @@ const chAuth = (() => {
     fn(cachedUser, cachedProfile);
   }
 
-  // ---------- Signup ----------
   async function signUp(email, password, username) {
     const clean = String(username || '').trim();
-    if (!/^[A-Za-z0-9_]{3,20}$/.test(clean)) {
-      return { ok: false, error: 'Username must be 3–20 chars: letters, numbers, underscores.' };
+    if (!USERNAME_RE.test(clean)) {
+      return { ok: false, error: 'Username must be 3–20 chars: letters, numbers, dots, underscores.' };
     }
     const { data: taken, error: tErr } = await sb.rpc('username_taken', { name: clean });
     if (tErr) return { ok: false, error: 'Could not check username: ' + tErr.message };
@@ -55,13 +79,8 @@ const chAuth = (() => {
     const user = data.user;
     if (!user) return { ok: false, error: 'Signup succeeded but no user returned.' };
 
-    // Make sure session is set before the profile update.
-    if (!data.session) {
-      await sb.auth.getSession().catch(function () {});
-    }
+    if (!data.session) await sb.auth.getSession().catch(function () {});
 
-    // Update the placeholder username created by the trigger.
-    // One retry in case RLS isn't ready instantly.
     let upErr = null;
     for (let i = 0; i < 2; i++) {
       const r = await sb.from('profiles').update({ username: clean }).eq('id', user.id);
@@ -70,14 +89,13 @@ const chAuth = (() => {
       await new Promise(function (res) { setTimeout(res, 250); });
     }
     if (upErr) {
-      return { ok: false, error: 'Profile setup failed: ' + upErr.message + ' — try logging in with the account you just made.' };
+      return { ok: false, error: 'Profile setup failed: ' + upErr.message };
     }
 
     await refresh();
     return { ok: true, user: cachedUser, profile: cachedProfile };
   }
 
-  // ---------- Login ----------
   async function signIn(email, password) {
     const { error } = await sb.auth.signInWithPassword({ email, password });
     if (error) return { ok: false, error: error.message };
@@ -92,18 +110,14 @@ const chAuth = (() => {
     emit();
   }
 
-  // ---------- Username availability ----------
   async function checkUsernameAvailable(name) {
     const clean = String(name || '').trim();
-    if (!/^[A-Za-z0-9_]{3,20}$/.test(clean)) {
-      return { ok: false, reason: 'format' };
-    }
+    if (!USERNAME_RE.test(clean)) return { ok: false, reason: 'format' };
     const { data, error } = await sb.rpc('username_taken', { name: clean });
     if (error) return { ok: false, reason: 'error', error: error.message };
     return { ok: !data, reason: data ? 'taken' : 'ok' };
   }
 
-  // ---------- Profile edits ----------
   async function updateProfile(patch) {
     if (!cachedUser) return { ok: false, error: 'Not signed in' };
     const allowed = ['username', 'display_name', 'bio', 'avatar_url', 'hidden'];
@@ -122,7 +136,6 @@ const chAuth = (() => {
     return { ok: true, profile: cachedProfile };
   }
 
-  // ---------- Avatar upload ----------
   async function uploadAvatar(file) {
     if (!cachedUser) return { ok: false, error: 'Not signed in' };
     if (!file) return { ok: false, error: 'No file' };
@@ -133,10 +146,7 @@ const chAuth = (() => {
 
     const ext = (file.type.split('/')[1] || 'png').replace('jpeg', 'jpg');
     const path = cachedUser.id + '/avatar-' + Date.now() + '.' + ext;
-    const up = await sb.storage.from('avatars').upload(path, file, {
-      upsert: true,
-      cacheControl: '3600'
-    });
+    const up = await sb.storage.from('avatars').upload(path, file, { upsert: true, cacheControl: '3600' });
     if (up.error) return { ok: false, error: up.error.message };
     const { data: pub } = sb.storage.from('avatars').getPublicUrl(path);
     const url = pub.publicUrl;
@@ -146,7 +156,6 @@ const chAuth = (() => {
     return { ok: true, url: url };
   }
 
-  // ---------- Page guard ----------
   async function requireAuth(redirectBack) {
     const { data: { session } } = await sb.auth.getSession();
     if (!session?.user) {
@@ -160,7 +169,6 @@ const chAuth = (() => {
     return { user: cachedUser, profile: cachedProfile };
   }
 
-  // ---------- Public data ----------
   async function fetchPublicProfile(username) {
     const { data, error } = await sb
       .from('public_profiles')
@@ -181,7 +189,6 @@ const chAuth = (() => {
     return data || [];
   }
 
-  // ---------- Notifications ----------
   async function fetchNotifications() {
     if (!cachedUser) return [];
     const { data, error } = await sb
@@ -204,7 +211,6 @@ const chAuth = (() => {
     await sb.from('notifications').update({ read: true }).eq('user_id', cachedUser.id).eq('read', false);
   }
 
-  // ---------- Watchlist + stats ----------
   function tierFromScore(score) {
     if (score >= 5000) return 'Akatsuki';
     if (score >= 2000) return 'Hokage';
@@ -239,27 +245,14 @@ const chAuth = (() => {
 
     const { error } = await sb.from('stats').upsert({
       user_id: cachedUser.id,
-      finished: finished,
-      watching: watching,
-      watch_later: watch_later,
-      dropped: dropped,
-      rated: rated,
+      finished, watching, watch_later, dropped, rated,
       watch_hours: watchHours,
       score: score,
       tier: tier
     });
     if (error) console.warn('[stats] upsert failed:', error.message);
 
-    return {
-      finished: finished,
-      watching: watching,
-      watch_later: watch_later,
-      dropped: dropped,
-      rated: rated,
-      watch_hours: watchHours,
-      score: score,
-      tier: tier
-    };
+    return { finished, watching, watch_later, dropped, rated, watch_hours: watchHours, score, tier };
   }
 
   async function upsertWatchlistEntry(entry) {
@@ -292,25 +285,13 @@ const chAuth = (() => {
 
   return {
     client: sb,
-    refresh: refresh,
-    onAuthChange: onAuthChange,
-    requireAuth: requireAuth,
-    signUp: signUp,
-    signIn: signIn,
-    signOut: signOut,
-    checkUsernameAvailable: checkUsernameAvailable,
-    updateProfile: updateProfile,
-    uploadAvatar: uploadAvatar,
-    fetchPublicProfile: fetchPublicProfile,
-    fetchWatchlist: fetchWatchlist,
-    fetchNotifications: fetchNotifications,
-    markNotificationRead: markNotificationRead,
-    markAllNotificationsRead: markAllNotificationsRead,
-    upsertWatchlistEntry: upsertWatchlistEntry,
-    removeWatchlistEntry: removeWatchlistEntry,
-    recomputeStats: recomputeStats,
-    tierFromScore: tierFromScore,
-    formatUserId: formatUserId,
+    refresh, onAuthChange, requireAuth,
+    signUp, signIn, signOut,
+    checkUsernameAvailable, updateProfile, uploadAvatar,
+    fetchPublicProfile, fetchWatchlist,
+    fetchNotifications, markNotificationRead, markAllNotificationsRead,
+    upsertWatchlistEntry, removeWatchlistEntry,
+    recomputeStats, tierFromScore, formatUserId,
     get user()    { return cachedUser; },
     get profile() { return cachedProfile; }
   };
