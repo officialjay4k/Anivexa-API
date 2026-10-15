@@ -1,0 +1,52 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Signing in…</title>
+  <link rel="stylesheet" href="/shared.css">
+  <link rel="stylesheet" href="/auth.css">
+</head>
+<body class="auth-body">
+
+  <div class="auth-shell">
+    <div class="auth-card" style="text-align:center;">
+      <div class="ch-page-loader__mark" style="margin: 0 auto 16px;">
+        <svg viewBox="0 0 80 48" aria-hidden="true" style="width:72px;height:48px;">
+          <path d="M 22 42 C 12 42 6 34 12 27 C 10 18 22 10 32 15 C 36 4 54 4 58 15 C 68 16 72 27 64 34 C 66 40 60 42 54 42 Z" fill="currentColor"/>
+        </svg>
+      </div>
+      <h1 class="auth-title" style="font-size:22px;">Signing you in…</h1>
+      <p class="auth-sub" id="cbStatus">Finishing sign-in, hold tight.</p>
+    </div>
+  </div>
+
+  <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.45.0/dist/umd/supabase.min.js"></script>
+  <script src="/supabase-config.js"></script>
+  <script>
+    (async () => {
+      const statusEl = document.getElementById('cbStatus');
+
+      // Supabase needs a moment to parse the URL hash. Poll for up to 6 seconds.
+      for (let i = 0; i < 40; i++) {
+        const { data: { session } } = await sb.auth.getSession();
+        if (session?.user) {
+          // First-time OAuth user: profile may not exist yet if trigger lagged.
+          for (let j = 0; j < 5; j++) {
+            const { data: existing } = await sb
+              .from('profiles').select('id').eq('id', session.user.id).maybeSingle();
+            if (existing) break;
+            await new Promise(r => setTimeout(r, 300));
+          }
+          location.href = '/user/dashboard';
+          return;
+        }
+        await new Promise(r => setTimeout(r, 150));
+      }
+
+      statusEl.textContent = 'Sign-in failed. Redirecting…';
+      setTimeout(() => { location.href = '/auth/login?error=oauth_failed'; }, 900);
+    })();
+  </script>
+</body>
+</html>
