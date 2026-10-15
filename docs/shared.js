@@ -79,6 +79,8 @@ function chPageReady() {
 }
 (function initPageLoader() {
   if (document.getElementById('chPageLoader')) return;
+  // Don't show the loader on the auth pages
+  if (document.body && document.body.classList.contains('auth-body')) return;
   function create() {
     if (document.getElementById('chPageLoader')) return;
     chPageLoaderEl = document.createElement('div');
