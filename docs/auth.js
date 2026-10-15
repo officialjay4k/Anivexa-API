@@ -13,6 +13,7 @@ const chAuth = (() => {
       onAuthChange: () => {},
       requireAuth: () => null,
       signUp: noop, signIn: noop, signOut: () => Promise.resolve(),
+      signInWithGoogle: noop,
       checkUsernameAvailable: () => Promise.resolve({ ok: false, reason: 'error' }),
       updateProfile: noop, uploadAvatar: noop,
       fetchPublicProfile: () => Promise.resolve(null),
@@ -29,7 +30,6 @@ const chAuth = (() => {
     };
   }
 
-  // Username: 3-20 chars, letters/numbers/underscores/dots
   const USERNAME_RE = /^[A-Za-z0-9_.]{3,20}$/;
 
   let cachedUser = null;
@@ -79,8 +79,18 @@ const chAuth = (() => {
     const user = data.user;
     if (!user) return { ok: false, error: 'Signup succeeded but no user returned.' };
 
-    if (!data.session) await sb.auth.getSession().catch(function () {});
+    // If email confirmation is ON, session will be null until they confirm.
+    if (!data.session) {
+      return {
+        ok: true,
+        needsEmailConfirm: true,
+        user: user,
+        profile: null,
+        message: 'Check your email for a confirmation link, then sign in.'
+      };
+    }
 
+    // Update the placeholder username created by the trigger.
     let upErr = null;
     for (let i = 0; i < 2; i++) {
       const r = await sb.from('profiles').update({ username: clean }).eq('id', user.id);
@@ -88,9 +98,7 @@ const chAuth = (() => {
       if (!upErr) break;
       await new Promise(function (res) { setTimeout(res, 250); });
     }
-    if (upErr) {
-      return { ok: false, error: 'Profile setup failed: ' + upErr.message };
-    }
+    if (upErr) return { ok: false, error: 'Profile setup failed: ' + upErr.message };
 
     await refresh();
     return { ok: true, user: cachedUser, profile: cachedProfile };
@@ -98,9 +106,25 @@ const chAuth = (() => {
 
   async function signIn(email, password) {
     const { error } = await sb.auth.signInWithPassword({ email, password });
-    if (error) return { ok: false, error: error.message };
+    if (error) {
+      if (/email not confirmed/i.test(error.message)) {
+        return { ok: false, error: 'Please confirm your email first — check your inbox for the link.', code: 'EMAIL_NOT_CONFIRMED' };
+      }
+      return { ok: false, error: error.message };
+    }
     await refresh();
     return { ok: true, user: cachedUser, profile: cachedProfile };
+  }
+
+  async function signInWithGoogle() {
+    const { error } = await sb.auth.signInWithOAuth({
+      provider: 'google',
+      options: {
+        redirectTo: location.origin + '/auth/callback'
+      }
+    });
+    if (error) return { ok: false, error: error.message };
+    return { ok: true };
   }
 
   async function signOut() {
@@ -231,7 +255,6 @@ const chAuth = (() => {
       else if (e.status === 'dropped')  dropped++;
       if (e.score && e.score > 0) rated++;
     }
-
     let watchHours = 0;
     try {
       const store = JSON.parse(localStorage.getItem(CH.STORAGE_PROGRESS)) || {};
@@ -239,19 +262,14 @@ const chAuth = (() => {
       for (const v of Object.values(store)) if (v && v.currentTime) seconds += v.currentTime;
       watchHours = Math.round((seconds / 3600) * 10) / 10;
     } catch (e) {}
-
     const score = Math.round(finished * 10 + rated * 3 + watchHours * 2);
     const tier = tierFromScore(score);
-
     const { error } = await sb.from('stats').upsert({
       user_id: cachedUser.id,
       finished, watching, watch_later, dropped, rated,
-      watch_hours: watchHours,
-      score: score,
-      tier: tier
+      watch_hours: watchHours, score: score, tier: tier
     });
     if (error) console.warn('[stats] upsert failed:', error.message);
-
     return { finished, watching, watch_later, dropped, rated, watch_hours: watchHours, score, tier };
   }
 
@@ -286,7 +304,7 @@ const chAuth = (() => {
   return {
     client: sb,
     refresh, onAuthChange, requireAuth,
-    signUp, signIn, signOut,
+    signUp, signIn, signInWithGoogle, signOut,
     checkUsernameAvailable, updateProfile, uploadAvatar,
     fetchPublicProfile, fetchWatchlist,
     fetchNotifications, markNotificationRead, markAllNotificationsRead,
