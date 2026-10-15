@@ -1,0 +1,166 @@
+/* ============================================================
+   Cloud Hub — auth.css (signup / login)
+   ============================================================ */
+
+.auth-body {
+  min-height: 100vh;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  padding: 60px 24px 40px;
+  position: relative;
+  background:
+    radial-gradient(900px 500px at 50% -10%, rgba(179, 19, 31, 0.18), transparent 60%),
+    radial-gradient(700px 500px at 110% 100%, rgba(179, 19, 31, 0.1), transparent 55%),
+    var(--ch-bg);
+}
+
+.auth-logo {
+  position: absolute;
+  top: 24px;
+  left: 24px;
+  z-index: 3;
+  display: inline-flex;
+}
+.auth-logo img {
+  height: 52px;
+  width: auto;
+  transform: scaleY(1.14);
+  filter: drop-shadow(0 0 14px rgba(179, 19, 31, 0.4));
+  transition: transform 200ms var(--ease-pop);
+}
+.auth-logo:hover img { transform: scaleY(1.14) scale(1.05); }
+
+.auth-motif-bottom {
+  position: fixed;
+  bottom: 0; left: 0; right: 0;
+  z-index: 2;
+  opacity: 0.85;
+}
+
+.auth-shell {
+  width: 100%;
+  max-width: 420px;
+  position: relative;
+  z-index: 3;
+}
+
+.auth-card {
+  background: var(--ch-glass);
+  border: 1px solid var(--ch-glass-stroke);
+  border-radius: var(--r-lg);
+  padding: var(--s-6) var(--s-5);
+  backdrop-filter: blur(20px);
+  -webkit-backdrop-filter: blur(20px);
+  box-shadow: 0 30px 80px rgba(0, 0, 0, 0.75), 0 0 40px -10px var(--ch-red-glow);
+}
+
+.auth-title {
+  font-size: 28px;
+  font-weight: 900;
+  letter-spacing: -0.02em;
+  color: #fff;
+  margin-bottom: 6px;
+}
+
+.auth-sub {
+  font-size: 13px;
+  color: var(--ch-fg-muted);
+  margin: 0 0 var(--s-5);
+  line-height: 1.55;
+}
+
+.auth-form {
+  display: flex;
+  flex-direction: column;
+  gap: var(--s-4);
+}
+
+.auth-field {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.auth-field > span:first-child {
+  font-size: 11px;
+  font-weight: 800;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: var(--ch-fg-muted);
+}
+
+.auth-field input {
+  width: 100%;
+  padding: 12px 14px;
+  font-size: 14px;
+  background: var(--ch-bg-2);
+  border: 1px solid var(--ch-border-soft);
+  border-radius: var(--r-md);
+  color: var(--ch-fg);
+  outline: none;
+  font-family: inherit;
+  transition: border-color var(--dur) var(--ease), box-shadow var(--dur) var(--ease), background var(--dur) var(--ease);
+}
+.auth-field input::placeholder { color: var(--ch-fg-subtle); }
+.auth-field input:hover { border-color: rgba(246, 244, 245, 0.18); }
+.auth-field input:focus {
+  border-color: var(--ch-red-bright);
+  background: var(--ch-bg-3);
+  box-shadow: 0 0 0 3px var(--ch-red-faint);
+}
+
+.auth-field__row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.auth-field__row input { flex: 1; }
+.auth-field__status {
+  flex-shrink: 0;
+  min-width: 24px;
+  text-align: center;
+  font-size: 15px;
+  font-weight: 900;
+}
+.auth-field__status.is-ok  { color: #7cbf3f; text-shadow: 0 0 10px rgba(124, 191, 63, 0.5); }
+.auth-field__status.is-bad { color: #ff5d6b; text-shadow: 0 0 10px rgba(229, 9, 20, 0.4); }
+
+.auth-field__hint {
+  font-size: 11px;
+  color: var(--ch-fg-subtle);
+  letter-spacing: 0.02em;
+}
+
+.auth-error {
+  padding: 10px 14px;
+  border-radius: var(--r-md);
+  background: rgba(179, 19, 31, 0.15);
+  border: 1px solid rgba(217, 24, 40, 0.5);
+  color: #ff8080;
+  font-size: 13px;
+  font-weight: 600;
+  animation: ch-fade 180ms var(--ease);
+}
+@keyframes ch-fade { from { opacity: 0; } to { opacity: 1; } }
+
+.auth-submit {
+  width: 100%;
+  margin-top: var(--s-2);
+}
+
+.auth-alt {
+  margin-top: var(--s-5);
+  padding-top: var(--s-4);
+  border-top: 1px solid var(--ch-glass-stroke);
+  font-size: 13px;
+  color: var(--ch-fg-muted);
+  text-align: center;
+}
+.auth-alt a {
+  color: var(--ch-red-bright);
+  font-weight: 800;
+  transition: text-shadow 180ms var(--ease);
+}
+.auth-alt a:hover { text-shadow: 0 0 12px var(--ch-red-glow); }
