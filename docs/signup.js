@@ -1,112 +1,80 @@
-// ============================================================
-// Cloud Hub — signup.js
-// ============================================================
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Sign Up — Cloud Hub</title>
+  <link rel="icon" type="image/png" href="/favicon.png">
+  <link rel="apple-touch-icon" href="/apple-touch-icon.png">
+  <link rel="stylesheet" href="/shared.css">
+  <link rel="stylesheet" href="/auth.css">
+</head>
+<body class="auth-body">
 
-const $ = (id) => document.getElementById(id);
+  <a href="/" class="auth-logo">
+    <img src="/logo.png" alt="Cloud Hub">
+  </a>
 
-const emailEl = $('emailInput');
-const usernameEl = $('usernameInput');
-const usernameStatus = $('usernameStatus');
-const passwordEl = $('passwordInput');
-const passwordConfirmEl = $('passwordConfirmInput');
-const errorEl = $('authError');
-const submitBtn = $('signupBtn');
+  <div class="auth-shell">
+    <div class="auth-card">
+      <h1 class="auth-title">Create account</h1>
+      <p class="auth-sub">Join Cloud Hub — track your shows, keep your progress, and share your stats.</p>
 
-const USERNAME_RE = /^[A-Za-z0-9_.]{3,20}$/;
+      <form class="auth-form" id="signupForm" autocomplete="off">
+        <label class="auth-field">
+          <span>Email</span>
+          <input type="email" id="emailInput" name="email" required autocomplete="email" placeholder="you@example.com">
+        </label>
 
-let usernameOK = false;
-let usernameCheckTimer = null;
+        <label class="auth-field">
+          <span>Username</span>
+          <div class="auth-field__row">
+            <input type="text" id="usernameInput" name="ch_handle" autocomplete="off" autocorrect="off" autocapitalize="off" spellcheck="false" data-form-type="other" required minlength="3" maxlength="20" placeholder="coolname">
+            <span class="auth-field__status" id="usernameStatus"></span>
+          </div>
+          <span class="auth-field__hint">3–20 characters. Letters, numbers, dots, underscores.</span>
+        </label>
 
-function showError(msg) {
-  errorEl.textContent = msg;
-  errorEl.hidden = false;
-}
-function clearError() {
-  errorEl.hidden = true;
-  errorEl.textContent = '';
-}
+        <label class="auth-field">
+          <span>Password</span>
+          <input type="password" id="passwordInput" name="new-password" required minlength="6" autocomplete="new-password" placeholder="Min. 6 characters">
+        </label>
 
-function setUsernameStatus(state, text) {
-  usernameStatus.className = 'auth-field__status';
-  usernameStatus.textContent = text || '';
-  if (state === 'ok')  usernameStatus.classList.add('is-ok');
-  if (state === 'taken' || state === 'bad') usernameStatus.classList.add('is-bad');
-}
+        <label class="auth-field">
+          <span>Confirm password</span>
+          <input type="password" id="passwordConfirmInput" name="new-password-confirm" required minlength="6" autocomplete="new-password" placeholder="Type it again">
+        </label>
 
-function validateUsernameUI() {
-  usernameOK = false;
-  const v = usernameEl.value.trim();
-  if (v.length === 0) { setUsernameStatus('', ''); return; }
-  if (!USERNAME_RE.test(v)) {
-    setUsernameStatus('bad', '✗');
-    return;
-  }
-  setUsernameStatus('', '…');
-  clearTimeout(usernameCheckTimer);
-  usernameCheckTimer = setTimeout(async () => {
-    const res = await chAuth.checkUsernameAvailable(v);
-    if (usernameEl.value.trim() !== v) return;
-    if (res.ok) { usernameOK = true; setUsernameStatus('ok', '✓'); }
-    else if (res.reason === 'taken') { usernameOK = false; setUsernameStatus('taken', '✗'); }
-    else { usernameOK = false; setUsernameStatus('', '?'); }
-  }, 350);
-}
+        <div class="auth-error" id="authError" hidden></div>
+        <div class="auth-success" id="authSuccess" hidden></div>
 
-usernameEl.addEventListener('input', validateUsernameUI);
+        <button type="submit" class="ch-btn ch-btn--primary ch-btn--lg auth-submit" id="signupBtn">Create account</button>
+      </form>
 
-// When Chrome autofill dumps the email into the username field, clear it.
-// Fires when the field gets a value from an autofill event or on initial focus.
-function scrubAutofillIfEmail() {
-  const v = usernameEl.value;
-  if (!v) return;
-  if (v.indexOf('@') !== -1 || /^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(v)) {
-    usernameEl.value = '';
-    setUsernameStatus('', '');
-  }
-}
-usernameEl.addEventListener('focus', function () { setTimeout(scrubAutofillIfEmail, 40); });
-usernameEl.addEventListener('change', scrubAutofillIfEmail);
-// Also check periodically during the first 2 seconds after page load — autofill is async
-let scrubTries = 0;
-const scrubInterval = setInterval(function () {
-  scrubAutofillIfEmail();
-  if (++scrubTries > 20) clearInterval(scrubInterval);
-}, 100);
+      <div class="auth-divider"><span>or</span></div>
 
-$('signupForm').addEventListener('submit', async (e) => {
-  e.preventDefault();
-  clearError();
+      <button type="button" class="auth-google" id="googleBtn">
+        <svg width="18" height="18" viewBox="0 0 48 48" aria-hidden="true">
+          <path fill="#EA4335" d="M24 9.5c3.54 0 6.71 1.22 9.21 3.6l6.85-6.85C35.9 2.38 30.47 0 24 0 14.62 0 6.51 5.38 2.56 13.22l7.98 6.19C12.43 13.72 17.74 9.5 24 9.5z"/>
+          <path fill="#4285F4" d="M46.98 24.55c0-1.57-.15-3.09-.38-4.55H24v9.02h12.94c-.58 2.96-2.26 5.48-4.78 7.18l7.73 6c4.51-4.18 7.09-10.36 7.09-17.65z"/>
+          <path fill="#FBBC05" d="M10.53 28.59c-.48-1.45-.76-2.99-.76-4.59s.27-3.14.76-4.59l-7.98-6.19C.92 16.46 0 20.12 0 24c0 3.88.92 7.54 2.56 10.78l7.97-6.19z"/>
+          <path fill="#34A853" d="M24 48c6.48 0 11.93-2.13 15.89-5.81l-7.73-6c-2.15 1.45-4.92 2.3-8.16 2.3-6.26 0-11.57-4.22-13.47-9.91l-7.98 6.19C6.51 42.62 14.62 48 24 48z"/>
+        </svg>
+        Continue with Google
+      </button>
 
-  // One last scrub
-  scrubAutofillIfEmail();
+      <p class="auth-alt">
+        Already have an account? <a href="/auth/login">Sign in</a>
+      </p>
+    </div>
+  </div>
 
-  const email = emailEl.value.trim();
-  const username = usernameEl.value.trim();
-  const pw = passwordEl.value;
-  const pw2 = passwordConfirmEl.value;
+  <div class="auth-motif-bottom ch-motif-strip" aria-hidden="true"></div>
 
-  if (!USERNAME_RE.test(username)) {
-    showError('Username must be 3–20 chars: letters, numbers, dots, underscores.');
-    return;
-  }
-  if (pw.length < 6) { showError('Password must be at least 6 characters.'); return; }
-  if (pw !== pw2)    { showError('Passwords don\'t match.'); return; }
-
-  submitBtn.disabled = true;
-  submitBtn.textContent = 'Creating…';
-
-  const result = await chAuth.signUp(email, pw, username);
-  if (!result.ok) {
-    submitBtn.disabled = false;
-    submitBtn.textContent = 'Create account';
-    showError(result.error);
-    return;
-  }
-
-  location.href = '/user/dashboard';
-});
-
-(async () => {
-  const { data: { session } } = await chAuth.client.auth.getSession();
-  if (session) location.href = '/user/dashboard';
-})();
+  <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.45.0/dist/umd/supabase.min.js"></script>
+  <script src="/supabase-config.js"></script>
+  <script src="/shared.js"></script>
+  <script src="/auth.js"></script>
+  <script src="/signup.js"></script>
+</body>
+</html>
