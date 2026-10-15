@@ -18,32 +18,85 @@
 
       <header class="settings-hero">
         <h1 class="settings-hero__title">Account Settings</h1>
-        <p class="settings-hero__sub">Manage your Cloud Hub account.</p>
+        <p class="settings-hero__sub">Manage your profile, identity, and account.</p>
       </header>
 
+      <!-- Profile -->
       <section class="settings-card">
         <div class="settings-card__head">
-          <h2 class="settings-card__title">Your Account</h2>
+          <h2 class="settings-card__title">Profile</h2>
         </div>
-        <div class="settings-account" id="accountInfo">
-          <div class="settings-account__avatar" id="accountAvatar">—</div>
-          <div class="settings-account__body">
-            <div class="settings-account__row">
-              <span class="settings-account__label">Username</span>
-              <span class="settings-account__value" id="accountUsername">—</span>
+
+        <div class="settings-profile">
+          <button type="button" class="settings-avatar" id="avatarBtn" aria-label="Change avatar">
+            <div class="settings-avatar__img" id="avatarImg"></div>
+            <div class="settings-avatar__overlay">
+              <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round">
+                <path d="M23 19a2 2 0 0 1-2 2H3a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h4l2-3h6l2 3h4a2 2 0 0 1 2 2z"/>
+                <circle cx="12" cy="13" r="4"/>
+              </svg>
+              <span>Change</span>
             </div>
-            <div class="settings-account__row">
-              <span class="settings-account__label">User ID</span>
-              <span class="settings-account__value" id="accountUserId">—</span>
-            </div>
-            <div class="settings-account__row">
-              <span class="settings-account__label">Email</span>
-              <span class="settings-account__value" id="accountEmail">—</span>
-            </div>
+          </button>
+
+          <div class="settings-profile__fields">
+            <label class="settings-field">
+              <span>Username</span>
+              <div class="settings-field__row">
+                <input type="text" id="usernameInput" maxlength="20" autocomplete="off" autocorrect="off" autocapitalize="off" spellcheck="false" data-form-type="other">
+                <span class="settings-field__status" id="usernameStatus"></span>
+              </div>
+              <span class="settings-field__hint">Used in your profile URL: /user/&lt;username&gt;</span>
+            </label>
+
+            <label class="settings-field">
+              <span>Display Name</span>
+              <input type="text" id="displayNameInput" maxlength="40" autocomplete="off" placeholder="What people see on your profile">
+            </label>
+
+            <label class="settings-field">
+              <span>Bio</span>
+              <textarea id="bioInput" maxlength="200" rows="3" placeholder="Tell people about yourself."></textarea>
+              <span class="settings-field__hint"><span id="bioCount">0</span>/200</span>
+            </label>
+          </div>
+        </div>
+
+        <div class="settings-error" id="profileError" hidden></div>
+
+        <div class="settings-actions">
+          <button type="button" class="ch-btn ch-btn--primary" id="saveProfileBtn">Save changes</button>
+          <button type="button" class="ch-btn ch-btn--quiet" id="resetProfileBtn">Reset</button>
+        </div>
+      </section>
+
+      <!-- Account -->
+      <section class="settings-card">
+        <div class="settings-card__head">
+          <h2 class="settings-card__title">Account</h2>
+        </div>
+
+        <div class="settings-account">
+          <div class="settings-account__row">
+            <span class="settings-account__label">User ID</span>
+            <span class="settings-account__value" id="accountUserId">—</span>
+          </div>
+          <div class="settings-account__row">
+            <span class="settings-account__label">Email</span>
+            <span class="settings-account__value" id="accountEmail">—</span>
+          </div>
+          <div class="settings-account__row">
+            <span class="settings-account__label">Signed in with</span>
+            <span class="settings-account__value" id="accountMethod">—</span>
+          </div>
+          <div class="settings-account__row">
+            <span class="settings-account__label">Email status</span>
+            <span class="settings-account__value" id="accountEmailStatus">—</span>
           </div>
         </div>
       </section>
 
+      <!-- Danger -->
       <section class="settings-card settings-card--danger">
         <div class="settings-card__head">
           <h2 class="settings-card__title settings-card__title--danger">Danger Zone</h2>
@@ -78,7 +131,42 @@
 
   <div id="ch-footer-mount"></div>
 
-  <!-- ==================== Delete confirm modal ==================== -->
+  <!-- Avatar modal -->
+  <div class="settings-modal" id="avatarModal">
+    <div class="settings-modal__inner settings-modal__inner--avatar">
+      <h2 class="settings-modal__title" style="text-align:left;">Change avatar</h2>
+
+      <div class="settings-tabs">
+        <button type="button" class="settings-tab is-active" data-tab="upload">Upload</button>
+        <button type="button" class="settings-tab" data-tab="library">Library</button>
+      </div>
+
+      <div class="settings-tab-panel is-active" data-panel="upload">
+        <label class="settings-dropzone" id="dropzone">
+          <input type="file" id="avatarFileInput" accept="image/*" hidden>
+          <svg width="38" height="38" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round">
+            <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/>
+            <polyline points="17 8 12 3 7 8"/>
+            <line x1="12" y1="3" x2="12" y2="15"/>
+          </svg>
+          <span class="settings-dropzone__title">Click or drag an image here</span>
+          <span class="settings-dropzone__hint">PNG, JPG, WEBP, GIF · max 4 MB</span>
+        </label>
+      </div>
+
+      <div class="settings-tab-panel" data-panel="library">
+        <div class="settings-avatar-grid" id="avatarGrid"></div>
+      </div>
+
+      <div class="settings-modal__error" id="avatarError" hidden></div>
+
+      <div class="settings-modal__actions">
+        <button type="button" class="ch-btn ch-btn--quiet" id="avatarCancel">Cancel</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Delete modal -->
   <div class="settings-modal" id="deleteModal">
     <div class="settings-modal__inner">
       <div class="settings-modal__icon">
@@ -99,25 +187,14 @@
         To confirm, type your username <code id="modalUsernamePrompt">username</code> below.
       </div>
 
-      <input
-        type="text"
-        id="confirmUsername"
-        class="settings-modal__input"
-        placeholder="Type your username"
-        autocomplete="off"
-        autocorrect="off"
-        autocapitalize="off"
-        spellcheck="false"
-        data-form-type="other"
-      >
+      <input type="text" id="confirmUsername" class="settings-modal__input" placeholder="Type your username"
+             autocomplete="off" autocorrect="off" autocapitalize="off" spellcheck="false" data-form-type="other">
 
       <div class="settings-modal__error" id="modalError" hidden></div>
 
       <div class="settings-modal__actions">
         <button type="button" class="ch-btn ch-btn--quiet" id="cancelDelete">Cancel</button>
-        <button type="button" class="settings-modal__danger-btn" id="confirmDelete" disabled>
-          Permanently delete
-        </button>
+        <button type="button" class="settings-modal__danger-btn" id="confirmDelete" disabled>Permanently delete</button>
       </div>
     </div>
   </div>
