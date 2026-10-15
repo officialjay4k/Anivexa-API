@@ -1,1 +1,53 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Sign In — Cloud Hub</title>
+  <link rel="icon" type="image/png" href="/favicon.png">
+  <link rel="apple-touch-icon" href="/apple-touch-icon.png">
+  <link rel="stylesheet" href="/shared.css">
+  <link rel="stylesheet" href="/auth.css">
+</head>
+<body class="auth-body">
 
+  <a href="/" class="auth-logo">
+    <img src="/logo.png" alt="Cloud Hub">
+  </a>
+
+  <div class="auth-shell">
+    <div class="auth-card">
+      <h1 class="auth-title">Welcome back</h1>
+      <p class="auth-sub">Sign in to keep watching where you left off.</p>
+
+      <form class="auth-form" id="loginForm" autocomplete="on">
+        <label class="auth-field">
+          <span>Email</span>
+          <input type="email" id="emailInput" required autocomplete="email" placeholder="you@example.com">
+        </label>
+
+        <label class="auth-field">
+          <span>Password</span>
+          <input type="password" id="passwordInput" required autocomplete="current-password">
+        </label>
+
+        <div class="auth-error" id="authError" hidden></div>
+
+        <button type="submit" class="ch-btn ch-btn--primary ch-btn--lg auth-submit" id="loginBtn">Sign in</button>
+      </form>
+
+      <p class="auth-alt">
+        New here? <a href="/auth/signup">Create an account</a>
+      </p>
+    </div>
+  </div>
+
+  <div class="auth-motif-bottom ch-motif-strip" aria-hidden="true"></div>
+
+  <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.45.0/dist/umd/supabase.min.js"></script>
+  <script src="/supabase-config.js"></script>
+  <script src="/shared.js"></script>
+  <script src="/auth.js"></script>
+  <script src="/login.js"></script>
+</body>
+</html>
