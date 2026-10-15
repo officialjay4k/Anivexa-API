@@ -40,16 +40,16 @@ function chFormatTimeUntil(unixSec) {
   if (diff < 86400) return `in ${Math.floor(diff / 3600)}h`;
   return `in ${Math.floor(diff / 86400)}d`;
 }
+
+// Kept for backward-compat. Now prefers the live Supabase session.
 function chIsSignedIn() {
+  if (window.chAuth && chAuth.user) return true;
   try {
     const u = JSON.parse(localStorage.getItem(CH.STORAGE_USER) || 'null');
     return !!(u && u.username);
   } catch { return false; }
 }
-function chGetUser() {
-  try { return JSON.parse(localStorage.getItem(CH.STORAGE_USER) || 'null'); }
-  catch { return null; }
-}
+
 function chResumeInfo(anilistId) {
   const fallback = { label: 'Watch Now', href: `/watch?id=${anilistId}&ep=1&lang=dub`, isResume: false, isRewatch: false };
   if (!anilistId) return fallback;
@@ -69,6 +69,7 @@ function chResumeInfo(anilistId) {
   return { label: 'Resume Watching', href, isResume: true, isRewatch: false };
 }
 
+// ---------- page loader ----------
 let chPageLoaderEl = null;
 let chPageReadyFired = false;
 function chPageReady() {
@@ -79,10 +80,10 @@ function chPageReady() {
 }
 (function initPageLoader() {
   if (document.getElementById('chPageLoader')) return;
-  // Don't show the loader on the auth pages
   if (document.body && document.body.classList.contains('auth-body')) return;
   function create() {
     if (document.getElementById('chPageLoader')) return;
+    if (document.body.classList.contains('auth-body')) return;
     chPageLoaderEl = document.createElement('div');
     chPageLoaderEl.id = 'chPageLoader';
     chPageLoaderEl.className = 'ch-page-loader';
@@ -105,33 +106,57 @@ function chPageReady() {
   else document.addEventListener('DOMContentLoaded', create);
 })();
 
-function mountHeader() {
+// ---------- header ----------
+async function mountHeader() {
   const mount = document.getElementById('ch-header-mount');
   if (!mount) return;
+
+  // Ensure auth is fresh
+  let user = null;
+  let profile = null;
+  if (window.chAuth) {
+    try {
+      const r = await chAuth.refresh();
+      user = r.user;
+      profile = r.profile;
+    } catch (e) {
+      console.warn('[shared] auth refresh failed:', e);
+    }
+  }
+
   const path = window.location.pathname;
   const active = (p) => path === p ? ' is-active' : '';
-  const signedIn = chIsSignedIn();
-  const user = chGetUser();
+
   let navRight = '';
-  if (signedIn) {
-    const initial = (user?.username || 'U').charAt(0).toUpperCase();
+  if (user) {
+    const initial = ((profile?.username || user.email || 'U').charAt(0) || 'U').toUpperCase();
+    const avatarUrl = profile?.avatar_url || '';
+    const displayName = profile?.username || 'User';
+    const userId = profile?.user_id ? chAuth.formatUserId(profile.user_id) : '';
+    const avatarInner = avatarUrl
+      ? `<img src="${chEscapeHtml(avatarUrl)}" alt="">`
+      : `<span style="font-weight:800;color:#fff;">${chEscapeHtml(initial)}</span>`;
     navRight = `
       <div class="ch-pfp-wrap" id="chPfpWrap">
         <button type="button" class="ch-header__avatar" id="chPfpBtn" aria-label="Profile menu">
-          <img src="/user-placeholder.png" alt="" onerror="this.style.display='none'; this.parentNode.innerHTML='<span style=\\'font-weight:800;color:#fff\\'>${initial}</span>'">
+          ${avatarInner}
         </button>
         <div class="ch-pfp-menu" id="chPfpMenu">
           <div class="ch-pfp-menu__head">
-            <div class="ch-pfp-menu__name">${chEscapeHtml(user?.username || 'User')}</div>
-            <div class="ch-pfp-menu__sub">${chEscapeHtml(user?.email || 'Signed in')}</div>
+            <div class="ch-pfp-menu__name">${chEscapeHtml(displayName)}${userId ? ' <span style="color:var(--ch-fg-subtle);font-weight:700">#' + chEscapeHtml(userId) + '</span>' : ''}</div>
+            <div class="ch-pfp-menu__sub">${chEscapeHtml(user.email || 'Signed in')}</div>
           </div>
-          <a href="/settings" class="ch-pfp-menu__item">
+          <a href="/user/settings" class="ch-pfp-menu__item">
             <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09a1.65 1.65 0 0 0-1.08-1.51 1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09a1.65 1.65 0 0 0 1.51-1.08 1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1.08z"/></svg>
             Settings
           </a>
-          <a href="/dashboard" class="ch-pfp-menu__item">
+          <a href="/user/dashboard" class="ch-pfp-menu__item">
             <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="7" height="7"/><rect x="14" y="3" width="7" height="7"/><rect x="14" y="14" width="7" height="7"/><rect x="3" y="14" width="7" height="7"/></svg>
             Dashboard
+          </a>
+          <a href="/user/${chEscapeHtml(displayName)}" class="ch-pfp-menu__item">
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/></svg>
+            View Profile
           </a>
           <button type="button" class="ch-pfp-menu__item ch-pfp-menu__item--danger" id="chLogout">
             <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"/><polyline points="16 17 21 12 16 7"/><line x1="21" y1="12" x2="9" y2="12"/></svg>
@@ -140,8 +165,9 @@ function mountHeader() {
         </div>
       </div>`;
   } else {
-    navRight = `<a href="/settings" class="ch-btn ch-btn--primary ch-btn--sm">Sign In</a>`;
+    navRight = `<a href="/auth/login" class="ch-btn ch-btn--primary ch-btn--sm">Sign In</a>`;
   }
+
   mount.innerHTML = `
     <header class="ch-header">
       <div class="ch-motif-strip"></div>
@@ -169,12 +195,13 @@ function mountHeader() {
         </form>
         <nav class="ch-header__nav">
           <a href="/home" class="ch-header__link${active('/home')}">Home</a>
-          <a href="/dashboard" class="ch-header__link${active('/dashboard')}">Dashboard</a>
+          <a href="/user/dashboard" class="ch-header__link${active('/user/dashboard')}">Dashboard</a>
           ${navRight}
         </nav>
       </div>
     </header>
   `;
+
   const form = document.getElementById('chSearchForm');
   const input = document.getElementById('chSearchInput');
   if (form && input) {
@@ -187,6 +214,7 @@ function mountHeader() {
       window.location.href = `/home?q=${encodeURIComponent(v)}`;
     });
   }
+
   const filterBtn = document.getElementById('chSearchFilter');
   if (filterBtn) {
     filterBtn.addEventListener('click', (e) => {
@@ -195,6 +223,7 @@ function mountHeader() {
       showToast('Filters coming soon');
     });
   }
+
   const pfpBtn = document.getElementById('chPfpBtn');
   const pfpMenu = document.getElementById('chPfpMenu');
   if (pfpBtn && pfpMenu) {
@@ -203,8 +232,17 @@ function mountHeader() {
       if (!pfpMenu.contains(e.target) && e.target !== pfpBtn) pfpMenu.classList.remove('is-open');
     });
   }
+
   const logout = document.getElementById('chLogout');
-  if (logout) logout.addEventListener('click', () => { localStorage.removeItem(CH.STORAGE_USER); window.location.reload(); });
+  if (logout) {
+    logout.addEventListener('click', async () => {
+      try {
+        if (window.chAuth) await chAuth.signOut();
+      } catch (e) {}
+      localStorage.removeItem(CH.STORAGE_USER);
+      window.location.href = '/home';
+    });
+  }
 }
 
 function mountFooter() {
@@ -226,8 +264,8 @@ function mountFooter() {
         </div>
         <div class="ch-footer__col">
           <h4>Account</h4>
-          <a href="/settings">Settings</a>
-          <a href="/dashboard">Dashboard</a>
+          <a href="/user/settings">Settings</a>
+          <a href="/user/dashboard">Dashboard</a>
         </div>
         <div class="ch-footer__col">
           <h4>Info</h4>
@@ -323,7 +361,11 @@ window.mountInlineReport = mountInlineReport;
 window.openReportModal = openReportModal;
 window.chPageReady = chPageReady;
 
-document.addEventListener('DOMContentLoaded', () => {
+document.addEventListener('DOMContentLoaded', async () => {
+  // Wait for auth if available
+  if (window.chAuth) {
+    try { await chAuth.refresh(); } catch (e) {}
+  }
   mountHeader();
   mountFooter();
 });
