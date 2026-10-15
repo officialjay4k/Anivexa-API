@@ -1,6 +1,5 @@
 // ============================================================
 // Cloud Hub — supabase-config.js
-// Load before auth.js. Only the anon key belongs in the frontend.
 // ============================================================
 
 const SUPABASE_URL = 'https://xddljjtxbssmyyzvhxcm.supabase.co';
@@ -11,7 +10,7 @@ if (window.supabase && window.supabase.createClient) {
     auth: {
       persistSession: true,
       autoRefreshToken: true,
-      detectSessionInUrl: false,
+      detectSessionInUrl: true,
       storageKey: 'cloudhub-auth'
     }
   });
