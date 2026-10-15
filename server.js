@@ -10,7 +10,6 @@ const BASE  = process.env.BASE_PATH ?? "";
 const __dir = dirname(fileURLToPath(import.meta.url));
 const DOCS  = join(__dir, "docs");
 
-// Friendly routes
 const PAGE_ROUTES = {
   "/":               "landing.html",
   "/home":           "home.html",
@@ -20,6 +19,7 @@ const PAGE_ROUTES = {
   "/test":           "test.html",
   "/auth/signup":    "signup.html",
   "/auth/login":     "login.html",
+  "/auth/callback":  "callback.html",
   "/user/settings":  "settings.html",
   "/user/dashboard": "dashboard.html"
 };
@@ -71,8 +71,7 @@ function serveStatic(res, filename) {
 
 function matchStaticRoute(pathname) {
   if (PAGE_ROUTES[pathname]) return PAGE_ROUTES[pathname];
-  // Public profile: /user/{username}
-  if (/^\/user\/[A-Za-z0-9_-]{1,32}\/?$/.test(pathname)) return "profile.html";
+  if (/^\/user\/[A-Za-z0-9_.-]{1,32}\/?$/.test(pathname)) return "profile.html";
   const m = pathname.match(/^\/([a-zA-Z0-9_\-./]+\.(?:html|css|js|mjs|json|svg|png|jpg|jpeg|webp|gif|ico|woff2?|txt))$/i);
   if (m) return m[1];
   return null;
