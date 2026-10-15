@@ -20,29 +20,29 @@
       <h1 class="auth-title">Create account</h1>
       <p class="auth-sub">Join Cloud Hub — track your shows, keep your progress, and share your stats.</p>
 
-      <form class="auth-form" id="signupForm" autocomplete="on">
+      <form class="auth-form" id="signupForm" autocomplete="off">
         <label class="auth-field">
           <span>Email</span>
-          <input type="email" id="emailInput" required autocomplete="email" placeholder="you@example.com">
+          <input type="email" id="emailInput" name="email" required autocomplete="email" placeholder="you@example.com">
         </label>
 
         <label class="auth-field">
           <span>Username</span>
           <div class="auth-field__row">
-            <input type="text" id="usernameInput" required minlength="3" maxlength="20" autocomplete="username" placeholder="coolname">
+            <input type="text" id="usernameInput" name="ch_handle" autocomplete="off" autocorrect="off" autocapitalize="off" spellcheck="false" data-form-type="other" required minlength="3" maxlength="20" placeholder="coolname">
             <span class="auth-field__status" id="usernameStatus"></span>
           </div>
-          <span class="auth-field__hint">3–20 characters. Letters, numbers, underscores.</span>
+          <span class="auth-field__hint">3–20 characters. Letters, numbers, dots, underscores.</span>
         </label>
 
         <label class="auth-field">
           <span>Password</span>
-          <input type="password" id="passwordInput" required minlength="6" autocomplete="new-password" placeholder="Min. 6 characters">
+          <input type="password" id="passwordInput" name="new-password" required minlength="6" autocomplete="new-password" placeholder="Min. 6 characters">
         </label>
 
         <label class="auth-field">
           <span>Confirm password</span>
-          <input type="password" id="passwordConfirmInput" required minlength="6" autocomplete="new-password">
+          <input type="password" id="passwordConfirmInput" name="new-password-confirm" required minlength="6" autocomplete="new-password" placeholder="Type it again">
         </label>
 
         <div class="auth-error" id="authError" hidden></div>
