@@ -10,14 +10,18 @@ const BASE  = process.env.BASE_PATH ?? "";
 const __dir = dirname(fileURLToPath(import.meta.url));
 const DOCS  = join(__dir, "docs");
 
+// Friendly routes
 const PAGE_ROUTES = {
-  "/":         "landing.html",
-  "/home":     "home.html",
-  "/preview":  "preview.html",
-  "/watch":    "watch.html",
-  "/settings": "settings.html",
-  "/user":     "user.html",
-  "/test":     "test.html",
+  "/":               "landing.html",
+  "/home":           "home.html",
+  "/preview":        "preview.html",
+  "/watch":          "watch.html",
+  "/settings":       "settings.html",
+  "/test":           "test.html",
+  "/auth/signup":    "signup.html",
+  "/auth/login":     "login.html",
+  "/user/settings":  "settings.html",
+  "/user/dashboard": "dashboard.html"
 };
 
 const MIME = {
@@ -35,7 +39,7 @@ const MIME = {
   ico:  "image/x-icon",
   woff: "font/woff",
   woff2:"font/woff2",
-  txt:  "text/plain; charset=utf-8",
+  txt:  "text/plain; charset=utf-8"
 };
 
 function serveStatic(res, filename) {
@@ -55,9 +59,8 @@ function serveStatic(res, filename) {
     const body = readFileSync(full);
     res.writeHead(200, {
       "Content-Type": mime,
-      // ← CHANGED: no-store so updated images/files always show during dev
       "Cache-Control": "no-store",
-      "Access-Control-Allow-Origin": "*",
+      "Access-Control-Allow-Origin": "*"
     });
     res.end(body);
   } catch (e) {
@@ -68,6 +71,8 @@ function serveStatic(res, filename) {
 
 function matchStaticRoute(pathname) {
   if (PAGE_ROUTES[pathname]) return PAGE_ROUTES[pathname];
+  // Public profile: /user/{username}
+  if (/^\/user\/[A-Za-z0-9_-]{1,32}\/?$/.test(pathname)) return "profile.html";
   const m = pathname.match(/^\/([a-zA-Z0-9_\-./]+\.(?:html|css|js|mjs|json|svg|png|jpg|jpeg|webp|gif|ico|woff2?|txt))$/i);
   if (m) return m[1];
   return null;
@@ -97,7 +102,8 @@ function decodeIfEncrypted(raw, key) {
 const FLIXCLOUD_HOSTS = [
   "flixcloud.cc", "fallencdn.top", "glaciercdn.top", "vortexcdn.top",
   "rundowncdn.top", "lunarcdn.top", "sirencdn.top", "blazecdn.top",
-  "orbitcdn.top", "nebulacdn.top", "matrixcdn.top"
+  "orbitcdn.top", "nebulacdn.top", "matrixcdn.top", "vividcdn.top",
+  "cobaltcdn.top"
 ];
 
 const DEFAULT_USER_AGENT = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36";
