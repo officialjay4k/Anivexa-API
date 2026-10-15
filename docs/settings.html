@@ -1,0 +1,131 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Settings — Cloud Hub</title>
+  <link rel="icon" type="image/png" href="/favicon.png">
+  <link rel="apple-touch-icon" href="/apple-touch-icon.png">
+  <link rel="stylesheet" href="/shared.css">
+  <link rel="stylesheet" href="/settings.css">
+</head>
+<body>
+
+  <div id="ch-header-mount"></div>
+
+  <main class="settings-main">
+    <div class="ch-container settings-container">
+
+      <header class="settings-hero">
+        <h1 class="settings-hero__title">Account Settings</h1>
+        <p class="settings-hero__sub">Manage your Cloud Hub account.</p>
+      </header>
+
+      <section class="settings-card">
+        <div class="settings-card__head">
+          <h2 class="settings-card__title">Your Account</h2>
+        </div>
+        <div class="settings-account" id="accountInfo">
+          <div class="settings-account__avatar" id="accountAvatar">—</div>
+          <div class="settings-account__body">
+            <div class="settings-account__row">
+              <span class="settings-account__label">Username</span>
+              <span class="settings-account__value" id="accountUsername">—</span>
+            </div>
+            <div class="settings-account__row">
+              <span class="settings-account__label">User ID</span>
+              <span class="settings-account__value" id="accountUserId">—</span>
+            </div>
+            <div class="settings-account__row">
+              <span class="settings-account__label">Email</span>
+              <span class="settings-account__value" id="accountEmail">—</span>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <section class="settings-card settings-card--danger">
+        <div class="settings-card__head">
+          <h2 class="settings-card__title settings-card__title--danger">Danger Zone</h2>
+        </div>
+
+        <div class="settings-danger">
+          <h3 class="settings-danger__title">Delete your account</h3>
+
+          <div class="settings-danger__warn">
+            <strong>Read this first.</strong> Deleting your account is permanent and cannot be undone.
+          </div>
+
+          <ul class="settings-danger__list">
+            <li>Your profile, username, and avatar will be erased</li>
+            <li>Your stats, tier, and rank will be permanently lost</li>
+            <li>Your entire watchlist — watching, completed, planned, dropped — will be deleted</li>
+            <li>All notifications will be removed</li>
+            <li>You will be signed out immediately</li>
+          </ul>
+
+          <button type="button" class="settings-danger__btn" id="openDeleteModal">
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round">
+              <path d="M3 6h18"/><path d="M8 6V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/><path d="M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6"/><line x1="10" y1="11" x2="10" y2="17"/><line x1="14" y1="11" x2="14" y2="17"/>
+            </svg>
+            Delete my account
+          </button>
+        </div>
+      </section>
+
+    </div>
+  </main>
+
+  <div id="ch-footer-mount"></div>
+
+  <!-- ==================== Delete confirm modal ==================== -->
+  <div class="settings-modal" id="deleteModal">
+    <div class="settings-modal__inner">
+      <div class="settings-modal__icon">
+        <svg width="40" height="40" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
+          <path d="M10.29 3.86 1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"/>
+          <line x1="12" y1="9" x2="12" y2="14"/>
+          <circle cx="12" cy="17.5" r="0.6" fill="currentColor" stroke="none"/>
+        </svg>
+      </div>
+
+      <h2 class="settings-modal__title">Delete account permanently?</h2>
+      <p class="settings-modal__sub">
+        This action is <strong>irreversible</strong>. All data associated with
+        <strong id="modalUsernameEcho">your account</strong> will be erased from Cloud Hub.
+      </p>
+
+      <div class="settings-modal__warn-block">
+        To confirm, type your username <code id="modalUsernamePrompt">username</code> below.
+      </div>
+
+      <input
+        type="text"
+        id="confirmUsername"
+        class="settings-modal__input"
+        placeholder="Type your username"
+        autocomplete="off"
+        autocorrect="off"
+        autocapitalize="off"
+        spellcheck="false"
+        data-form-type="other"
+      >
+
+      <div class="settings-modal__error" id="modalError" hidden></div>
+
+      <div class="settings-modal__actions">
+        <button type="button" class="ch-btn ch-btn--quiet" id="cancelDelete">Cancel</button>
+        <button type="button" class="settings-modal__danger-btn" id="confirmDelete" disabled>
+          Permanently delete
+        </button>
+      </div>
+    </div>
+  </div>
+
+  <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.45.0/dist/umd/supabase.min.js"></script>
+  <script src="/supabase-config.js"></script>
+  <script src="/shared.js"></script>
+  <script src="/auth.js"></script>
+  <script src="/settings.js"></script>
+</body>
+</html>
