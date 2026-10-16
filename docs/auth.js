@@ -74,23 +74,34 @@ const chAuth = (() => {
     if (tErr) return { ok: false, error: 'Could not check username: ' + tErr.message };
     if (taken) return { ok: false, error: 'That username is already taken.' };
 
-    const { data, error } = await sb.auth.signUp({ email, password });
+    const { data, error } = await sb.auth.signUp({
+      email,
+      password,
+      options: {
+        data: {
+          username: clean,
+          display_name: clean
+        }
+      }
+    });
     if (error) return { ok: false, error: error.message };
     const user = data.user;
     if (!user) return { ok: false, error: 'Signup succeeded but no user returned.' };
 
-    // If email confirmation is ON, session will be null until they confirm.
+    // Email confirmation ON — no session yet. The username is carried in
+    // raw_user_meta_data and the caller is responsible for showing the OTP
+    // entry panel; on verify we'll ensure the profile has the right username.
     if (!data.session) {
       return {
         ok: true,
         needsEmailConfirm: true,
         user: user,
         profile: null,
-        message: 'Check your email for a confirmation link, then sign in.'
+        message: 'Check your email for a confirmation code, then enter it here.'
       };
     }
 
-    // Update the placeholder username created by the trigger.
+    // Email confirmation OFF — session is live right now.
     let upErr = null;
     for (let i = 0; i < 2; i++) {
       const r = await sb.from('profiles').update({ username: clean }).eq('id', user.id);
@@ -108,7 +119,7 @@ const chAuth = (() => {
     const { error } = await sb.auth.signInWithPassword({ email, password });
     if (error) {
       if (/email not confirmed/i.test(error.message)) {
-        return { ok: false, error: 'Please confirm your email first — check your inbox for the link.', code: 'EMAIL_NOT_CONFIRMED' };
+        return { ok: false, error: 'Please confirm your email first — check your inbox for the code.', code: 'EMAIL_NOT_CONFIRMED' };
       }
       return { ok: false, error: error.message };
     }
