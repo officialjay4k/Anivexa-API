@@ -24,196 +24,21 @@ const chPlayer = (function () {
   let currentAudioPref = 'dub';
   let settingsRef = null;
 
-  // Cleaner icons: outline circle arrow with a solid "5" in the middle.
-  const ICON_REW = `
-    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 40 40" style="width:32px;height:32px;display:block;">
-      <path d="M14 8 L6 16 L14 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"/>
-      <path d="M6 16 H22 A10 10 0 1 1 12 26" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round" opacity="0.55"/>
-      <text x="24" y="27" text-anchor="middle" font-size="15" font-weight="900" font-family="system-ui, sans-serif" fill="currentColor" stroke="none">5</text>
-    </svg>`;
-  const ICON_FWD = `
-    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 40 40" style="width:32px;height:32px;display:block;">
-      <path d="M26 8 L34 16 L26 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"/>
-      <path d="M34 16 H18 A10 10 0 1 0 28 26" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round" opacity="0.55"/>
-      <text x="16" y="27" text-anchor="middle" font-size="15" font-weight="900" font-family="system-ui, sans-serif" fill="currentColor" stroke="none">5</text>
-    </svg>`;
+  const ICON_REW = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 40 40" style="width:32px;height:32px;display:block;"><path d="M14 8 L6 16 L14 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"/><path d="M6 16 H22 A10 10 0 1 1 12 26" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round" opacity="0.55"/><text x="24" y="27" text-anchor="middle" font-size="15" font-weight="900" font-family="system-ui, sans-serif" fill="currentColor" stroke="none">5</text></svg>`;
+  const ICON_FWD = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 40 40" style="width:32px;height:32px;display:block;"><path d="M26 8 L34 16 L26 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"/><path d="M34 16 H18 A10 10 0 1 0 28 26" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round" opacity="0.55"/><text x="16" y="27" text-anchor="middle" font-size="15" font-weight="900" font-family="system-ui, sans-serif" fill="currentColor" stroke="none">5</text></svg>`;
 
-  function ensurePreviewTooltip() {
-    let el = document.querySelector('.watch-preview-tip');
-    if (el) return el;
-    el = document.createElement('div');
-    el.className = 'watch-preview-tip';
-    el.innerHTML = '<video muted playsinline preload="auto"></video><div class="watch-preview-tip__time">0:00</div>';
-    document.body.appendChild(el);
-    return el;
-  }
-
-  function destroyPreview() {
-    if (previewHls) { try { previewHls.destroy(); } catch (e) {} previewHls = null; }
-    const el = document.querySelector('.watch-preview-tip');
-    if (el) {
-      const v = el.querySelector('video');
-      try { v.pause(); v.removeAttribute('src'); v.load(); } catch (e) {}
-      el.style.display = 'none';
-    }
-  }
-
-  function initPreview(streamUrl, isMp4) {
-    destroyPreview();
-    const el = ensurePreviewTooltip();
-    const video = el.querySelector('video');
-    if (isMp4) { video.src = streamUrl; return; }
-    if (window.Hls && Hls.isSupported()) {
-      const h = new Hls({ enableWorker: true, autoStartLoad: false, capLevelToPlayerSize: true });
-      previewHls = h;
-      h.loadSource(streamUrl);
-      h.attachMedia(video);
-      h.startLoad(-1);
-    }
-  }
-
-  function onProgressMove(e) {
-    const progressEl = art && art.template && art.template.$progress;
-    if (!progressEl || !art.duration || !isFinite(art.duration)) return;
-    const rect = progressEl.getBoundingClientRect();
-    const ratio = Math.max(0, Math.min(1, (e.clientX - rect.left) / rect.width));
-    const t = ratio * art.duration;
-    const tip = ensurePreviewTooltip();
-    const timeEl = tip.querySelector('.watch-preview-tip__time');
-    const video = tip.querySelector('video');
-    timeEl.textContent = chFormatTime(t);
-    const now = Date.now();
-    if (now - previewLastSeek > 80) {
-      previewLastSeek = now;
-      try { video.currentTime = t; } catch (e) {}
-    }
-    const tipW = 184;
-    let left = rect.left + rect.width * ratio - tipW / 2;
-    left = Math.max(8, Math.min(window.innerWidth - tipW - 8, left));
-    const top = rect.top - 130;
-    tip.style.left = left + 'px';
-    tip.style.top = Math.max(8, top) + 'px';
-    tip.style.display = 'block';
-    if (previewHideTimer) { clearTimeout(previewHideTimer); previewHideTimer = null; }
-  }
-  function onProgressLeave() {
-    if (previewHideTimer) clearTimeout(previewHideTimer);
-    previewHideTimer = setTimeout(function () {
-      const tip = document.querySelector('.watch-preview-tip');
-      if (tip) tip.style.display = 'none';
-    }, 140);
-  }
-  function attachPreview() {
-    const progressEl = art && art.template && art.template.$progress;
-    if (!progressEl) return;
-    progressEl.addEventListener('mousemove', onProgressMove);
-    progressEl.addEventListener('mouseleave', onProgressLeave);
-  }
-
-  function mountSkipButton() {
-    const playerEl = art && art.template && art.template.$player;
-    if (!playerEl) return;
-    const old = playerEl.querySelector('.watch-skip-btn');
-    if (old) old.remove();
-    skipBtn = document.createElement('button');
-    skipBtn.className = 'watch-skip-btn';
-    skipBtn.type = 'button';
-    skipBtn.textContent = 'Skip Intro ➔';
-    playerEl.appendChild(skipBtn);
-  }
-
-  function updateSkipButton() {
-    if (!art || !art.video) return;
-    const t = art.video.currentTime;
-    const inOp = skipIntervals.op && t >= skipIntervals.op.startTime && t < skipIntervals.op.endTime;
-    const inEd = skipIntervals.ed && t >= skipIntervals.ed.startTime && t < skipIntervals.ed.endTime;
-    if (!inOp && !inEd) {
-      if (skipBtn) skipBtn.style.display = 'none';
-      skipFired.op = false; skipFired.ed = false;
-      return;
-    }
-    const interval = inOp ? skipIntervals.op : skipIntervals.ed;
-    const label = inOp ? 'Intro' : 'Outro';
-    const key = inOp ? 'op' : 'ed';
-    const autoSkip = !!(settingsRef && settingsRef.autoSkip);
-    if (autoSkip) {
-      if (!skipFired[key]) { skipFired[key] = true; art.currentTime = interval.endTime; }
-      if (skipBtn) skipBtn.style.display = 'none';
-      return;
-    }
-    if (skipBtn) {
-      skipBtn.textContent = 'Skip ' + label + ' ➔';
-      skipBtn.style.display = 'block';
-      skipBtn.onclick = function (e) { e.stopPropagation(); art.currentTime = interval.endTime; };
-    }
-  }
-
-  function mountMarkers() {
-    if (!art || !art.template || !art.template.$progress) return;
-    const inner = art.template.$progress.querySelector('.art-control-progress-inner');
-    if (!inner) return;
-    inner.querySelectorAll('.watch-marker').forEach(function (el) { el.remove(); });
-    if (!art.duration || !isFinite(art.duration)) return;
-    function add(interval, label) {
-      if (!interval) return;
-      const start = Math.max(0, interval.startTime);
-      const end = Math.min(art.duration, interval.endTime);
-      if (end <= start) return;
-      const left = (start / art.duration) * 100;
-      const width = ((end - start) / art.duration) * 100;
-      const m = document.createElement('div');
-      m.className = 'watch-marker';
-      m.title = label;
-      Object.assign(m.style, {
-        position: 'absolute', left: left + '%', width: width + '%',
-        top: '0', height: '100%',
-        background: 'linear-gradient(90deg, #e50914, #ff2b3a)',
-        opacity: '0.85', borderRadius: '2px',
-        pointerEvents: 'none', zIndex: '25'
-      });
-      inner.appendChild(m);
-    }
-    add(skipIntervals.op, 'Intro');
-    add(skipIntervals.ed, 'Outro');
-  }
-
-  async function fetchAsBlobUrl(proxyUrl, opts) {
-    opts = opts || {};
-    const res = await fetch(proxyUrl, { cache: 'no-store' });
-    if (!res.ok) throw new Error('HTTP ' + res.status);
-    const buf = await res.arrayBuffer();
-    if (opts.expectWasm) {
-      const head = new Uint8Array(buf.slice(0, 8));
-      const isWasm = head[0] === 0x00 && head[1] === 0x61 && head[2] === 0x73 && head[3] === 0x6d;
-      if (!isWasm) throw new Error('Not WASM');
-    }
-    return URL.createObjectURL(new Blob([buf], { type: opts.mimeType || 'application/javascript' }));
-  }
-
-  async function prepareLibassAssets(isMp4) {
-    if (isMp4) return { wasmBlobUrl: null, workerBlobUrl: null };
-    let wasmBlobUrl = null;
-    let workerBlobUrl = null;
-    try {
-      wasmBlobUrl = await fetchAsBlobUrl(chSubs.proxyStatic('subtitles-octopus-worker.wasm'), {
-        expectWasm: true, mimeType: 'application/wasm'
-      });
-    } catch (e) {}
-    try {
-      const wr = await fetch(chSubs.proxyStatic('subtitles-octopus-worker.js?v=1'), { cache: 'no-store' });
-      if (wr.ok) {
-        let wt = await wr.text();
-        if (wasmBlobUrl) {
-          wt = wt
-            .replace(/"subtitles-octopus-worker\.wasm"/g, '"' + wasmBlobUrl + '"')
-            .replace(/'subtitles-octopus-worker\.wasm'/g, "'" + wasmBlobUrl + "'")
-            .replace(/subtitles-octopus-worker\.wasm/g, wasmBlobUrl);
-        }
-        workerBlobUrl = URL.createObjectURL(new Blob([wt], { type: 'application/javascript' }));
-      }
-    } catch (e) {}
-    return { wasmBlobUrl: wasmBlobUrl, workerBlobUrl: workerBlobUrl };
-  }
+  // ... (Preview Tooltip and Skip Button functions are unchanged) ...
+  function ensurePreviewTooltip() { let el = document.querySelector('.watch-preview-tip'); if (el) return el; el = document.createElement('div'); el.className = 'watch-preview-tip'; el.innerHTML = '<video muted playsinline preload="auto"></video><div class="watch-preview-tip__time">0:00</div>'; document.body.appendChild(el); return el; }
+  function destroyPreview() { if (previewHls) { try { previewHls.destroy(); } catch (e) {} previewHls = null; } const el = document.querySelector('.watch-preview-tip'); if (el) { const v = el.querySelector('video'); try { v.pause(); v.removeAttribute('src'); v.load(); } catch (e) {} el.style.display = 'none'; } }
+  function initPreview(streamUrl, isMp4) { destroyPreview(); const el = ensurePreviewTooltip(); const video = el.querySelector('video'); if (isMp4) { video.src = streamUrl; return; } if (window.Hls && Hls.isSupported()) { const h = new Hls({ enableWorker: true, autoStartLoad: false, capLevelToPlayerSize: true }); previewHls = h; h.loadSource(streamUrl); h.attachMedia(video); h.startLoad(-1); } }
+  function onProgressMove(e) { const progressEl = art && art.template && art.template.$progress; if (!progressEl || !art.duration || !isFinite(art.duration)) return; const rect = progressEl.getBoundingClientRect(); const ratio = Math.max(0, Math.min(1, (e.clientX - rect.left) / rect.width)); const t = ratio * art.duration; const tip = ensurePreviewTooltip(); const timeEl = tip.querySelector('.watch-preview-tip__time'); const video = tip.querySelector('video'); timeEl.textContent = chFormatTime(t); const now = Date.now(); if (now - previewLastSeek > 80) { previewLastSeek = now; try { video.currentTime = t; } catch (e) {} } const tipW = 184; let left = rect.left + rect.width * ratio - tipW / 2; left = Math.max(8, Math.min(window.innerWidth - tipW - 8, left)); const top = rect.top - 130; tip.style.left = left + 'px'; tip.style.top = Math.max(8, top) + 'px'; tip.style.display = 'block'; if (previewHideTimer) { clearTimeout(previewHideTimer); previewHideTimer = null; } }
+  function onProgressLeave() { if (previewHideTimer) clearTimeout(previewHideTimer); previewHideTimer = setTimeout(function () { const tip = document.querySelector('.watch-preview-tip'); if (tip) tip.style.display = 'none'; }, 140); }
+  function attachPreview() { const progressEl = art && art.template && art.template.$progress; if (!progressEl) return; progressEl.addEventListener('mousemove', onProgressMove); progressEl.addEventListener('mouseleave', onProgressLeave); }
+  function mountSkipButton() { const playerEl = art && art.template && art.template.$player; if (!playerEl) return; const old = playerEl.querySelector('.watch-skip-btn'); if (old) old.remove(); skipBtn = document.createElement('button'); skipBtn.className = 'watch-skip-btn'; skipBtn.type = 'button'; skipBtn.textContent = 'Skip Intro ➔'; playerEl.appendChild(skipBtn); }
+  function updateSkipButton() { if (!art || !art.video) return; const t = art.video.currentTime; const inOp = skipIntervals.op && t >= skipIntervals.op.startTime && t < skipIntervals.op.endTime; const inEd = skipIntervals.ed && t >= skipIntervals.ed.startTime && t < skipIntervals.ed.endTime; if (!inOp && !inEd) { if (skipBtn) skipBtn.style.display = 'none'; skipFired.op = false; skipFired.ed = false; return; } const interval = inOp ? skipIntervals.op : skipIntervals.ed; const label = inOp ? 'Intro' : 'Outro'; const key = inOp ? 'op' : 'ed'; const autoSkip = !!(settingsRef && settingsRef.autoSkip); if (autoSkip) { if (!skipFired[key]) { skipFired[key] = true; art.currentTime = interval.endTime; } if (skipBtn) skipBtn.style.display = 'none'; return; } if (skipBtn) { skipBtn.textContent = 'Skip ' + label + ' ➔'; skipBtn.style.display = 'block'; skipBtn.onclick = function (e) { e.stopPropagation(); art.currentTime = interval.endTime; }; } }
+  function mountMarkers() { if (!art || !art.template || !art.template.$progress) return; const inner = art.template.$progress.querySelector('.art-control-progress-inner'); if (!inner) return; inner.querySelectorAll('.watch-marker').forEach(function (el) { el.remove(); }); if (!art.duration || !isFinite(art.duration)) return; function add(interval, label) { if (!interval) return; const start = Math.max(0, interval.startTime); const end = Math.min(art.duration, interval.endTime); if (end <= start) return; const left = (start / art.duration) * 100; const width = ((end - start) / art.duration) * 100; const m = document.createElement('div'); m.className = 'watch-marker'; m.title = label; Object.assign(m.style, { position: 'absolute', left: left + '%', width: width + '%', top: '0', height: '100%', background: 'linear-gradient(90deg, #e50914, #ff2b3a)', opacity: '0.85', borderRadius: '2px', pointerEvents: 'none', zIndex: '25' }); inner.appendChild(m); } add(skipIntervals.op, 'Intro'); add(skipIntervals.ed, 'Outro'); }
+  async function fetchAsBlobUrl(proxyUrl, opts) { opts = opts || {}; const res = await fetch(proxyUrl, { cache: 'no-store' }); if (!res.ok) throw new Error('HTTP ' + res.status); const buf = await res.arrayBuffer(); if (opts.expectWasm) { const head = new Uint8Array(buf.slice(0, 8)); const isWasm = head[0] === 0x00 && head[1] === 0x61 && head[2] === 0x73 && head[3] === 0x6d; if (!isWasm) throw new Error('Not WASM'); } return URL.createObjectURL(new Blob([buf], { type: opts.mimeType || 'application/javascript' })); }
+  async function prepareLibassAssets(isMp4) { if (isMp4) return { wasmBlobUrl: null, workerBlobUrl: null }; let wasmBlobUrl = null; let workerBlobUrl = null; try { wasmBlobUrl = await fetchAsBlobUrl(chSubs.proxyStatic('subtitles-octopus-worker.wasm'), { expectWasm: true, mimeType: 'application/wasm' }); } catch (e) {} try { const wr = await fetch(chSubs.proxyStatic('subtitles-octopus-worker.js?v=1'), { cache: 'no-store' }); if (wr.ok) { let wt = await wr.text(); if (wasmBlobUrl) { wt = wt.replace(/"subtitles-octopus-worker\.wasm"/g, '"' + wasmBlobUrl + '"').replace(/'subtitles-octopus-worker\.wasm'/g, "'" + wasmBlobUrl + "'").replace(/subtitles-octopus-worker\.wasm/g, wasmBlobUrl); } workerBlobUrl = URL.createObjectURL(new Blob([wt], { type: 'application/javascript' })); } } catch (e) {} return { wasmBlobUrl: wasmBlobUrl, workerBlobUrl: workerBlobUrl }; }
 
   async function mount(opts) {
     unmount();
@@ -223,20 +48,11 @@ const chPlayer = (function () {
     const callbacks = opts.callbacks || {};
     const { wasmBlobUrl, workerBlobUrl } = await prepareLibassAssets(isMp4);
 
-    const libassOpts = {
-      fallbackFont: FALLBACK_FONT_URL,
-      workerUrl: workerBlobUrl,
-      wasmUrl: wasmBlobUrl,
-      legacyWorkerUrl: workerBlobUrl
-    };
-    if (opts.fonts && Object.keys(opts.fonts).length) {
-      libassOpts.availableFonts = opts.fonts;
-    }
+    const libassOpts = { fallbackFont: FALLBACK_FONT_URL, workerUrl: workerBlobUrl, wasmUrl: wasmBlobUrl, legacyWorkerUrl: workerBlobUrl };
+    if (opts.fonts && Object.keys(opts.fonts).length) { libassOpts.availableFonts = opts.fonts; }
 
     const subInfo = chSubs.fromWatchData(opts.watchData);
-    const subMenu = chSubs.buildMenu(subInfo.subs, subInfo.referer, subInfo.userAgent, {
-      subtitlesOn: !!opts.subtitlesOn
-    });
+    const subMenu = chSubs.buildMenu(subInfo.subs, subInfo.referer, subInfo.userAgent, { subtitlesOn: !!opts.subtitlesOn });
 
     const artConfig = {
       container: opts.container,
@@ -245,8 +61,8 @@ const chPlayer = (function () {
       autoplay: !!(opts.settings && opts.settings.autoPlay),
       muted: false,
       volume: 1,
-      setting: false,
-      settings: [],
+      setting: true, // <--- ENABLE SETTINGS MENU
+      settings: [], // <--- WE WILL INJECT QUALITY HERE
       playbackRate: true,
       aspectRatio: true,
       fullscreen: true,
@@ -255,44 +71,12 @@ const chPlayer = (function () {
       hotkey: true,
       theme: '#e50914',
       lang: 'en',
-      // Disable right-click context menu entirely
       contextmenu: [],
       moreVideoAttr: { crossOrigin: 'anonymous' },
       controls: [
-        {
-          name: 'rewind',
-          position: 'left',
-          index: 11,
-          html: ICON_REW,
-          tooltip: 'Rewind 5s',
-          click: function () {
-            if (!art || !art.video) return;
-            art.video.currentTime = Math.max(0, art.video.currentTime - 5);
-          }
-        },
-        {
-          name: 'forward',
-          position: 'left',
-          index: 12,
-          html: ICON_FWD,
-          tooltip: 'Forward 5s',
-          click: function () {
-            if (!art || !art.video) return;
-            const dur = art.duration || art.video.duration || Infinity;
-            art.video.currentTime = Math.min(dur, art.video.currentTime + 5);
-          }
-        },
-        {
-          name: 'subtitle',
-          position: 'right',
-          html: 'CC',
-          selector: subMenu,
-          onSelect: function (item) {
-            if (typeof opts.onSelectSubtitle === 'function') opts.onSelectSubtitle(item);
-            chSubs.applyToPlayer(art, item);
-            return 'CC';
-          }
-        }
+        { name: 'rewind', position: 'left', index: 11, html: ICON_REW, tooltip: 'Rewind 5s', click: function () { if (!art || !art.video) return; art.video.currentTime = Math.max(0, art.video.currentTime - 5); } },
+        { name: 'forward', position: 'left', index: 12, html: ICON_FWD, tooltip: 'Forward 5s', click: function () { if (!art || !art.video) return; const dur = art.duration || art.video.duration || Infinity; art.video.currentTime = Math.min(dur, art.video.currentTime + 5); } },
+        { name: 'subtitle', position: 'right', html: 'CC', selector: subMenu, onSelect: function (item) { if (typeof opts.onSelectSubtitle === 'function') opts.onSelectSubtitle(item); chSubs.applyToPlayer(art, item); return 'CC'; } }
       ]
     };
 
@@ -304,16 +88,34 @@ const chPlayer = (function () {
             return;
           }
           if (hls) { try { hls.destroy(); } catch (e) {} hls = null; }
-          const myHls = new Hls({
-            enableWorker: true,
-            fragLoadingMaxRetry: 4,
-            manifestLoadingMaxRetry: 3,
-            levelLoadingMaxRetry: 3
-          });
+          const myHls = new Hls({ enableWorker: true, fragLoadingMaxRetry: 4, manifestLoadingMaxRetry: 3, levelLoadingMaxRetry: 3 });
           hls = myHls;
           artInstance.hls = myHls;
           myHls.loadSource(url);
           myHls.attachMedia(video);
+
+          // --- INJECT QUALITY SELECTOR ---
+          myHls.on(Hls.Events.MANIFEST_PARSED, function (e, data) {
+            const levels = myHls.levels || [];
+            if (levels.length > 0) {
+              const qualityList = levels.map((l, i) => ({
+                html: l.height ? `${l.height}p` : `${l.bitrate / 1000}kbps`,
+                value: i
+              })).reverse();
+              qualityList.unshift({ html: 'Auto', value: -1 });
+              
+              artInstance.setting.update({
+                name: 'quality',
+                html: 'Quality',
+                icon: '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="3" width="20" height="14" rx="2" ry="2"></rect><line x1="8" y1="21" x2="16" y2="21"></line><line x1="12" y1="17" x2="12" y2="21"></line></svg>',
+                selector: qualityList,
+                onSelect: function(item) {
+                  myHls.currentLevel = item.value;
+                  return item.html;
+                }
+              });
+            }
+          });
 
           const applyAudioPreference = function () {
             const tracks = myHls.audioTracks || [];
@@ -321,7 +123,6 @@ const chPlayer = (function () {
             const sig = currentAudioPref + ':' + tracks.length + ':' + tracks.map(function (t) { return t.lang; }).join(',');
             if (applyAudioPreference._sig === sig) return;
             applyAudioPreference._sig = sig;
-
             const wantDub = currentAudioPref === 'dub';
             const dubRe = /\b(dub|english|eng)\b/i;
             const subRe = /\b(japanese|jap|native|sub)\b/i;
@@ -348,16 +149,7 @@ const chPlayer = (function () {
             }
             try { myHls.audioTrack = bestIdx; } catch (e) {}
           };
-
-          myHls.on(Hls.Events.MANIFEST_PARSED, function (e, data) {
-            if (typeof callbacks.onManifest === 'function') {
-              callbacks.onManifest({
-                levels: (data.levels && data.levels.length) || 0,
-                audioTracks: (myHls.audioTracks && myHls.audioTracks.length) || 0
-              });
-            }
-            applyAudioPreference();
-          });
+          myHls.on(Hls.Events.MANIFEST_PARSED, applyAudioPreference);
           myHls.on(Hls.Events.AUDIO_TRACKS_UPDATED, applyAudioPreference);
 
           myHls.on(Hls.Events.ERROR, function (e, data) {
@@ -376,9 +168,7 @@ const chPlayer = (function () {
                 if (failedFragments.size >= getMaxFragmentErrors()) {
                   try { myHls.destroy(); } catch (ex) {}
                   if (hls === myHls) hls = null;
-                  if (typeof callbacks.onHlsFatal === 'function') {
-                    callbacks.onHlsFatal(failedFragments.size + ' unique fragment failures');
-                  }
+                  if (typeof callbacks.onHlsFatal === 'function') callbacks.onHlsFatal(failedFragments.size + ' unique fragment failures');
                 }
               }
             }
@@ -403,16 +193,9 @@ const chPlayer = (function () {
 
     return await new Promise(function (resolve) {
       art = new Artplayer(artConfig);
-
-      // Kill right-click on the player element entirely (belt + suspenders)
       if (art.template && art.template.$player) {
-        art.template.$player.addEventListener('contextmenu', function (e) {
-          e.preventDefault();
-          e.stopPropagation();
-          return false;
-        });
+        art.template.$player.addEventListener('contextmenu', function (e) { e.preventDefault(); e.stopPropagation(); return false; });
       }
-
       art.on('ready', function () {
         mountSkipButton();
         attachPreview();
@@ -420,62 +203,26 @@ const chPlayer = (function () {
         if (typeof callbacks.onReady === 'function') callbacks.onReady(art);
         setTimeout(function () { resolve({ art: art, destroy: unmount }); }, 200);
       });
-
       art.on('video:loadedmetadata', function () {
         mountMarkers();
-        if (opts.resumeAt && opts.resumeAt > 1) {
-          try { art.currentTime = opts.resumeAt; } catch (e) {}
-        }
+        if (opts.resumeAt && opts.resumeAt > 1) { try { art.currentTime = opts.resumeAt; } catch (e) {} }
       });
-
       art.on('video:timeupdate', function () {
         updateSkipButton();
-        if (typeof callbacks.onTimeUpdate === 'function' && art && art.video) {
-          callbacks.onTimeUpdate(art.video.currentTime, art.video.duration);
-        }
+        if (typeof callbacks.onTimeUpdate === 'function' && art && art.video) callbacks.onTimeUpdate(art.video.currentTime, art.video.duration);
       });
-
-      art.on('video:error', function () {
-        if (typeof callbacks.onError === 'function') callbacks.onError('video element error');
-      });
-
-      art.on('video:playing', function () {
-        failedFragments = new Set();
-        if (typeof callbacks.onPlaying === 'function') callbacks.onPlaying(art);
-      });
-
-      art.on('video:ended', function () {
-        if (typeof callbacks.onEnded === 'function') callbacks.onEnded();
-      });
-
-      art.on('destroy', function () {
-        if (typeof callbacks.onDestroy === 'function') callbacks.onDestroy();
-      });
+      art.on('video:error', function () { if (typeof callbacks.onError === 'function') callbacks.onError('video element error'); });
+      art.on('video:playing', function () { failedFragments = new Set(); if (typeof callbacks.onPlaying === 'function') callbacks.onPlaying(art); });
+      art.on('video:ended', function () { if (typeof callbacks.onEnded === 'function') callbacks.onEnded(); });
+      art.on('destroy', function () { if (typeof callbacks.onDestroy === 'function') callbacks.onDestroy(); });
     });
   }
 
-  function setSkipIntervals(op, ed) {
-    skipIntervals = { op: op || null, ed: ed || null };
-    skipFired = { op: false, ed: false };
-  }
+  function setSkipIntervals(op, ed) { skipIntervals = { op: op || null, ed: ed || null }; skipFired = { op: false, ed: false }; }
   function setAudioPreference(audio) { currentAudioPref = audio || 'dub'; }
   function setSettings(s) { settingsRef = s || {}; }
   function getArt() { return art; }
+  function unmount() { destroyPreview(); if (hls) { try { hls.destroy(); } catch (e) {} hls = null; } if (art) { try { art.destroy(true); } catch (e) {} art = null; } skipBtn = null; failedFragments = new Set(); }
 
-  function unmount() {
-    destroyPreview();
-    if (hls) { try { hls.destroy(); } catch (e) {} hls = null; }
-    if (art) { try { art.destroy(true); } catch (e) {} art = null; }
-    skipBtn = null;
-    failedFragments = new Set();
-  }
-
-  return {
-    mount: mount,
-    unmount: unmount,
-    getArt: getArt,
-    setSkipIntervals: setSkipIntervals,
-    setAudioPreference: setAudioPreference,
-    setSettings: setSettings
-  };
+  return { mount: mount, unmount: unmount, getArt: getArt, setSkipIntervals: setSkipIntervals, setAudioPreference: setAudioPreference, setSettings: setSettings };
 })();
