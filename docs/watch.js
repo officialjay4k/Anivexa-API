@@ -26,6 +26,7 @@ let media = null;
 let episodeList = [];
 let playerApi = null;
 let saveTick = 0;
+let lastDbSync = 0;
 let autoNextFired = false;
 let audioAvail = { sub: false, dub: false };
 let epCache = { sub: null, dub: null };
@@ -33,8 +34,6 @@ let currentProvider = null;
 let countdownTimer = null;
 let pendingServerJump = null;
 let playbackUnavailable = false;
-
-const serverCache = new Map();
 
 function parseParams() {
   const p = new URLSearchParams(location.search);
@@ -125,12 +124,7 @@ function pickBestEpisodeList(results, audio, media) {
   if (!results.length) return best;
 
   const airedCap = computeAiredCap(media);
-  const expectedCount = (function () {
-    const mediaEps = media && Number.isFinite(media.episodes) ? media.episodes : null;
-    if (airedCap != null && mediaEps != null) return Math.min(mediaEps, airedCap);
-    if (airedCap != null) return airedCap;
-    return mediaEps;
-  })();
+  const expectedCount = media && Number.isFinite(media.episodes) ? media.episodes : null;
 
   const filterAired = function (list) {
     if (!list || !list.length) return [];
@@ -157,6 +151,59 @@ function pickBestEpisodeList(results, audio, media) {
   return best;
 }
 
+function initWatchlistButton() {
+  const btn = document.getElementById('watchWatchlistBtn');
+  const menu = document.getElementById('watchWatchlistMenu');
+  const dd = document.getElementById('watchWatchlistDropdown');
+  if (!btn || !menu || !dd) return;
+
+  let currentStatus = 'none';
+  try {
+    const w = JSON.parse(localStorage.getItem(CH.STORAGE_WATCHLIST)) || {};
+    if (w[String(media.id)]) currentStatus = w[String(media.id)].status || 'watching';
+  } catch(e) {}
+  
+  btn.textContent = currentStatus === 'none' ? 'Add to List' : 'Status: ' + currentStatus.toUpperCase();
+
+  btn.onclick = (e) => {
+    e.stopPropagation();
+    dd.classList.toggle('is-open');
+  };
+
+  document.addEventListener('click', (e) => {
+    if (!dd.contains(e.target)) dd.classList.remove('is-open');
+  });
+
+  menu.querySelectorAll('.ch-dropdown__item').forEach(item => {
+    item.onclick = async () => {
+      const status = item.dataset.status;
+      dd.classList.remove('is-open');
+      
+      if (status === 'remove') {
+        await chAuth.removeWatchlistEntry(media.id);
+        const w = JSON.parse(localStorage.getItem(CH.STORAGE_WATCHLIST)) || {};
+        delete w[String(media.id)];
+        localStorage.setItem(CH.STORAGE_WATCHLIST, JSON.stringify(w));
+        btn.textContent = 'Add to List';
+        showToast('Removed from list');
+      } else {
+        await chAuth.upsertWatchlistEntry({
+          anilistId: media.id,
+          title: titleOf(media),
+          image: media.coverImage?.extraLarge,
+          status: status,
+          progressEp: currentEp
+        });
+        const w = JSON.parse(localStorage.getItem(CH.STORAGE_WATCHLIST)) || {};
+        w[String(media.id)] = { status, title: titleOf(media), image: media.coverImage?.extraLarge };
+        localStorage.setItem(CH.STORAGE_WATCHLIST, JSON.stringify(w));
+        btn.textContent = 'Status: ' + status.toUpperCase();
+        showToast('Updated to ' + status);
+      }
+    };
+  });
+}
+
 function renderInfo() {
   if (!media) return;
   document.title = titleOf(media) + ' — Ep ' + currentEp + ' — Cloud Hub';
@@ -171,34 +218,7 @@ function renderInfo() {
   document.getElementById('watchMeta').innerHTML = metaBits.join('<span class="sep">·</span>');
 
   document.getElementById('watchPreviewLink').href = '/preview?id=' + media.id;
-
-  const wlBtn = document.getElementById('watchWatchlistBtn');
-  const inList = (function () {
-    try {
-      const w = JSON.parse(localStorage.getItem(CH.STORAGE_WATCHLIST)) || {};
-      return !!w[String(media.id)];
-    } catch (e) { return false; }
-  })();
-  wlBtn.textContent = inList ? 'In List' : 'Add to List';
-  wlBtn.classList.toggle('ch-btn--ghost', !inList);
-  wlBtn.onclick = function () {
-    let w = {};
-    try { w = JSON.parse(localStorage.getItem(CH.STORAGE_WATCHLIST)) || {}; } catch (e) {}
-    const k = String(media.id);
-    if (w[k]) delete w[k];
-    else w[k] = {
-      anilistId: k,
-      title: titleOf(media),
-      image: media.coverImage && (media.coverImage.extraLarge || media.coverImage.large),
-      addedAt: Date.now()
-    };
-    localStorage.setItem(CH.STORAGE_WATCHLIST, JSON.stringify(w));
-    const now = !!w[k];
-    wlBtn.textContent = now ? 'In List' : 'Add to List';
-    wlBtn.classList.toggle('ch-btn--ghost', !now);
-    if (typeof showToast === 'function') showToast(now ? 'Added to your list' : 'Removed from your list');
-  };
-
+  initWatchlistButton();
   renderNextAiring();
 }
 
@@ -262,6 +282,7 @@ function renderEpisodes() {
     if (!isFinite(n)) continue;
     const isWatched = watched.has(n);
     const isCurrent = n === currentEp;
+    const isPending = raw.isPending;
     const title = raw.title || ('Episode ' + n);
     const thumb = raw.image || (media && media.coverImage && (media.coverImage.extraLarge || media.coverImage.large)) || '';
 
@@ -271,6 +292,7 @@ function renderEpisodes() {
       btn.className = 'watch-ep-card';
       if (isWatched) btn.classList.add('watched');
       if (isCurrent) btn.classList.add('current');
+      if (isPending) btn.classList.add('is-pending');
       btn.dataset.ep = n;
       btn.innerHTML =
         '<div class="watch-ep-card__thumb" style="background-image:url(\'' + chEscapeHtml(thumb).replace(/'/g, '%27') + '\')"></div>' +
@@ -286,6 +308,7 @@ function renderEpisodes() {
       btn.className = 'watch-ep-pill';
       if (isWatched) btn.classList.add('watched');
       if (isCurrent) btn.classList.add('current');
+      if (isPending) btn.classList.add('is-pending');
       btn.dataset.ep = n;
       btn.textContent = n;
       btn.title = 'Episode ' + n + (title && title !== 'Episode ' + n ? ' — ' + title : '');
@@ -301,8 +324,8 @@ function renderEpisodes() {
 function goToEpisode(n) {
   if (n === currentEp) return;
   const found = episodeList.find(function (e) { return Number(e.number) === Number(n); });
-  if (!found) {
-    if (typeof showToast === 'function') showToast('Episode ' + n + ' isn\'t available');
+  if (!found || found.isPending) {
+    if (typeof showToast === 'function') showToast('Episode ' + n + ' isn\'t available yet. The provider hasn\'t uploaded it.');
     return;
   }
   saveNow();
@@ -312,6 +335,37 @@ function goToEpisode(n) {
   renderInfo();
   renderEpisodes();
   startPlayback();
+}
+
+function syncWatchData(force = false) {
+  if (!window.chAuth || !chAuth.user) return;
+  const now = Date.now();
+  if (!force && now - lastDbSync < 60000) return; // Sync at most once per minute
+  lastDbSync = now;
+
+  const progress = chProgress.get(anilistId, currentAudio, currentEp);
+  if (progress && progress.currentTime > 5) {
+    chAuth.upsertWatchlistEntry({
+      anilistId: anilistId,
+      title: titleOf(media),
+      image: media.coverImage?.extraLarge,
+      status: 'watching',
+      progressEp: currentEp
+    }).then(() => chAuth.recomputeStats());
+  }
+}
+
+function saveNow() {
+  if (!playerApi || !playerApi.art || !playerApi.art.video) return;
+  const v = playerApi.art.video;
+  if (!v.currentTime || v.currentTime < 5) return;
+  if (!isFinite(v.duration) || v.duration <= 0) return;
+  chProgress.set(
+    anilistId, titleOf(media),
+    media && media.coverImage && (media.coverImage.extraLarge || media.coverImage.large),
+    currentEp, currentAudio, v.currentTime, v.duration
+  );
+  syncWatchData(true);
 }
 
 function refreshControls() {
@@ -384,24 +438,6 @@ function switchAudio(next) {
   startPlayback();
 }
 
-function saveNow() {
-  if (!playerApi || !playerApi.art || !playerApi.art.video) return;
-  const v = playerApi.art.video;
-  if (!v.currentTime || v.currentTime < 5) return;
-  if (!isFinite(v.duration) || v.duration <= 0) return;
-  chProgress.set(
-    anilistId, titleOf(media),
-    media && media.coverImage && (media.coverImage.extraLarge || media.coverImage.large),
-    currentEp, currentAudio, v.currentTime, v.duration
-  );
-}
-
-function computeResumeAt() {
-  const saved = chProgress.get(anilistId, currentAudio, currentEp);
-  if (saved && saved.currentTime > 5) return saved.currentTime;
-  return null;
-}
-
 async function resolveSkipIntervals(anilistId, ep, watchData) {
   const s0 = (watchData && watchData.streams && watchData.streams[0]) || {};
   function tryNum(a, b) {
@@ -472,9 +508,6 @@ async function startPlayback() {
   await chPipeline.start({ anilistId: anilistId, ep: currentEp, audio: currentAudio });
 }
 
-// ============================================================
-// Server rows — simplified to HD-1 / HD-2
-// ============================================================
 async function renderServerRows() {
   const wrap = document.getElementById('watchServers');
   if (!wrap) return;
@@ -482,7 +515,6 @@ async function renderServerRows() {
   const state = chPipeline.getState();
   const workIndex = state.workIndex;
 
-  // HD-1 = play the chain / HD-2 = advance the chain
   function buildRow(audio, label) {
     const row = document.createElement('div');
     row.className = 'watch-server-row watch-server-row--' + audio;
@@ -497,11 +529,9 @@ async function renderServerRows() {
     const listEl = document.createElement('div');
     listEl.className = 'watch-server-row__list';
 
-    // is this audio currently active?
     const isActiveAudio = audio === currentAudio;
     const isAvailable = audio === 'sub' ? audioAvail.sub : audioAvail.dub;
 
-    // HD-1
     const btn1 = document.createElement('button');
     btn1.type = 'button';
     btn1.className = 'watch-server-pill';
@@ -510,7 +540,6 @@ async function renderServerRows() {
     btn1.innerHTML = '<span class="watch-server-pill__play"><svg width="8" height="8" viewBox="0 0 24 24" fill="currentColor"><polygon points="6 4 20 12 6 20"></polygon></svg></span><span>HD-1</span>';
     btn1.addEventListener('click', function () { handleServerClick(audio, 'HD-1'); });
 
-    // HD-2
     const btn2 = document.createElement('button');
     btn2.type = 'button';
     btn2.className = 'watch-server-pill';
@@ -532,7 +561,6 @@ async function renderServerRows() {
 }
 
 function handleServerClick(audio, serverName) {
-  // Different audio — switch first, then act on new stream
   if (audio !== currentAudio) {
     if (audio === 'sub' && !audioAvail.sub) {
       if (typeof showToast === 'function') showToast('Sub is not available for this title');
@@ -547,12 +575,10 @@ function handleServerClick(audio, serverName) {
     return;
   }
 
-  // Same audio
   if (serverName === 'HD-2') {
     saveNow();
     chPipeline.forceFailover();
   } else {
-    // HD-1 — restart the chain from scratch
     saveNow();
     chPipeline.restart();
   }
@@ -613,6 +639,7 @@ chPipeline.on('stream', async function (data) {
         if (!isFinite(t) || t < 5) return;
         if (!isFinite(d) || d <= 0) return;
         chProgress.set(anilistId, titleOf(media), media && media.coverImage && (media.coverImage.extraLarge || media.coverImage.large), currentEp, currentAudio, t, d);
+        syncWatchData();
       },
       onEnded: function () {
         if (!appSettings.autoNext || autoNextFired) return;
@@ -634,6 +661,7 @@ chPipeline.on('stream', async function (data) {
   });
 
   renderServerRows();
+  syncWatchData(true);
 
   if (pendingServerJump && pendingServerJump.audio === currentAudio) {
     const target = pendingServerJump;
@@ -788,9 +816,17 @@ async function initWatch() {
 
   const epExists = episodeList.find(function (e) { return Number(e.number) === Number(currentEp); });
   if (!epExists && episodeList.length) {
-    currentEp = Number(episodeList[episodeList.length - 1].number);
-    updateUrlParams({ ep: currentEp });
-    renderInfo();
+    const cap = computeAiredCap(media);
+    // If AniList says this episode has aired, but the provider doesn't have it, add it as pending.
+    if (cap && Number(currentEp) <= cap) {
+      episodeList.push({ number: Number(currentEp), title: 'Episode ' + currentEp, isPending: true });
+      episodeList.sort(function(a,b) { return Number(a.number) - Number(b.number); });
+      if (typeof showToast === 'function') showToast('This episode hasn\'t been uploaded by the provider yet.');
+    } else {
+      currentEp = Number(episodeList[episodeList.length - 1].number);
+      updateUrlParams({ ep: currentEp });
+      renderInfo();
+    }
   }
 
   renderEpisodes();
