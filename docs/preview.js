@@ -4,6 +4,7 @@
 
 const ANILIST_GRAPHQL = CH.ANILIST_GRAPHQL;
 const API_BASE = CH.API_BASE;
+const EP_FETCH_PROVIDERS = ['reanime', 'anikoto', 'animegg', 'aniwaves', 'senshi', 'anizone', 'kaa'];
 
 function getIdFromUrl() {
   const params = new URLSearchParams(location.search);
@@ -55,10 +56,7 @@ const MEDIA_QUERY = `
       trailer { id site thumbnail }
       nextAiringEpisode { episode airingAt }
       staff(perPage: 16, sort: RELEVANCE) {
-        edges {
-          role
-          node { id name { full } image { medium } }
-        }
+        edges { role node { id name { full } image { medium } } }
       }
       characters(perPage: 18, sort: [ROLE, RELEVANCE, ID]) {
         edges {
@@ -79,12 +77,7 @@ const RECS_QUERY = `
       recommendations(perPage: 12, sort: RATING_DESC) {
         nodes {
           mediaRecommendation {
-            id
-            title { romaji english }
-            coverImage { extraLarge large }
-            format
-            averageScore
-            seasonYear
+            id title { romaji english } coverImage { extraLarge large } format averageScore seasonYear
           }
         }
       }
@@ -92,43 +85,17 @@ const RECS_QUERY = `
   }
 `;
 
-const TAG_FALLBACK_QUERY = `
-  query ($tag: String) {
-    Page(page: 1, perPage: 12) {
-      media(type: ANIME, tag: $tag, sort: POPULARITY_DESC, isAdult: false) {
-        id
-        title { romaji english }
-        coverImage { extraLarge large }
-        format
-        averageScore
-        seasonYear
-      }
-    }
-  }
-`;
-
-function titleOf(media) {
-  return media?.title?.english || media?.title?.romaji || 'Untitled';
-}
+function titleOf(media) { return media?.title?.english || media?.title?.romaji || 'Untitled'; }
 function formatFormat(format) {
   if (!format) return '';
   return format.replace(/_/g, ' ').replace(/\b\w/g, c => c.toUpperCase());
 }
 function cleanDescription(desc) {
   if (!desc) return '';
-  return desc
-    .replace(/<br\s*\/?>/gi, '\n\n')
-    .replace(/<\/p>/gi, '\n\n')
-    .replace(/<[^>]+>/g, '')
-    .replace(/&quot;/g, '"')
-    .replace(/&#039;/g, "'")
-    .replace(/&amp;/g, '&')
-    .replace(/&mdash;/g, '—')
-    .replace(/&ndash;/g, '–')
-    .replace(/&[^;]+;/g, ' ')
-    .replace(/\n{3,}/g, '\n\n')
-    .replace(/[ \t]+/g, ' ')
-    .trim();
+  return desc.replace(/<br\s*\/?>/gi, '\n\n').replace(/<\/p>/gi, '\n\n').replace(/<[^>]+>/g, '')
+    .replace(/&quot;/g, '"').replace(/&#039;/g, "'").replace(/&amp;/g, '&')
+    .replace(/&mdash;/g, '—').replace(/&ndash;/g, '–').replace(/&[^;]+;/g, ' ')
+    .replace(/\n{3,}/g, '\n\n').replace(/[ \t]+/g, ' ').trim();
 }
 function fmtDate(d) {
   if (!d?.year) return null;
@@ -137,19 +104,62 @@ function fmtDate(d) {
   const mon = months[Math.max(0, Math.min(11, d.month - 1))];
   return d.day ? `${mon} ${d.day}, ${d.year}` : `${mon} ${d.year}`;
 }
-function fmtNumber(n) {
-  if (n == null) return '—';
-  return n.toLocaleString('en-US');
-}
+function fmtNumber(n) { return n == null ? '—' : n.toLocaleString('en-US'); }
 
-const PLAY_ICON = `<svg width="12" height="12" viewBox="0 0 24 24" fill="currentColor"><polygon points="6 4 20 12 6 20"></polygon></svg>`;
+// ---------- Fast Episode Fetching ----------
+async function fetchFastEpisodes(anilistId) {
+  // Check local storage cache first
+  try {
+    const cache = JSON.parse(localStorage.getItem(CH.STORAGE_EP_CACHE)) || {};
+    if (cache[anilistId] && Date.now() - cache[anilistId].ts < 1000 * 60 * 60 * 6) {
+      return cache[anilistId].data;
+    }
+  } catch(e) {}
 
-// ---------- Watchlist (localStorage fallback + Supabase sync) ----------
-function getLocalWatchlist() {
-  try { return JSON.parse(localStorage.getItem(CH.STORAGE_WATCHLIST)) || {}; } catch { return {}; }
-}
-function saveLocalWatchlist(w) {
-  try { localStorage.setItem(CH.STORAGE_WATCHLIST, JSON.stringify(w)); } catch {}
+  const fetchPromise = (p) => fetch(`${API_BASE}/episodes/${p}/${anilistId}`, { cache: 'no-store' })
+    .then(res => res.ok ? res.json() : null)
+    .then(data => {
+      if (!data || !data[p] || data[p].error) return null;
+      const sub = data[p].episodes?.sub || [];
+      const dub = data[p].episodes?.dub || [];
+      if (!sub.length && !dub.length) return null;
+      return { provider: p, sub, dub };
+    })
+    .catch(() => null);
+
+  // Race the top 3 fastest providers
+  const fastest = ['reanime', 'anikoto', 'kaa'];
+  const promises = fastest.map(fetchPromise);
+  
+  let result = null;
+  try {
+    // Promise.any resolves as soon as the first one succeeds
+    result = await Promise.any(promises);
+  } catch (e) {
+    // If all fail, try the rest
+    const rest = EP_FETCH_PROVIDERS.filter(p => !fastest.includes(p));
+    const restPromises = rest.map(fetchPromise);
+    try { result = await Promise.any(restPromises); } catch(e2) {}
+  }
+
+  if (!result) return { episodes: [], languages: [] };
+
+  const languages = [];
+  if (result.sub.length) languages.push('Sub (JP)');
+  if (result.dub.length) languages.push('Dub (EN)');
+
+  const chosen = (result.sub.length >= result.dub.length ? result.sub : result.dub).slice();
+  chosen.sort((a, b) => Number(a.number) - Number(b.number));
+  const out = { episodes: chosen, languages };
+
+  // Cache the result
+  try {
+    const cache = JSON.parse(localStorage.getItem(CH.STORAGE_EP_CACHE)) || {};
+    cache[anilistId] = { ts: Date.now(), data: out };
+    localStorage.setItem(CH.STORAGE_EP_CACHE, JSON.stringify(cache));
+  } catch(e) {}
+
+  return out;
 }
 
 // ---------- Hero ----------
@@ -158,10 +168,7 @@ async function renderHero(media, tmdb) {
   const inner = document.getElementById('previewHeroInner');
   if (!bg || !inner) return;
 
-  const bgUrl = tmdb?.backdropUrl
-    || media.bannerImage
-    || media.coverImage?.extraLarge
-    || media.coverImage?.large;
+  const bgUrl = tmdb?.backdropUrl || media.bannerImage || media.coverImage?.extraLarge || media.coverImage?.large;
   if (bgUrl) bg.style.backgroundImage = `url('${bgUrl}')`;
 
   const titleText = titleOf(media);
@@ -169,21 +176,11 @@ async function renderHero(media, tmdb) {
   const showAlt = altTitle && altTitle !== titleText;
 
   const chips = [];
-  if (media.averageScore) {
-    chips.push(`<span class="preview-chip preview-chip--score"><span class="star">★</span> ${media.averageScore}%</span>`);
-  }
+  if (media.averageScore) chips.push(`<span class="preview-chip preview-chip--score"><span class="star">★</span> ${media.averageScore}%</span>`);
   if (media.format) chips.push(`<span class="preview-chip">${formatFormat(media.format)}</span>`);
-  if (media.seasonYear) {
-    chips.push(`<span class="preview-chip">${media.season ? media.season.charAt(0) + media.season.slice(1).toLowerCase() + ' ' : ''}${media.seasonYear}</span>`);
-  }
+  if (media.seasonYear) chips.push(`<span class="preview-chip">${media.season ? media.season.charAt(0) + media.season.slice(1).toLowerCase() + ' ' : ''}${media.seasonYear}</span>`);
   if (media.status) {
-    const statusMap = {
-      'RELEASING': 'Airing',
-      'FINISHED': 'Finished',
-      'NOT_YET_RELEASED': 'Upcoming',
-      'CANCELLED': 'Cancelled',
-      'HIATUS': 'Hiatus'
-    };
+    const statusMap = { 'RELEASING': 'Airing', 'FINISHED': 'Finished', 'NOT_YET_RELEASED': 'Upcoming', 'CANCELLED': 'Cancelled', 'HIATUS': 'Hiatus' };
     const label = statusMap[media.status] || media.status;
     const cls = media.status === 'RELEASING' ? 'preview-chip--red' : '';
     chips.push(`<span class="preview-chip ${cls}">${label}</span>`);
@@ -202,7 +199,7 @@ async function renderHero(media, tmdb) {
   `;
 }
 
-// ---------- Meta row + CTAs & Watchlist ----------
+// ---------- Meta row + CTAs & Watchlist (STARS) ----------
 function renderMetaAndCta(media) {
   const meta = document.getElementById('previewMeta');
   const cta = document.getElementById('previewCta');
@@ -215,12 +212,17 @@ function renderMetaAndCta(media) {
   if (media.seasonYear) bits.push(`<span>${media.seasonYear}</span>`);
   meta.innerHTML = bits.join('<span class="sep">·</span>');
 
-  const firstEp = 1;
-  const watchHref = `/watch?id=${media.id}&ep=${firstEp}&audio=dub`;
+  const watchHref = `/watch?id=${media.id}&ep=1&audio=dub`;
 
   const localWl = getLocalWatchlist()[String(media.id)] || { status: 'none', score: 0 };
   let currentStatus = localWl.status;
-  let currentScore = localWl.score;
+  let currentScore = localWl.score || 0;
+
+  // Build 10 stars
+  let starsHtml = '';
+  for (let i = 1; i <= 10; i++) {
+    starsHtml += `<button class="ch-star ${i <= currentScore ? 'is-active' : ''}" data-val="${i}">★</button>`;
+  }
 
   cta.innerHTML = `
     <a href="${watchHref}" class="ch-btn ch-btn--primary ch-btn--lg">
@@ -240,16 +242,14 @@ function renderMetaAndCta(media) {
         <button class="ch-dropdown__item" data-status="completed">Completed</button>
         <button class="ch-dropdown__item" data-status="plan">Plan to Watch</button>
         <button class="ch-dropdown__item" data-status="dropped">Dropped</button>
-        <button class="ch-dropdown__item" data-status="remove">Remove from List</button>
+        ${currentStatus !== 'none' ? '<button class="ch-dropdown__item" data-status="remove">Remove from List</button>' : ''}
       </div>
     </div>
 
-    <div class="ch-rating" style="margin-left: 8px;">
-      <span class="ch-rating__label">Rate:</span>
-      <select class="ch-rating__select" id="previewRating">
-        <option value="0">—</option>
-        ${[1,2,3,4,5,6,7,8,9,10].map(n => `<option value="${n}" ${currentScore == n ? 'selected' : ''}>${n}</option>`).join('')}
-      </select>
+    <div class="ch-rating" style="margin-left: 16px;">
+      <div class="ch-stars" id="previewStars">
+        ${starsHtml}
+      </div>
     </div>
   `;
 
@@ -280,10 +280,10 @@ function renderMetaAndCta(media) {
           title: titleOf(media),
           image: media.coverImage?.extraLarge,
           status: status,
-          score: document.getElementById('previewRating').value || null
+          score: currentScore || null
         });
         const w = getLocalWatchlist();
-        w[String(media.id)] = { status, title: titleOf(media), image: media.coverImage?.extraLarge, score: document.getElementById('previewRating').value };
+        w[String(media.id)] = { status, title: titleOf(media), image: media.coverImage?.extraLarge, score: currentScore };
         saveLocalWatchlist(w);
         label.textContent = 'Status: ' + status.toUpperCase();
         showToast('Updated to ' + status);
@@ -292,31 +292,36 @@ function renderMetaAndCta(media) {
     };
   });
 
-  document.getElementById('previewRating').addEventListener('change', async (e) => {
-    const score = Number(e.target.value) || null;
-    if (currentStatus === 'none' && score) {
-       currentStatus = 'watching';
-       label.textContent = 'Status: WATCHING';
-    }
-    await chAuth.upsertWatchlistEntry({
-      anilistId: media.id,
-      title: titleOf(media),
-      image: media.coverImage?.extraLarge,
-      status: currentStatus === 'none' ? 'watching' : currentStatus,
-      score: score
-    });
-    const w = getLocalWatchlist();
-    w[String(media.id)] = { status: currentStatus === 'none' ? 'watching' : currentStatus, title: titleOf(media), image: media.coverImage?.extraLarge, score: score };
-    saveLocalWatchlist(w);
-    showToast('Rating saved');
+  document.querySelectorAll('#previewStars .ch-star').forEach(star => {
+    star.onclick = async () => {
+      const val = Number(star.dataset.val);
+      currentScore = val;
+      document.querySelectorAll('#previewStars .ch-star').forEach(s => {
+        s.classList.toggle('is-active', Number(s.dataset.val) <= val);
+      });
+      if (currentStatus === 'none') {
+        currentStatus = 'watching';
+        label.textContent = 'Status: WATCHING';
+      }
+      await chAuth.upsertWatchlistEntry({
+        anilistId: media.id,
+        title: titleOf(media),
+        image: media.coverImage?.extraLarge,
+        status: currentStatus === 'none' ? 'watching' : currentStatus,
+        score: val
+      });
+      const w = getLocalWatchlist();
+      w[String(media.id)] = { status: currentStatus === 'none' ? 'watching' : currentStatus, title: titleOf(media), image: media.coverImage?.extraLarge, score: val };
+      saveLocalWatchlist(w);
+      showToast(`Rated ${val}/10`);
+    };
   });
 }
 
 // ---------- Synopsis ----------
 function renderDescription(media) {
   const el = document.getElementById('previewDesc');
-  const raw = cleanDescription(media.description);
-  el.textContent = raw || 'No description available.';
+  el.textContent = cleanDescription(media.description) || 'No description available.';
 }
 
 // ---------- Facts ----------
@@ -337,18 +342,13 @@ function renderFacts(media, languages) {
   else if (start) rows.push(['Aired from', start]);
   else if (end) rows.push(['Aired until', end]);
 
-  if (media.season && media.seasonYear) {
-    rows.push(['Season', `${media.season.charAt(0)}${media.season.slice(1).toLowerCase()} ${media.seasonYear}`]);
-  }
+  if (media.season && media.seasonYear) rows.push(['Season', `${media.season.charAt(0)}${media.season.slice(1).toLowerCase()} ${media.seasonYear}`]);
   if (media.source) rows.push(['Source', formatFormat(media.source)]);
   if (media.countryOfOrigin) rows.push(['Country', media.countryOfOrigin]);
 
   const studios = (media.studios?.nodes || []).map(s => s.name).filter(Boolean);
   if (studios.length) rows.push(['Studio' + (studios.length > 1 ? 's' : ''), studios.join(', ')]);
-
-  if (languages && languages.length) {
-    rows.push(['Audio', languages.join(' · ')]);
-  }
+  if (languages && languages.length) rows.push(['Audio', languages.join(' · ')]);
 
   if (media.averageScore != null) rows.push(['Average Score', `${media.averageScore}%`]);
   if (media.meanScore != null) rows.push(['Mean Score', `${media.meanScore}%`]);
@@ -363,7 +363,7 @@ function renderFacts(media, languages) {
   `).join('');
 }
 
-// ---------- Tags ----------
+// ---------- Tags (Clickable) ----------
 function renderTags(media) {
   const el = document.getElementById('previewTags');
   const tags = (media.tags || []).slice().sort((a, b) => b.rank - a.rank).slice(0, 14);
@@ -375,7 +375,7 @@ function renderTags(media) {
     const cls = t.rank >= 75 ? 'preview-tag--top' : '';
     const spoiler = t.isMediaSpoiler ? 'preview-tag--spoiler' : '';
     const suffix = t.isMediaSpoiler ? ' (Spoiler)' : '';
-    return `<span class="preview-tag ${cls} ${spoiler}">${chEscapeHtml(t.name)}${suffix}</span>`;
+    return `<a href="/home?q=${encodeURIComponent(t.name)}" class="preview-tag ${cls} ${spoiler}">${chEscapeHtml(t.name)}${suffix}</a>`;
   }).join('');
 }
 
@@ -393,9 +393,7 @@ function renderStaff(media) {
     const role = e.role || '';
     return `
       <div class="staff-card">
-        <div class="staff-card__avatar">
-          ${img ? `<img src="${chEscapeHtml(img)}" alt="" loading="lazy">` : ''}
-        </div>
+        <div class="staff-card__avatar">${img ? `<img src="${chEscapeHtml(img)}" alt="" loading="lazy">` : ''}</div>
         <div class="staff-card__body">
           <div class="staff-card__name">${chEscapeHtml(name)}</div>
           <div class="staff-card__role">${chEscapeHtml(role)}</div>
@@ -456,7 +454,7 @@ function renderEpisodes(episodes, languages) {
     try { return JSON.parse(localStorage.getItem(CH.STORAGE_PROGRESS)) || {}; } catch { return {}; }
   })();
 
-  const currentAudio = (typeof appSettingsAudio === 'function') ? appSettingsAudio() : 'dub';
+  const currentAudio = 'dub';
 
   list.innerHTML = episodes.map(ep => {
     const n = Number(ep.number);
@@ -481,101 +479,36 @@ async function renderRecommendations(media) {
   const section = document.getElementById('recsSection');
   const grid = document.getElementById('recsGrid');
   const mediaId = media.id;
-  const topTag = (media.tags || [])
-    .filter(t => !t.isMediaSpoiler)
-    .sort((a, b) => b.rank - a.rank)[0]?.name;
-  const topGenre = (media.genres || [])[0];
 
   let items = [];
-
   try {
     const data = await anilistQuery(RECS_QUERY, { id: mediaId });
     const nodes = data?.Media?.recommendations?.nodes || [];
-    items = nodes
-      .map(n => n.mediaRecommendation)
-      .filter(m => m && m.id !== mediaId);
+    items = nodes.map(n => n.mediaRecommendation).filter(m => m && m.id !== mediaId);
   } catch {}
 
-  if (items.length < 8 && topTag) {
-    try {
-      const data = await anilistQuery(TAG_FALLBACK_QUERY, { tag: topTag });
-      const extra = (data?.Page?.media || []).filter(m => m.id !== mediaId);
-      const seen = new Set(items.map(m => m.id));
-      for (const m of extra) {
-        if (!seen.has(m.id)) { items.push(m); seen.add(m.id); }
-        if (items.length >= 12) break;
-      }
-    } catch {}
-  }
-
   items = items.slice(0, 12);
-
   if (!items.length) { section.hidden = true; return; }
   section.hidden = false;
 
-  const tmdbResults = await Promise.all(
-    items.map(m => tmdbLookup(titleOf(m), m.seasonYear).catch(() => null))
-  );
-
   grid.innerHTML = '';
-
-  items.forEach((m, i) => {
-    const tmdb = tmdbResults[i];
+  items.forEach(m => {
     const cover = m.coverImage?.extraLarge || m.coverImage?.large || '';
     const card = document.createElement('a');
     card.className = 'home-card';
     card.href = `/preview?id=${m.id}`;
-
     const scoreBadge = m.averageScore ? `<div class="home-card__score">★ ${m.averageScore}</div>` : '';
-
-    const titleWrap = tmdb?.logoUrl
-      ? `<div class="home-card__title-wrap">
-           <img class="home-card__title-logo" src="${chEscapeHtml(tmdb.logoUrl)}" alt="${chEscapeHtml(titleOf(m))}" loading="lazy">
-           <div class="home-card__title-text">${chEscapeHtml(titleOf(m))}</div>
-         </div>`
-      : `<div class="home-card__title-wrap">
-           <div class="home-card__title-text" style="opacity:1;">${chEscapeHtml(titleOf(m))}</div>
-         </div>`;
-
     card.innerHTML = `
       <div class="home-card__thumb">
-        <img src="${chEscapeHtml(cover)}" alt="" loading="lazy" onerror="this.style.visibility='hidden'">
-        <div class="home-card__ribbon">${PLAY_ICON}<span>View</span></div>
+        <img src="${chEscapeHtml(cover)}" alt="" loading="lazy">
+        <div class="home-card__ribbon"><svg width="12" height="12" viewBox="0 0 24 24" fill="currentColor"><polygon points="6 4 20 12 6 20"></polygon></svg><span>View</span></div>
         ${scoreBadge}
       </div>
-      ${titleWrap}
+      <div class="home-card__title-wrap"><div class="home-card__title-text" style="opacity:1;">${chEscapeHtml(titleOf(m))}</div></div>
       <div class="home-card__meta">${formatFormat(m.format)}${m.seasonYear ? ' · ' + m.seasonYear : ''}</div>
     `;
     grid.appendChild(card);
   });
-
-  if (typeof detectTitleOverflow === 'function') {
-    detectTitleOverflow(grid);
-  }
-}
-
-// ---------- Fetch reanime episodes for sidebar + languages ----------
-async function fetchProviderEpisodes(anilistId) {
-  try {
-    const res = await fetch(`${API_BASE}/episodes/reanime/${anilistId}`, { cache: 'no-store' });
-    if (!res.ok) return { episodes: [], languages: [] };
-    const data = await res.json();
-    const block = data.reanime;
-    if (!block || block.error) return { episodes: [], languages: [] };
-
-    const sub = block.episodes?.sub || [];
-    const dub = block.episodes?.dub || [];
-
-    const languages = [];
-    if (sub.length) languages.push('Sub (JP)');
-    if (dub.length) languages.push('Dub (EN)');
-
-    const chosen = (sub.length >= dub.length ? sub : dub).slice();
-    chosen.sort((a, b) => Number(a.number) - Number(b.number));
-    return { episodes: chosen, languages };
-  } catch {
-    return { episodes: [], languages: [] };
-  }
 }
 
 // ---------- Boot ----------
@@ -602,7 +535,7 @@ async function initPreview() {
   }
 
   const tmdbPromise = tmdbLookup(titleOf(media), media.seasonYear).catch(() => null);
-  const epsPromise = fetchProviderEpisodes(id);
+  const epsPromise = fetchFastEpisodes(id);
 
   renderMetaAndCta(media);
   renderDescription(media);
@@ -613,12 +546,10 @@ async function initPreview() {
   const [tmdb, epsResult] = await Promise.all([tmdbPromise, epsPromise]);
 
   await renderHero(media, tmdb);
-
   renderEpisodes(epsResult.episodes, epsResult.languages);
   renderFacts(media, epsResult.languages);
 
   renderRecommendations(media).catch(() => {});
-
   document.title = `${titleOf(media)} — Cloud Hub`;
 }
 
