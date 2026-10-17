@@ -4,11 +4,9 @@
 
 const $ = (id) => document.getElementById(id);
 const USERNAME_RE = /^[A-Za-z0-9_.]{3,20}$/;
-
 let currentProfile = null;
 let currentUser = null;
 
-// ---------- Preset avatar library ----------
 const PRESET_AVATARS = [
   'https://api.dicebear.com/7.x/adventurer/svg?seed=Sakura&backgroundColor=b6e3f4',
   'https://api.dicebear.com/7.x/adventurer/svg?seed=Kirito&backgroundColor=d1d4f9',
@@ -24,9 +22,6 @@ const PRESET_AVATARS = [
   'https://api.dicebear.com/7.x/adventurer/svg?seed=Eren&backgroundColor=b6e3f4',
 ];
 
-// ============================================================
-// Render
-// ============================================================
 function renderAvatar(profile) {
   const el = $('avatarImg');
   const username = profile?.username || '';
@@ -53,7 +48,10 @@ function renderProfileFields(profile) {
   $('usernameInput').value = profile?.username || '';
   $('displayNameInput').value = profile?.display_name || '';
   $('bioInput').value = profile?.bio || '';
-  $('hideStatsToggle').checked = profile?.hidden || false;
+  
+  // Default to FALSE if null/undefined
+  $('hideStatsToggle').checked = profile?.hidden ?? false;
+  
   updateBioCount();
   $('modalUsernameEcho').textContent = profile?.username || 'your account';
   $('modalUsernamePrompt').textContent = profile?.username || 'username';
@@ -63,9 +61,6 @@ function updateBioCount() {
   $('bioCount').textContent = String(($('bioInput').value || '').length);
 }
 
-// ============================================================
-// Save / Reset
-// ============================================================
 $('bioInput').addEventListener('input', updateBioCount);
 
 function showProfileMsg(msg, ok) {
@@ -119,9 +114,6 @@ $('resetProfileBtn').addEventListener('click', () => {
   renderProfileFields(currentProfile);
 });
 
-// ============================================================
-// Username availability
-// ============================================================
 let usernameCheckTimer = null;
 function setUsernameStatus(state, text) {
   const el = $('usernameStatus');
@@ -149,9 +141,6 @@ $('usernameInput').addEventListener('input', () => {
   }, 350);
 });
 
-// ============================================================
-// Avatar modal
-// ============================================================
 const avatarModal = $('avatarModal');
 function openAvatarModal() {
   $('avatarError').hidden = true;
@@ -161,7 +150,6 @@ function openAvatarModal() {
   avatarModal.classList.add('is-open');
 }
 function closeAvatarModal() { avatarModal.classList.remove('is-open'); }
-
 $('avatarBtn').addEventListener('click', openAvatarModal);
 $('avatarCancel').addEventListener('click', closeAvatarModal);
 avatarModal.addEventListener('click', (e) => { if (e.target === avatarModal) closeAvatarModal(); });
@@ -173,45 +161,22 @@ document.addEventListener('keydown', (e) => {
 });
 
 function switchTab(name) {
-  document.querySelectorAll('.settings-tab').forEach((t) => {
-    t.classList.toggle('is-active', t.dataset.tab === name);
-  });
-  document.querySelectorAll('.settings-tab-panel').forEach((p) => {
-    p.classList.toggle('is-active', p.dataset.panel === name);
-  });
+  document.querySelectorAll('.settings-tab').forEach((t) => { t.classList.toggle('is-active', t.dataset.tab === name); });
+  document.querySelectorAll('.settings-tab-panel').forEach((p) => { p.classList.toggle('is-active', p.dataset.panel === name); });
 }
-document.querySelectorAll('.settings-tab').forEach((t) => {
-  t.addEventListener('click', () => switchTab(t.dataset.tab));
-});
+document.querySelectorAll('.settings-tab').forEach((t) => { t.addEventListener('click', () => switchTab(t.dataset.tab)); });
 
 const dropzone = $('dropzone');
 const fileInput = $('avatarFileInput');
-
-['dragenter', 'dragover'].forEach((ev) => {
-  dropzone.addEventListener(ev, (e) => {
-    e.preventDefault();
-    dropzone.classList.add('is-hover');
-  });
-});
-['dragleave', 'drop'].forEach((ev) => {
-  dropzone.addEventListener(ev, (e) => {
-    e.preventDefault();
-    dropzone.classList.remove('is-hover');
-  });
-});
-dropzone.addEventListener('drop', (e) => {
-  const file = e.dataTransfer?.files?.[0];
-  if (file) uploadAndApply(file);
-});
-fileInput.addEventListener('change', () => {
-  if (fileInput.files[0]) uploadAndApply(fileInput.files[0]);
-});
+['dragenter', 'dragover'].forEach((ev) => { dropzone.addEventListener(ev, (e) => { e.preventDefault(); dropzone.classList.add('is-hover'); }); });
+['dragleave', 'drop'].forEach((ev) => { dropzone.addEventListener(ev, (e) => { e.preventDefault(); dropzone.classList.remove('is-hover'); }); });
+dropzone.addEventListener('drop', (e) => { const file = e.dataTransfer?.files?.[0]; if (file) uploadAndApply(file); });
+fileInput.addEventListener('change', () => { if (fileInput.files[0]) uploadAndApply(fileInput.files[0]); });
 
 async function uploadAndApply(file) {
   const errEl = $('avatarError');
   errEl.hidden = true;
   errEl.textContent = '';
-
   const result = await chAuth.uploadAvatar(file);
   if (!result.ok) {
     errEl.textContent = result.error;
@@ -240,12 +205,7 @@ function renderAvatarGrid() {
     if (currentProfile?.avatar_url === url) btn.classList.add('is-selected');
     btn.addEventListener('click', async () => {
       const result = await chAuth.updateProfile({ avatar_url: url });
-      if (!result.ok) {
-        const errEl = $('avatarError');
-        errEl.textContent = result.error;
-        errEl.hidden = false;
-        return;
-      }
+      if (!result.ok) { const errEl = $('avatarError'); errEl.textContent = result.error; errEl.hidden = false; return; }
       currentProfile.avatar_url = url;
       renderAvatar(currentProfile);
       if (typeof mountHeader === 'function') await mountHeader();
@@ -256,9 +216,6 @@ function renderAvatarGrid() {
   });
 }
 
-// ============================================================
-// Delete account modal
-// ============================================================
 const deleteModal = $('deleteModal');
 const deleteInput = $('confirmUsername');
 const deleteConfirmBtn = $('confirmDelete');
@@ -273,7 +230,6 @@ function openDeleteModal() {
   setTimeout(() => deleteInput.focus(), 180);
 }
 function closeDeleteModal() { deleteModal.classList.remove('is-open'); }
-
 $('openDeleteModal').addEventListener('click', openDeleteModal);
 $('cancelDelete').addEventListener('click', closeDeleteModal);
 deleteModal.addEventListener('click', (e) => { if (e.target === deleteModal) closeDeleteModal(); });
@@ -287,19 +243,11 @@ deleteInput.addEventListener('input', () => {
 
 deleteConfirmBtn.addEventListener('click', async () => {
   if (deleteConfirmBtn.disabled) return;
-
-  const ok = confirm(
-    'FINAL WARNING\n\n' +
-    'You are about to permanently delete the account "' + (currentProfile?.username || '') + '".\n\n' +
-    'All of your data will be erased. This CANNOT be undone.\n\n' +
-    'Click OK to permanently delete, Cancel to back out.'
-  );
+  const ok = confirm('FINAL WARNING\n\nYou are about to permanently delete the account "' + (currentProfile?.username || '') + '".\n\nAll of your data will be erased. This CANNOT be undone.\n\nClick OK to permanently delete, Cancel to back out.');
   if (!ok) return;
-
   deleteConfirmBtn.disabled = true;
   deleteConfirmBtn.textContent = 'Deleting…';
   $('modalError').hidden = true;
-
   const { error } = await chAuth.client.rpc('delete_own_account');
   if (error) {
     $('modalError').textContent = 'Delete failed: ' + error.message;
@@ -308,7 +256,6 @@ deleteConfirmBtn.addEventListener('click', async () => {
     deleteConfirmBtn.textContent = 'Permanently delete';
     return;
   }
-
   try {
     localStorage.removeItem('cloudhub-auth');
     localStorage.removeItem(CH.STORAGE_PROGRESS);
@@ -317,38 +264,19 @@ deleteConfirmBtn.addEventListener('click', async () => {
     localStorage.removeItem(CH.STORAGE_USER);
   } catch (e) {}
   try { await chAuth.client.auth.signOut(); } catch (e) {}
-
-  deleteModal.innerHTML =
-    '<div class="settings-modal__inner">' +
-      '<div class="settings-modal__icon" style="color:#7cbf3f;background:rgba(124,191,63,0.12);border-color:rgba(124,191,63,0.55);box-shadow:0 0 30px rgba(124,191,63,0.35);animation:none;">' +
-        '<svg width="40" height="40" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"/></svg>' +
-      '</div>' +
-      '<h2 class="settings-modal__title">Account deleted</h2>' +
-      '<p class="settings-modal__sub">Your account and all associated data have been permanently removed.</p>' +
-    '</div>';
-
+  deleteModal.innerHTML = '<div class="settings-modal__inner"><div class="settings-modal__icon" style="color:#7cbf3f;background:rgba(124,191,63,0.12);border-color:rgba(124,191,63,0.55);box-shadow:0 0 30px rgba(124,191,63,0.35);animation:none;"><svg width="40" height="40" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"/></svg></div><h2 class="settings-modal__title">Account deleted</h2><p class="settings-modal__sub">Your account and all associated data have been permanently removed.</p></div>';
   setTimeout(() => { window.location.href = '/home'; }, 1400);
 });
 
-// ============================================================
-// Report button
-// ============================================================
 $('openSettingsReport').addEventListener('click', () => {
-  if (typeof openReportModal === 'function') {
-    openReportModal('Account Settings');
-  }
+  if (typeof openReportModal === 'function') openReportModal('Account Settings');
 });
 
-// ============================================================
-// Boot
-// ============================================================
 (async function init() {
   const session = await chAuth.requireAuth('/user/settings');
   if (!session) return;
-
   currentUser = session.user;
   renderProfileFields(session.profile);
   renderAccount(session.profile, session.user);
-
   if (typeof chPageReady === 'function') chPageReady();
 })();
