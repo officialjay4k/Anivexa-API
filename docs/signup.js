@@ -33,6 +33,7 @@ let pendingEmail = '';
 let pendingUsername = '';
 let resendTimer = null;
 let resendCooldown = 0;
+let transitionBusy = false;
 
 // ---------- Form-level messages ----------
 function showError(msg) {
@@ -115,6 +116,7 @@ const scrubInterval = setInterval(function () {
 // ---------- Signup submit ----------
 signupForm.addEventListener('submit', async (e) => {
   e.preventDefault();
+  if (transitionBusy) return;
   clearMessages();
   scrubAutofillIfEmail();
 
@@ -153,33 +155,76 @@ signupForm.addEventListener('submit', async (e) => {
   location.href = '/user/dashboard';
 });
 
-// ---------- OTP panel ----------
+// ---------- OTP panel: animated swap ----------
 function showOtpPanel() {
-  signupForm.hidden = true;
-  signupExtras.hidden = true;
-  otpPanel.hidden = false;
+  if (transitionBusy) return;
+  transitionBusy = true;
 
-  otpEmailEl.textContent = pendingEmail;
-  otpInput.value = '';
-  clearOtpMessages();
+  // 1. Play exit animation on the form + extras.
+  signupForm.classList.add('is-leaving');
+  signupExtras.classList.add('is-leaving');
 
-  otpVerifyBtn.disabled = false;
-  otpVerifyBtn.textContent = 'Verify & continue';
+  // 2. After the exit animation finishes, hide them and reveal the OTP panel.
+  setTimeout(() => {
+    signupForm.hidden = true;
+    signupExtras.hidden = true;
+    signupForm.classList.remove('is-leaving');
+    signupExtras.classList.remove('is-leaving');
 
-  startResendCooldown(60);
-  setTimeout(() => otpInput.focus(), 100);
+    otpEmailEl.textContent = pendingEmail;
+    otpInput.value = '';
+    clearOtpMessages();
+
+    otpVerifyBtn.disabled = false;
+    otpVerifyBtn.textContent = 'Verify & continue';
+
+    otpPanel.hidden = false;
+
+    // 3. Force a reflow so the enter animation actually runs.
+    void otpPanel.offsetWidth;
+    otpPanel.classList.add('is-entering');
+
+    setTimeout(() => {
+      otpPanel.classList.remove('is-entering');
+      transitionBusy = false;
+      otpInput.focus();
+    }, 440);
+
+    startResendCooldown(60);
+  }, 240);
 }
 
 function backToForm() {
-  stopResendCooldown();
-  otpPanel.hidden = true;
-  signupForm.hidden = false;
-  signupExtras.hidden = false;
+  if (transitionBusy) return;
+  transitionBusy = true;
 
-  submitBtn.disabled = false;
-  submitBtn.textContent = 'Create account';
-  clearMessages();
-  clearOtpMessages();
+  otpPanel.classList.add('is-leaving');
+  // Use the same exit animation the form uses.
+  otpPanel.style.animation = 'ch-form-out 240ms cubic-bezier(0.4, 0, 0.6, 1) forwards';
+  otpPanel.style.pointerEvents = 'none';
+
+  setTimeout(() => {
+    otpPanel.hidden = true;
+    otpPanel.style.animation = '';
+    otpPanel.style.pointerEvents = '';
+
+    signupForm.hidden = false;
+    signupExtras.hidden = false;
+
+    submitBtn.disabled = false;
+    submitBtn.textContent = 'Create account';
+    clearMessages();
+    clearOtpMessages();
+    stopResendCooldown();
+
+    signupForm.classList.add('is-entering-form');
+    signupExtras.classList.add('is-entering-form');
+    setTimeout(() => {
+      signupForm.classList.remove('is-entering-form');
+      signupExtras.classList.remove('is-entering-form');
+      transitionBusy = false;
+    }, 300);
+  }, 240);
 }
 
 // ---------- OTP input handling ----------
@@ -227,8 +272,7 @@ async function verifyOtp() {
     return;
   }
 
-  // Session is live now. Make sure the username stuck — the trigger may
-  // have generated a placeholder, in which case we overwrite it here.
+  // Session is live now. Make sure the username stuck.
   if (pendingUsername && data?.user?.id) {
     try {
       await chAuth.client
