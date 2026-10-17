@@ -9,6 +9,7 @@ const CH = {
   STORAGE_SETTINGS:  '4kun_settings',
   STORAGE_WATCHLIST: '4kun_watchlist',
   STORAGE_USER:      '4kun_user',
+  STORAGE_EP_CACHE:  '4kun_ep_cache',
   DEBUG: false
 };
 window.CH = CH;
@@ -98,8 +99,8 @@ function chPageReady() {
       </div>
     `;
     document.body.appendChild(chPageLoaderEl);
-    setTimeout(chPageReady, 5000);
-    window.addEventListener('load', () => setTimeout(chPageReady, 500));
+    setTimeout(chPageReady, 3000);
+    window.addEventListener('load', () => setTimeout(chPageReady, 200));
   }
   if (document.body) create();
   else document.addEventListener('DOMContentLoaded', create);
@@ -166,6 +167,8 @@ async function mountHeader() {
     navRight = `<a href="/auth/login" class="ch-btn ch-btn--primary ch-btn--sm">Sign In</a>`;
   }
 
+  const dashLink = user ? `<a href="/user/dashboard" class="ch-header__link${active('/user/dashboard')}">Dashboard</a>` : '';
+
   mount.innerHTML = `
     <header class="ch-header">
       <div class="ch-motif-strip"></div>
@@ -193,7 +196,7 @@ async function mountHeader() {
         </form>
         <nav class="ch-header__nav">
           <a href="/home" class="ch-header__link${active('/home')}">Home</a>
-          <a href="/user/dashboard" class="ch-header__link${active('/user/dashboard')}">Dashboard</a>
+          ${dashLink}
           ${navRight}
         </nav>
       </div>
@@ -218,7 +221,7 @@ async function mountHeader() {
     filterBtn.addEventListener('click', (e) => {
       e.preventDefault();
       filterBtn.classList.toggle('is-active');
-      showToast('Filters coming soon');
+      showToast('Advanced filters coming soon');
     });
   }
 
@@ -234,9 +237,7 @@ async function mountHeader() {
   const logout = document.getElementById('chLogout');
   if (logout) {
     logout.addEventListener('click', async () => {
-      try {
-        if (window.chAuth) await chAuth.signOut();
-      } catch (e) {}
+      try { if (window.chAuth) await chAuth.signOut(); } catch (e) {}
       localStorage.removeItem(CH.STORAGE_USER);
       window.location.href = '/home';
     });
@@ -384,7 +385,6 @@ function openReportModal(context) {
       : "Tell us what's wrong. We read every report.";
   }
   
-  // Pre-select category based on context keywords
   const catEl = document.getElementById('chReportCategory');
   if (catEl) {
     if (context && context.toLowerCase().includes('watch')) catEl.value = 'player';
