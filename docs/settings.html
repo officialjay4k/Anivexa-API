@@ -4,7 +4,7 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>Settings — Cloud Hub</title>
-  <link rel="icon" type="image/png" href="/favicon.png">
+  <link rel="icon" type="image/x-icon" href="/favicon.ico">
   <link rel="apple-touch-icon" href="/apple-touch-icon.png">
   <link rel="stylesheet" href="/shared.css">
   <link rel="stylesheet" href="/settings.css">
@@ -17,7 +17,8 @@
         <h1 class="settings-hero__title">Account Settings</h1>
         <p class="settings-hero__sub">Manage your profile, identity, and account.</p>
       </header>
-      <!-- Profile Section (same as before) -->
+
+      <!-- Profile Section -->
       <section class="settings-card">
         <div class="settings-card__head">
           <h2 class="settings-card__title">Profile</h2>
@@ -56,15 +57,39 @@
           <button type="button" class="ch-btn ch-btn--quiet" id="resetProfileBtn">Reset</button>
         </div>
       </section>
-      <!-- Privacy Section -->
+
+      <!-- Preferences Section (NEW) -->
       <section class="settings-card">
         <div class="settings-card__head">
-          <h2 class="settings-card__title">Privacy</h2>
+          <h2 class="settings-card__title">Preferences</h2>
         </div>
-        <div class="settings-account">
-          <div class="settings-account__row" style="align-items: center; justify-content: space-between;">
+        <div class="settings-account" style="gap: 16px;">
+          
+          <div class="settings-account__row" style="align-items: center; justify-content: space-between; border-bottom: none; padding: 0;">
             <div>
-              <span class="settings-account__label" style="display:block; margin-bottom: 4px;">Hide Statistics</span>
+              <span class="settings-account__label" style="display:block; margin-bottom: 4px; color:#fff;">Notifications</span>
+              <span style="font-size: 13px; color: var(--ch-fg-muted);">Get notified when new episodes of your shows air.</span>
+            </div>
+            <label class="settings-toggle">
+              <input type="checkbox" id="toggleNotifications" checked>
+              <span class="settings-toggle__slider"></span>
+            </label>
+          </div>
+
+          <div class="settings-account__row" style="align-items: center; justify-content: space-between; border-bottom: none; padding: 0;">
+            <div>
+              <span class="settings-account__label" style="display:block; margin-bottom: 4px; color:#fff;">Public Profile</span>
+              <span style="font-size: 13px; color: var(--ch-fg-muted);">Make your profile visible to others on Cloud Hub.</span>
+            </div>
+            <label class="settings-toggle">
+              <input type="checkbox" id="togglePublic" checked>
+              <span class="settings-toggle__slider"></span>
+            </label>
+          </div>
+
+          <div class="settings-account__row" style="align-items: center; justify-content: space-between; border-bottom: none; padding: 0;">
+            <div>
+              <span class="settings-account__label" style="display:block; margin-bottom: 4px; color:#fff;">Hide Statistics</span>
               <span style="font-size: 13px; color: var(--ch-fg-muted);">Hide your watch stats and tier from public profile pages.</span>
             </div>
             <label class="settings-toggle">
@@ -72,8 +97,21 @@
               <span class="settings-toggle__slider"></span>
             </label>
           </div>
+          
+          <div class="settings-account__row" style="align-items: center; justify-content: space-between; border-bottom: none; padding: 0;">
+            <div>
+              <span class="settings-account__label" style="display:block; margin-bottom: 4px; color:#fff;">Discord Integration</span>
+              <span style="font-size: 13px; color: var(--ch-fg-muted);">Show your Discord status on your profile. (Coming Soon)</span>
+            </div>
+            <label class="settings-toggle" style="opacity: 0.5; cursor: not-allowed;">
+              <input type="checkbox" disabled>
+              <span class="settings-toggle__slider"></span>
+            </label>
+          </div>
+
         </div>
       </section>
+
       <!-- Account Section -->
       <section class="settings-card">
         <div class="settings-card__head">
@@ -86,6 +124,7 @@
           <div class="settings-account__row"><span class="settings-account__label">Email status</span><span class="settings-account__value" id="accountEmailStatus">—</span></div>
         </div>
       </section>
+
       <!-- Help & Support -->
       <section class="settings-card">
         <div class="settings-card__head">
@@ -99,6 +138,7 @@
           Report an Account Issue
         </button>
       </section>
+
       <!-- Danger Zone -->
       <section class="settings-card settings-card--danger">
         <div class="settings-card__head">
@@ -123,7 +163,8 @@
     </div>
   </main>
   <div id="ch-footer-mount"></div>
-  <!-- Modals (Avatar + Delete) -->
+
+  <!-- Modals -->
   <div class="settings-modal" id="avatarModal">
     <div class="settings-modal__inner settings-modal__inner--avatar">
       <h2 class="settings-modal__title" style="text-align:left;">Change avatar</h2>
@@ -144,6 +185,7 @@
       <div class="settings-modal__actions"><button type="button" class="ch-btn ch-btn--quiet" id="avatarCancel">Cancel</button></div>
     </div>
   </div>
+  
   <div class="settings-modal" id="deleteModal">
     <div class="settings-modal__inner">
       <div class="settings-modal__icon"><svg width="40" height="40" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M10.29 3.86 1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"/><line x1="12" y1="9" x2="12" y2="14"/><circle cx="12" cy="17.5" r="0.6" fill="currentColor" stroke="none"/></svg></div>
@@ -158,6 +200,7 @@
       </div>
     </div>
   </div>
+
   <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.45.0/dist/umd/supabase.min.js"></script>
   <script src="/supabase-config.js"></script>
   <script src="/shared.js"></script>
