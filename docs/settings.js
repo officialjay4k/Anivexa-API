@@ -53,6 +53,7 @@ function renderProfileFields(profile) {
   $('usernameInput').value = profile?.username || '';
   $('displayNameInput').value = profile?.display_name || '';
   $('bioInput').value = profile?.bio || '';
+  $('hideStatsToggle').checked = profile?.hidden || false;
   updateBioCount();
   $('modalUsernameEcho').textContent = profile?.username || 'your account';
   $('modalUsernamePrompt').textContent = profile?.username || 'username';
@@ -86,6 +87,7 @@ $('saveProfileBtn').addEventListener('click', async () => {
   const username = $('usernameInput').value.trim();
   const displayName = $('displayNameInput').value.trim() || null;
   const bio = $('bioInput').value.trim() || null;
+  const hidden = $('hideStatsToggle').checked;
 
   if (!USERNAME_RE.test(username)) {
     showProfileMsg('Username must be 3–20 characters: letters, numbers, dots, underscores.', false);
@@ -95,7 +97,7 @@ $('saveProfileBtn').addEventListener('click', async () => {
   $('saveProfileBtn').disabled = true;
   $('saveProfileBtn').textContent = 'Saving…';
 
-  const patch = { username, display_name: displayName, bio };
+  const patch = { username, display_name: displayName, bio, hidden };
   const result = await chAuth.updateProfile(patch);
 
   $('saveProfileBtn').disabled = false;
