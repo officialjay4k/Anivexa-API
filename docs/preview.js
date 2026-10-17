@@ -1,7 +1,5 @@
 // ============================================================
 // Cloud Hub — preview.js
-// Anime preview page: hero, info, episodes sidebar, characters,
-// staff, recommendations.
 // ============================================================
 
 const ANILIST_GRAPHQL = CH.ANILIST_GRAPHQL;
@@ -146,31 +144,12 @@ function fmtNumber(n) {
 
 const PLAY_ICON = `<svg width="12" height="12" viewBox="0 0 24 24" fill="currentColor"><polygon points="6 4 20 12 6 20"></polygon></svg>`;
 
-// ---------- Watchlist (localStorage stub) ----------
-function getWatchlist() {
+// ---------- Watchlist (localStorage fallback + Supabase sync) ----------
+function getLocalWatchlist() {
   try { return JSON.parse(localStorage.getItem(CH.STORAGE_WATCHLIST)) || {}; } catch { return {}; }
 }
-function saveWatchlist(w) {
+function saveLocalWatchlist(w) {
   try { localStorage.setItem(CH.STORAGE_WATCHLIST, JSON.stringify(w)); } catch {}
-}
-function isInWatchlist(anilistId) {
-  return !!getWatchlist()[String(anilistId)];
-}
-function toggleWatchlist(anilistId, meta) {
-  const w = getWatchlist();
-  const k = String(anilistId);
-  if (w[k]) {
-    delete w[k];
-  } else {
-    w[k] = {
-      anilistId: k,
-      title: meta.title || `AniList ${k}`,
-      image: meta.image || null,
-      addedAt: Date.now()
-    };
-  }
-  saveWatchlist(w);
-  return !!w[k];
 }
 
 // ---------- Hero ----------
@@ -223,7 +202,7 @@ async function renderHero(media, tmdb) {
   `;
 }
 
-// ---------- Meta row + CTAs ----------
+// ---------- Meta row + CTAs & Watchlist ----------
 function renderMetaAndCta(media) {
   const meta = document.getElementById('previewMeta');
   const cta = document.getElementById('previewCta');
@@ -239,36 +218,98 @@ function renderMetaAndCta(media) {
   const firstEp = 1;
   const watchHref = `/watch?id=${media.id}&ep=${firstEp}&audio=dub`;
 
-  const added = isInWatchlist(media.id);
+  const localWl = getLocalWatchlist()[String(media.id)] || { status: 'none', score: 0 };
+  let currentStatus = localWl.status;
+  let currentScore = localWl.score;
+
   cta.innerHTML = `
     <a href="${watchHref}" class="ch-btn ch-btn--primary ch-btn--lg">
       <svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor"><polygon points="6 4 20 12 6 20"></polygon></svg>
       Watch Now
     </a>
-    <button type="button" class="ch-btn ch-btn--cream ch-btn--lg" id="watchlistBtn">
-      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-        <path d="M19 21l-7-5-7 5V5a2 2 0 0 1 2-2h10a2 2 0 0 1 2 2z"></path>
-      </svg>
-      <span id="watchlistLabel">${added ? 'In List' : 'Add to List'}</span>
-    </button>
+    
+    <div class="ch-dropdown" id="previewWatchlistDropdown" style="margin-left: 8px;">
+      <button class="ch-btn ch-btn--cream ch-btn--lg" id="previewWatchlistBtn">
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+          <path d="M19 21l-7-5-7 5V5a2 2 0 0 1 2-2h10a2 2 0 0 1 2 2z"></path>
+        </svg>
+        <span id="previewWatchlistLabel">${currentStatus === 'none' ? 'Add to List' : 'Status: ' + currentStatus.toUpperCase()}</span>
+      </button>
+      <div class="ch-dropdown__menu" id="previewWatchlistMenu">
+        <button class="ch-dropdown__item" data-status="watching">Watching</button>
+        <button class="ch-dropdown__item" data-status="completed">Completed</button>
+        <button class="ch-dropdown__item" data-status="plan">Plan to Watch</button>
+        <button class="ch-dropdown__item" data-status="dropped">Dropped</button>
+        <button class="ch-dropdown__item" data-status="remove">Remove from List</button>
+      </div>
+    </div>
+
+    <div class="ch-rating" style="margin-left: 8px;">
+      <span class="ch-rating__label">Rate:</span>
+      <select class="ch-rating__select" id="previewRating">
+        <option value="0">—</option>
+        ${[1,2,3,4,5,6,7,8,9,10].map(n => `<option value="${n}" ${currentScore == n ? 'selected' : ''}>${n}</option>`).join('')}
+      </select>
+    </div>
   `;
 
-  const btn = document.getElementById('watchlistBtn');
-  const label = document.getElementById('watchlistLabel');
-  if (btn && label) {
-    btn.addEventListener('click', () => {
-      const now = toggleWatchlist(media.id, {
-        title: titleOf(media),
-        image: media.coverImage?.extraLarge || media.coverImage?.large
-      });
-      label.textContent = now ? 'In List' : 'Add to List';
-      btn.classList.toggle('ch-btn--cream', !now);
-      btn.classList.toggle('ch-btn--ghost', now);
-      if (typeof showToast === 'function') {
-        showToast(now ? 'Added to your list' : 'Removed from your list');
+  const dd = document.getElementById('previewWatchlistDropdown');
+  const btn = document.getElementById('previewWatchlistBtn');
+  const menu = document.getElementById('previewWatchlistMenu');
+  const label = document.getElementById('previewWatchlistLabel');
+
+  btn.onclick = (e) => { e.stopPropagation(); dd.classList.toggle('is-open'); };
+  document.addEventListener('click', (e) => { if (!dd.contains(e.target)) dd.classList.remove('is-open'); });
+
+  menu.querySelectorAll('.ch-dropdown__item').forEach(item => {
+    item.onclick = async () => {
+      const status = item.dataset.status;
+      dd.classList.remove('is-open');
+      
+      if (status === 'remove') {
+        await chAuth.removeWatchlistEntry(media.id);
+        const w = getLocalWatchlist();
+        delete w[String(media.id)];
+        saveLocalWatchlist(w);
+        label.textContent = 'Add to List';
+        showToast('Removed from list');
+        currentStatus = 'none';
+      } else {
+        await chAuth.upsertWatchlistEntry({
+          anilistId: media.id,
+          title: titleOf(media),
+          image: media.coverImage?.extraLarge,
+          status: status,
+          score: document.getElementById('previewRating').value || null
+        });
+        const w = getLocalWatchlist();
+        w[String(media.id)] = { status, title: titleOf(media), image: media.coverImage?.extraLarge, score: document.getElementById('previewRating').value };
+        saveLocalWatchlist(w);
+        label.textContent = 'Status: ' + status.toUpperCase();
+        showToast('Updated to ' + status);
+        currentStatus = status;
       }
+    };
+  });
+
+  document.getElementById('previewRating').addEventListener('change', async (e) => {
+    const score = Number(e.target.value) || null;
+    if (currentStatus === 'none' && score) {
+       currentStatus = 'watching';
+       label.textContent = 'Status: WATCHING';
+    }
+    await chAuth.upsertWatchlistEntry({
+      anilistId: media.id,
+      title: titleOf(media),
+      image: media.coverImage?.extraLarge,
+      status: currentStatus === 'none' ? 'watching' : currentStatus,
+      score: score
     });
-  }
+    const w = getLocalWatchlist();
+    w[String(media.id)] = { status: currentStatus === 'none' ? 'watching' : currentStatus, title: titleOf(media), image: media.coverImage?.extraLarge, score: score };
+    saveLocalWatchlist(w);
+    showToast('Rating saved');
+  });
 }
 
 // ---------- Synopsis ----------
@@ -433,7 +474,6 @@ function renderEpisodes(episodes, languages) {
   });
 }
 
-// We use a page-scoped global for anilist id — set on boot.
 let anilistIdGlobal = null;
 
 // ---------- Recommendations ----------
@@ -456,7 +496,6 @@ async function renderRecommendations(media) {
       .filter(m => m && m.id !== mediaId);
   } catch {}
 
-  // Top up with tag-based popular if fewer than 8.
   if (items.length < 8 && topTag) {
     try {
       const data = await anilistQuery(TAG_FALLBACK_QUERY, { tag: topTag });
@@ -469,7 +508,6 @@ async function renderRecommendations(media) {
     } catch {}
   }
 
-  // Dedupe + cap
   items = items.slice(0, 12);
 
   if (!items.length) { section.hidden = true; return; }
@@ -532,7 +570,6 @@ async function fetchProviderEpisodes(anilistId) {
     if (sub.length) languages.push('Sub (JP)');
     if (dub.length) languages.push('Dub (EN)');
 
-    // Prefer sub list for the sidebar (more complete typically). Sort by number.
     const chosen = (sub.length >= dub.length ? sub : dub).slice();
     chosen.sort((a, b) => Number(a.number) - Number(b.number));
     return { episodes: chosen, languages };
@@ -564,11 +601,9 @@ async function initPreview() {
     return;
   }
 
-  // Kick off TMDB + episodes in parallel with rendering what we can.
   const tmdbPromise = tmdbLookup(titleOf(media), media.seasonYear).catch(() => null);
   const epsPromise = fetchProviderEpisodes(id);
 
-  // Render everything we can right now (no TMDB yet — will patch hero)
   renderMetaAndCta(media);
   renderDescription(media);
   renderTags(media);
@@ -582,7 +617,6 @@ async function initPreview() {
   renderEpisodes(epsResult.episodes, epsResult.languages);
   renderFacts(media, epsResult.languages);
 
-  // Recommendations (async, may take a moment)
   renderRecommendations(media).catch(() => {});
 
   document.title = `${titleOf(media)} — Cloud Hub`;
