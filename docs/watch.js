@@ -73,6 +73,13 @@ function formatFormat(f) {
   return f.replace(/_/g, ' ').replace(/\b\w/g, function (c) { return c.toUpperCase(); });
 }
 
+// ---------- Restored Resume Function ----------
+function computeResumeAt() {
+  const saved = chProgress.get(anilistId, currentAudio, currentEp);
+  if (saved && saved.currentTime > 5) return saved.currentTime;
+  return null;
+}
+
 // ---------- Fast Episode Fetching ----------
 async function fetchProvidersEpisodes(anilistId) {
   try {
@@ -107,6 +114,15 @@ async function fetchProvidersEpisodes(anilistId) {
   }
 
   if (!result) return { results: [], hasSub: false, hasDub: false };
+  
+  // Save to cache
+  const out = { episodes: result.sub.length >= result.dub.length ? result.sub : result.dub, languages: [] };
+  try {
+    const cache = JSON.parse(localStorage.getItem(CH.STORAGE_EP_CACHE)) || {};
+    cache[anilistId] = { ts: Date.now(), data: out };
+    localStorage.setItem(CH.STORAGE_EP_CACHE, JSON.stringify(cache));
+  } catch(e) {}
+
   return { results: [result], hasSub: result.sub.length > 0, hasDub: result.dub.length > 0 };
 }
 
@@ -167,13 +183,11 @@ function initWatchlistButton() {
   
   btn.textContent = currentStatus === 'none' ? 'Add to List' : 'Status: ' + currentStatus.toUpperCase();
 
-  // Build stars
   let starsHtml = '';
   for (let i = 1; i <= 10; i++) {
     starsHtml += `<button class="ch-star ${i <= currentScore ? 'is-active' : ''}" data-val="${i}">★</button>`;
   }
 
-  // Insert stars container after the dropdown
   let starsContainer = document.getElementById('watchStars');
   if (!starsContainer) {
     starsContainer = document.createElement('div');
@@ -199,6 +213,7 @@ function initWatchlistButton() {
         localStorage.setItem(CH.STORAGE_WATCHLIST, JSON.stringify(w));
         btn.textContent = 'Add to List';
         showToast('Removed from list');
+        initWatchlistButton(); // Re-render
       } else {
         await chAuth.upsertWatchlistEntry({
           anilistId: media.id,
@@ -213,6 +228,7 @@ function initWatchlistButton() {
         localStorage.setItem(CH.STORAGE_WATCHLIST, JSON.stringify(w));
         btn.textContent = 'Status: ' + status.toUpperCase();
         showToast('Updated to ' + status);
+        initWatchlistButton(); // Re-render
       }
     };
   });
@@ -265,7 +281,6 @@ function renderNextAiring() {
   if (!next || !next.airingAt) { box.hidden = true; return; }
 
   const nowSec = Math.floor(Date.now() / 1000);
-  // ONLY SHOW IF LESS THAN 30 DAYS AWAY
   const thirtyDays = 30 * 24 * 60 * 60;
   if (next.airingAt - nowSec > thirtyDays || next.airingAt <= nowSec - 3600) {
     box.hidden = true;
@@ -382,7 +397,7 @@ function goToEpisode(n) {
 function syncWatchData(force = false) {
   if (!window.chAuth || !chAuth.user) return;
   const now = Date.now();
-  if (!force && now - lastDbSync < 60000) return; // Sync at most once per minute
+  if (!force && now - lastDbSync < 60000) return;
   lastDbSync = now;
 
   const progress = chProgress.get(anilistId, currentAudio, currentEp);
