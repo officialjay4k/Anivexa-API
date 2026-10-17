@@ -6,7 +6,6 @@ const $ = (id) => document.getElementById(id);
 
 function getUsernameFromUrl() {
   const parts = location.pathname.split('/');
-  // URL format: /user/{username}
   const last = parts[parts.length - 1] || parts[parts.length - 2];
   return last ? decodeURIComponent(last) : null;
 }
@@ -21,22 +20,18 @@ function formatDate(isoString) {
 async function initProfile() {
   const username = getUsernameFromUrl();
 
-  // Guard against /user/dashboard hitting this page by accident
   if (!username || username === 'dashboard' || username === 'settings') {
     showNotFound();
     return;
   }
 
-  // 1. Fetch profile data from the public view
   const profile = await chAuth.fetchPublicProfile(username);
   if (!profile) {
     showNotFound();
     return;
   }
 
-  // 2. Populate Identity
   document.title = `${profile.display_name || profile.username} — Cloud Hub`;
-  
   const name = profile.display_name || profile.username || 'User';
   const initial = name.charAt(0).toUpperCase();
   
@@ -55,7 +50,6 @@ async function initProfile() {
 
   $('profileJoinDate').textContent = formatDate(profile.created_at);
 
-  // Avatar
   const avatarEl = $('profileAvatar');
   if (profile.avatar_url) {
     avatarEl.style.backgroundImage = `url('${profile.avatar_url}')`;
@@ -63,7 +57,6 @@ async function initProfile() {
     avatarEl.textContent = initial;
   }
 
-  // Hero background (using their avatar blurred as a cheap backdrop)
   if (profile.avatar_url) {
     $('profileBg').style.backgroundImage = `url('${profile.avatar_url}')`;
   }
@@ -83,10 +76,9 @@ async function initProfile() {
   const tier = chAuth.tierFromScore(score);
   $('profileTier').innerHTML = `<span class="profile-tier__badge">${chEscapeHtml(tier)}</span>`;
 
-  // Render Stats Grid (if not hidden)
+  // Render Stats Grid
   const statsGrid = $('profileStatsGrid');
   if (profile.hidden && stats) {
-    // Profile is hidden, but we still show a generic message if they want
     statsGrid.innerHTML = `<div class="profile-wl-empty">This user has chosen to hide their stats.</div>`;
   } else if (stats) {
     const statBoxes = [
@@ -97,14 +89,20 @@ async function initProfile() {
       { label: 'Rated', val: stats.rated || 0 },
       { label: 'Hours', val: stats.watch_hours || 0 }
     ];
-    statsGrid.innerHTML = statBoxes.map(b => `
-      <div class="profile-stat-box">
+    statsGrid.innerHTML = statBoxes.map(b => {
+      if (b.val === 0) {
+        return `<div class="profile-stat-box">
+          <div class="profile-stat-box__val" style="color:var(--ch-fg-muted); font-size:14px; margin-top:5px;">Empty</div>
+          <div class="profile-stat-box__label">${b.label}</div>
+        </div>`;
+      }
+      return `<div class="profile-stat-box">
         <div class="profile-stat-box__val">${b.val}</div>
         <div class="profile-stat-box__label">${b.label}</div>
-      </div>
-    `).join('');
+      </div>`;
+    }).join('');
   } else {
-    statsGrid.innerHTML = `<div class="profile-wl-empty">No stats recorded yet.</div>`;
+    statsGrid.innerHTML = `<div class="profile-wl-empty">This user's statistics are empty.</div>`;
   }
 
   // 4. Fetch Watchlist
@@ -114,7 +112,6 @@ async function initProfile() {
   if (!watchlist || watchlist.length === 0) {
     wlContainer.innerHTML = `<div class="profile-wl-empty">This user's watchlist is empty.</div>`;
   } else {
-    // Group by status
     const groups = {
       watching: [],
       completed: [],
@@ -128,7 +125,6 @@ async function initProfile() {
 
     let html = '';
     
-    // Render sections
     const statusOrder = [
       { key: 'watching', label: 'Currently Watching' },
       { key: 'completed', label: 'Completed' },
@@ -137,33 +133,31 @@ async function initProfile() {
     ];
 
     statusOrder.forEach(group => {
-      const items = groups[group.key];
-      if (!items || items.length === 0) return;
+      const items = groups[group.key] || [];
 
       html += `<h3 class="profile-section__title" style="font-size:14px; margin: var(--s-4) 0 var(--s-3);">${group.label} <span style="color:var(--ch-fg-muted); font-size:12px; margin-left:8px;">(${items.length})</span></h3>`;
-      html += `<div class="profile-wl-grid">`;
       
-      items.forEach(item => {
-        const img = item.image || '';
-        const title = item.title || `AniList ${item.anilist_id}`;
-        html += `
-          <a href="/preview?id=${item.anilist_id}" class="profile-wl-card">
-            <div class="profile-wl-card__thumb">
-              ${img ? `<img src="${chEscapeHtml(img)}" alt="" loading="lazy">` : ''}
-            </div>
-            <div class="profile-wl-card__title">${chEscapeHtml(title)}</div>
-          </a>
-        `;
-      });
-      
-      html += `</div>`;
+      if (items.length === 0) {
+        html += `<div class="profile-wl-empty" style="margin-bottom: var(--s-4);">This user's ${group.label.toLowerCase()} list is empty.</div>`;
+      } else {
+        html += `<div class="profile-wl-grid">`;
+        items.forEach(item => {
+          const img = item.image || '';
+          const title = item.title || `AniList ${item.anilist_id}`;
+          html += `
+            <a href="/preview?id=${item.anilist_id}" class="profile-wl-card">
+              <div class="profile-wl-card__thumb">
+                ${img ? `<img src="${chEscapeHtml(img)}" alt="" loading="lazy">` : ''}
+              </div>
+              <div class="profile-wl-card__title">${chEscapeHtml(title)}</div>
+            </a>
+          `;
+        });
+        html += `</div>`;
+      }
     });
 
-    if (html === '') {
-      wlContainer.innerHTML = `<div class="profile-wl-empty">No public watchlist entries to show.</div>`;
-    } else {
-      wlContainer.innerHTML = html;
-    }
+    wlContainer.innerHTML = html;
   }
 
   // 5. Reveal Page
