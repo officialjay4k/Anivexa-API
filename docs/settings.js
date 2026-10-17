@@ -49,9 +49,16 @@ function renderProfileFields(profile) {
   $('displayNameInput').value = profile?.display_name || '';
   $('bioInput').value = profile?.bio || '';
   
-  // Default to FALSE if null/undefined
+  // Default to FALSE if null/undefined for stats
   $('hideStatsToggle').checked = profile?.hidden ?? false;
   
+  // Load Preferences from localStorage
+  try {
+    const prefs = JSON.parse(localStorage.getItem('ch_prefs')) || {};
+    $('toggleNotifications').checked = prefs.notifications ?? true;
+    $('togglePublic').checked = prefs.public ?? true;
+  } catch(e) {}
+
   updateBioCount();
   $('modalUsernameEcho').textContent = profile?.username || 'your account';
   $('modalUsernamePrompt').textContent = profile?.username || 'username';
@@ -102,6 +109,15 @@ $('saveProfileBtn').addEventListener('click', async () => {
     showProfileMsg(result.error, false);
     return;
   }
+
+  // Save toggles locally
+  try {
+    const prefs = {
+      notifications: $('toggleNotifications').checked,
+      public: $('togglePublic').checked
+    };
+    localStorage.setItem('ch_prefs', JSON.stringify(prefs));
+  } catch(e) {}
 
   showProfileMsg('Saved.', true);
   renderProfileFields(result.profile);
