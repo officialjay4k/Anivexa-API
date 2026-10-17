@@ -88,9 +88,6 @@ const chAuth = (() => {
     const user = data.user;
     if (!user) return { ok: false, error: 'Signup succeeded but no user returned.' };
 
-    // Email confirmation ON — no session yet. The username is carried in
-    // raw_user_meta_data and the caller is responsible for showing the OTP
-    // entry panel; on verify we'll ensure the profile has the right username.
     if (!data.session) {
       return {
         ok: true,
@@ -101,7 +98,6 @@ const chAuth = (() => {
       };
     }
 
-    // Email confirmation OFF — session is live right now.
     let upErr = null;
     for (let i = 0; i < 2; i++) {
       const r = await sb.from('profiles').update({ username: clean }).eq('id', user.id);
@@ -159,10 +155,14 @@ const chAuth = (() => {
     const clean = {};
     for (const k of allowed) if (k in patch) clean[k] = patch[k];
 
+    // BUG FIX: Only check availability if the username is ACTUALLY changing.
     if (clean.username) {
-      const { ok, reason } = await checkUsernameAvailable(clean.username);
-      if (!ok && reason === 'taken') return { ok: false, error: 'That username is already taken.' };
-      if (!ok && reason === 'format') return { ok: false, error: 'Invalid username format.' };
+      const currentName = (cachedProfile?.username || '').toLowerCase();
+      if (clean.username.toLowerCase() !== currentName) {
+        const { ok, reason } = await checkUsernameAvailable(clean.username);
+        if (!ok && reason === 'taken') return { ok: false, error: 'That username is already taken.' };
+        if (!ok && reason === 'format') return { ok: false, error: 'Invalid username format.' };
+      }
     }
 
     const { error } = await sb.from('profiles').update(clean).eq('id', cachedUser.id);
