@@ -73,43 +73,41 @@ function formatFormat(f) {
   return f.replace(/_/g, ' ').replace(/\b\w/g, function (c) { return c.toUpperCase(); });
 }
 
+// ---------- Fast Episode Fetching ----------
 async function fetchProvidersEpisodes(anilistId) {
-  const reqs = EP_FETCH_PROVIDERS.map(function (p) {
-    const url = API_BASE + '/episodes/' + p + '/' + anilistId;
-    return fetch(url, { cache: 'no-store' })
-      .then(function (res) { return res.ok ? res.json() : null; })
-      .then(function (data) {
-        if (!data) return null;
-        const block = data[p];
-        if (!block || block.error) return null;
-        return {
-          provider: p,
-          sub: (block.episodes && block.episodes.sub) || [],
-          dub: (block.episodes && block.episodes.dub) || []
-        };
-      })
-      .catch(function () { return null; });
-  });
-  const results = (await Promise.all(reqs)).filter(Boolean);
-
-  const probeAudio = async function (audio) {
-    for (const r of results) {
-      const list = audio === 'sub' ? r.sub : r.dub;
-      if (!list.length) continue;
-      const epId = String(list[0].id).split('/').pop();
-      try {
-        const res = await fetch(API_BASE + '/watch/' + r.provider + '/' + anilistId + '/' + audio + '/' + epId, { cache: 'no-store' });
-        if (!res.ok) continue;
-        const data = await res.json();
-        const streams = (data && data.streams) || [];
-        if (streams.length) return true;
-      } catch (e) {}
+  try {
+    const cache = JSON.parse(localStorage.getItem(CH.STORAGE_EP_CACHE)) || {};
+    if (cache[anilistId] && Date.now() - cache[anilistId].ts < 1000 * 60 * 60 * 6) {
+      const d = cache[anilistId].data;
+      return { results: [{ provider: 'cache', sub: d.episodes, dub: d.episodes }], hasSub: true, hasDub: true };
     }
-    return false;
-  };
+  } catch(e) {}
 
-  const [subOk, dubOk] = await Promise.all([probeAudio('sub'), probeAudio('dub')]);
-  return { results: results, hasSub: subOk, hasDub: dubOk };
+  const fetchPromise = (p) => fetch(`${API_BASE}/episodes/${p}/${anilistId}`, { cache: 'no-store' })
+    .then(res => res.ok ? res.json() : null)
+    .then(data => {
+      if (!data || !data[p] || data[p].error) return null;
+      const sub = data[p].episodes?.sub || [];
+      const dub = data[p].episodes?.dub || [];
+      if (!sub.length && !dub.length) return null;
+      return { provider: p, sub, dub };
+    })
+    .catch(() => null);
+
+  const fastest = ['reanime', 'anikoto', 'kaa'];
+  const promises = fastest.map(fetchPromise);
+  
+  let result = null;
+  try {
+    result = await Promise.any(promises);
+  } catch (e) {
+    const rest = EP_FETCH_PROVIDERS.filter(p => !fastest.includes(p));
+    const restPromises = rest.map(fetchPromise);
+    try { result = await Promise.any(restPromises); } catch(e2) {}
+  }
+
+  if (!result) return { results: [], hasSub: false, hasDub: false };
+  return { results: [result], hasSub: result.sub.length > 0, hasDub: result.dub.length > 0 };
 }
 
 function computeAiredCap(media) {
@@ -158,21 +156,36 @@ function initWatchlistButton() {
   if (!btn || !menu || !dd) return;
 
   let currentStatus = 'none';
+  let currentScore = 0;
   try {
     const w = JSON.parse(localStorage.getItem(CH.STORAGE_WATCHLIST)) || {};
-    if (w[String(media.id)]) currentStatus = w[String(media.id)].status || 'watching';
+    if (w[String(media.id)]) {
+      currentStatus = w[String(media.id)].status || 'watching';
+      currentScore = w[String(media.id)].score || 0;
+    }
   } catch(e) {}
   
   btn.textContent = currentStatus === 'none' ? 'Add to List' : 'Status: ' + currentStatus.toUpperCase();
 
-  btn.onclick = (e) => {
-    e.stopPropagation();
-    dd.classList.toggle('is-open');
-  };
+  // Build stars
+  let starsHtml = '';
+  for (let i = 1; i <= 10; i++) {
+    starsHtml += `<button class="ch-star ${i <= currentScore ? 'is-active' : ''}" data-val="${i}">★</button>`;
+  }
 
-  document.addEventListener('click', (e) => {
-    if (!dd.contains(e.target)) dd.classList.remove('is-open');
-  });
+  // Insert stars container after the dropdown
+  let starsContainer = document.getElementById('watchStars');
+  if (!starsContainer) {
+    starsContainer = document.createElement('div');
+    starsContainer.id = 'watchStars';
+    starsContainer.className = 'ch-stars';
+    starsContainer.style.marginLeft = '16px';
+    starsContainer.innerHTML = starsHtml;
+    dd.parentNode.insertBefore(starsContainer, dd.nextSibling);
+  }
+
+  btn.onclick = (e) => { e.stopPropagation(); dd.classList.toggle('is-open'); };
+  document.addEventListener('click', (e) => { if (!dd.contains(e.target)) dd.classList.remove('is-open'); });
 
   menu.querySelectorAll('.ch-dropdown__item').forEach(item => {
     item.onclick = async () => {
@@ -192,14 +205,37 @@ function initWatchlistButton() {
           title: titleOf(media),
           image: media.coverImage?.extraLarge,
           status: status,
-          progressEp: currentEp
+          progressEp: currentEp,
+          score: currentScore || null
         });
         const w = JSON.parse(localStorage.getItem(CH.STORAGE_WATCHLIST)) || {};
-        w[String(media.id)] = { status, title: titleOf(media), image: media.coverImage?.extraLarge };
+        w[String(media.id)] = { status, title: titleOf(media), image: media.coverImage?.extraLarge, score: currentScore };
         localStorage.setItem(CH.STORAGE_WATCHLIST, JSON.stringify(w));
         btn.textContent = 'Status: ' + status.toUpperCase();
         showToast('Updated to ' + status);
       }
+    };
+  });
+
+  document.querySelectorAll('#watchStars .ch-star').forEach(star => {
+    star.onclick = async () => {
+      const val = Number(star.dataset.val);
+      currentScore = val;
+      document.querySelectorAll('#watchStars .ch-star').forEach(s => {
+        s.classList.toggle('is-active', Number(s.dataset.val) <= val);
+      });
+      await chAuth.upsertWatchlistEntry({
+        anilistId: media.id,
+        title: titleOf(media),
+        image: media.coverImage?.extraLarge,
+        status: currentStatus === 'none' ? 'watching' : currentStatus,
+        progressEp: currentEp,
+        score: val
+      });
+      const w = JSON.parse(localStorage.getItem(CH.STORAGE_WATCHLIST)) || {};
+      w[String(media.id)] = { status: currentStatus === 'none' ? 'watching' : currentStatus, title: titleOf(media), image: media.coverImage?.extraLarge, score: val };
+      localStorage.setItem(CH.STORAGE_WATCHLIST, JSON.stringify(w));
+      showToast(`Rated ${val}/10`);
     };
   });
 }
@@ -229,7 +265,13 @@ function renderNextAiring() {
   if (!next || !next.airingAt) { box.hidden = true; return; }
 
   const nowSec = Math.floor(Date.now() / 1000);
-  if (next.airingAt <= nowSec - 3600) { box.hidden = true; return; }
+  // ONLY SHOW IF LESS THAN 30 DAYS AWAY
+  const thirtyDays = 30 * 24 * 60 * 60;
+  if (next.airingAt - nowSec > thirtyDays || next.airingAt <= nowSec - 3600) {
+    box.hidden = true;
+    return;
+  }
+  
   box.hidden = false;
 
   const d = new Date(next.airingAt * 1000);
@@ -687,13 +729,9 @@ chPipeline.on('exhausted', function () {
 // Similar anime
 // ============================================================
 const SIMILAR_RECS_QUERY = 'query ($id: Int) { Media(id: $id, type: ANIME) { recommendations(perPage: 10, sort: RATING_DESC) { nodes { mediaRecommendation { id title { romaji english } coverImage { large extraLarge } format averageScore seasonYear } } } } }';
-const SIMILAR_TAG_QUERY = 'query ($tag: String) { Page(page: 1, perPage: 12) { media(type: ANIME, tag: $tag, sort: POPULARITY_DESC, isAdult: false) { id title { romaji english } coverImage { large extraLarge } format averageScore seasonYear } } }';
 
 function withTimeout(promise, ms) {
-  return Promise.race([
-    promise,
-    new Promise(function (_, reject) { setTimeout(function () { reject(new Error('timeout')); }, ms); })
-  ]);
+  return Promise.race([promise, new Promise(function (_, reject) { setTimeout(function () { reject(new Error('timeout')); }, ms); })]);
 }
 
 async function renderSimilar(mediaArg) {
@@ -705,25 +743,7 @@ async function renderSimilar(mediaArg) {
     const data = await withTimeout(anilistQuery(SIMILAR_RECS_QUERY, { id: mediaArg.id }), 8000);
     const nodes = (data && data.Media && data.Media.recommendations && data.Media.recommendations.nodes) || [];
     items = nodes.map(function (n) { return n.mediaRecommendation; }).filter(function (m) { return m && m.id !== mediaArg.id; });
-  } catch (e) { console.warn('Similar recs failed:', e.message); }
-
-  if (items.length < 6) {
-    const topTags = (mediaArg.tags || []).filter(function (t) { return !t.isMediaSpoiler; })
-      .sort(function (a, b) { return b.rank - a.rank; }).slice(0, 2);
-    for (const tag of topTags) {
-      if (items.length >= 8) break;
-      try {
-        const data = await withTimeout(anilistQuery(SIMILAR_TAG_QUERY, { tag: tag.name }), 6000);
-        const extra = (data && data.Page && data.Page.media) || [];
-        const seen = new Set(items.map(function (m) { return m.id; }));
-        for (const m of extra) {
-          if (seen.has(m.id) || m.id === mediaArg.id) continue;
-          items.push(m); seen.add(m.id);
-          if (items.length >= 10) break;
-        }
-      } catch (e) {}
-    }
-  }
+  } catch (e) {}
 
   items = items.slice(0, 8);
   if (!items.length) {
@@ -817,7 +837,6 @@ async function initWatch() {
   const epExists = episodeList.find(function (e) { return Number(e.number) === Number(currentEp); });
   if (!epExists && episodeList.length) {
     const cap = computeAiredCap(media);
-    // If AniList says this episode has aired, but the provider doesn't have it, add it as pending.
     if (cap && Number(currentEp) <= cap) {
       episodeList.push({ number: Number(currentEp), title: 'Episode ' + currentEp, isPending: true });
       episodeList.sort(function(a,b) { return Number(a.number) - Number(b.number); });
