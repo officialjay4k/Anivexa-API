@@ -329,6 +329,15 @@ deleteConfirmBtn.addEventListener('click', async () => {
 });
 
 // ============================================================
+// Report button
+// ============================================================
+$('openSettingsReport').addEventListener('click', () => {
+  if (typeof openReportModal === 'function') {
+    openReportModal('Account Settings');
+  }
+});
+
+// ============================================================
 // Boot
 // ============================================================
 (async function init() {
