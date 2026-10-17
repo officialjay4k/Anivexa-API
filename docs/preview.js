@@ -4,7 +4,6 @@
 
 const ANILIST_GRAPHQL = CH.ANILIST_GRAPHQL;
 const API_BASE = CH.API_BASE;
-const EP_FETCH_PROVIDERS = ['reanime', 'anikoto', 'animegg', 'aniwaves', 'senshi', 'anizone', 'kaa'];
 
 function getIdFromUrl() {
   const params = new URLSearchParams(location.search);
@@ -29,42 +28,16 @@ async function anilistQuery(query, variables = {}) {
 const MEDIA_QUERY = `
   query ($id: Int) {
     Media(id: $id, type: ANIME) {
-      id
-      idMal
-      title { romaji english native }
-      synonyms
-      description(asHtml: false)
-      coverImage { extraLarge large color }
-      bannerImage
-      format
-      status
-      episodes
-      duration
-      season
-      seasonYear
-      startDate { year month day }
-      endDate { year month day }
-      averageScore
-      meanScore
-      popularity
-      favourites
-      genres
-      tags { id name rank isMediaSpoiler }
-      studios(isMain: true) { nodes { id name } }
-      countryOfOrigin
-      source
-      trailer { id site thumbnail }
-      nextAiringEpisode { episode airingAt }
-      staff(perPage: 16, sort: RELEVANCE) {
-        edges { role node { id name { full } image { medium } } }
-      }
+      id idMal title { romaji english native } synonyms description(asHtml: false)
+      coverImage { extraLarge large color } bannerImage format status episodes duration season seasonYear
+      startDate { year month day } endDate { year month day } averageScore meanScore popularity favourites
+      genres tags { id name rank isMediaSpoiler } studios(isMain: true) { nodes { id name } }
+      countryOfOrigin source trailer { id site thumbnail } nextAiringEpisode { episode airingAt }
+      staff(perPage: 16, sort: RELEVANCE) { edges { role node { id name { full } image { medium } } } }
       characters(perPage: 18, sort: [ROLE, RELEVANCE, ID]) {
         edges {
-          role
-          node { id name { full } image { medium large } }
-          voiceActors(language: JAPANESE, sort: RELEVANCE) {
-            id name { full } image { medium }
-          }
+          role node { id name { full } image { medium large } }
+          voiceActors(language: JAPANESE, sort: RELEVANCE) { id name { full } image { medium } }
         }
       }
     }
@@ -75,11 +48,7 @@ const RECS_QUERY = `
   query ($id: Int) {
     Media(id: $id, type: ANIME) {
       recommendations(perPage: 12, sort: RATING_DESC) {
-        nodes {
-          mediaRecommendation {
-            id title { romaji english } coverImage { extraLarge large } format averageScore seasonYear
-          }
-        }
+        nodes { mediaRecommendation { id title { romaji english } coverImage { extraLarge large } format averageScore seasonYear } }
       }
     }
   }
@@ -114,55 +83,51 @@ function saveLocalWatchlist(w) {
   try { localStorage.setItem(CH.STORAGE_WATCHLIST, JSON.stringify(w)); } catch {}
 }
 
-// ---------- Fast Episode Fetching ----------
-async function fetchFastEpisodes(anilistId) {
+// ---------- Stable Episode Fetching ----------
+async function fetchProviderEpisodes(anilistId) {
   try {
-    const cache = JSON.parse(localStorage.getItem(CH.STORAGE_EP_CACHE)) || {};
-    if (cache[anilistId] && Date.now() - cache[anilistId].ts < 1000 * 60 * 60 * 6) {
-      return cache[anilistId].data;
+    // Try reanime first (usually fastest and most complete)
+    const res = await fetch(`${API_BASE}/episodes/reanime/${anilistId}`, { cache: 'no-store' });
+    if (res.ok) {
+      const data = await res.json();
+      const block = data.reanime;
+      if (block && !block.error) {
+        const sub = block.episodes?.sub || [];
+        const dub = block.episodes?.dub || [];
+        if (sub.length || dub.length) {
+          const languages = [];
+          if (sub.length) languages.push('Sub (JP)');
+          if (dub.length) languages.push('Dub (EN)');
+          const chosen = (sub.length >= dub.length ? sub : dub).slice();
+          chosen.sort((a, b) => Number(a.number) - Number(b.number));
+          return { episodes: chosen, languages };
+        }
+      }
     }
-  } catch(e) {}
-
-  const fetchPromise = (p) => fetch(`${API_BASE}/episodes/${p}/${anilistId}`, { cache: 'no-store' })
-    .then(res => res.ok ? res.json() : null)
-    .then(data => {
-      if (!data || !data[p] || data[p].error) return null;
-      const sub = data[p].episodes?.sub || [];
-      const dub = data[p].episodes?.dub || [];
-      if (!sub.length && !dub.length) return null;
-      return { provider: p, sub, dub };
-    })
-    .catch(() => null);
-
-  const fastest = ['reanime', 'anikoto', 'kaa'];
-  const promises = fastest.map(fetchPromise);
-  
-  let result = null;
-  try {
-    result = await Promise.any(promises);
-  } catch (e) {
-    const rest = EP_FETCH_PROVIDERS.filter(p => !fastest.includes(p));
-    const restPromises = rest.map(fetchPromise);
-    try { result = await Promise.any(restPromises); } catch(e2) {}
-  }
-
-  if (!result) return { episodes: [], languages: [] };
-
-  const languages = [];
-  if (result.sub.length) languages.push('Sub (JP)');
-  if (result.dub.length) languages.push('Dub (EN)');
-
-  const chosen = (result.sub.length >= result.dub.length ? result.sub : result.dub).slice();
-  chosen.sort((a, b) => Number(a.number) - Number(b.number));
-  const out = { episodes: chosen, languages };
+  } catch {}
 
   try {
-    const cache = JSON.parse(localStorage.getItem(CH.STORAGE_EP_CACHE)) || {};
-    cache[anilistId] = { ts: Date.now(), data: out };
-    localStorage.setItem(CH.STORAGE_EP_CACHE, JSON.stringify(cache));
-  } catch(e) {}
+    // Fallback to anikoto
+    const res = await fetch(`${API_BASE}/episodes/anikoto/${anilistId}`, { cache: 'no-store' });
+    if (res.ok) {
+      const data = await res.json();
+      const block = data.anikoto;
+      if (block && !block.error) {
+        const sub = block.episodes?.sub || [];
+        const dub = block.episodes?.dub || [];
+        if (sub.length || dub.length) {
+          const languages = [];
+          if (sub.length) languages.push('Sub (JP)');
+          if (dub.length) languages.push('Dub (EN)');
+          const chosen = (sub.length >= dub.length ? sub : dub).slice();
+          chosen.sort((a, b) => Number(a.number) - Number(b.number));
+          return { episodes: chosen, languages };
+        }
+      }
+    }
+  } catch {}
 
-  return out;
+  return { episodes: [], languages: [] };
 }
 
 // ---------- Hero ----------
@@ -274,8 +239,7 @@ function renderMetaAndCta(media) {
         label.textContent = 'Add to List';
         showToast('Removed from list');
         currentStatus = 'none';
-        // Re-render to remove the "Remove" button
-        renderMetaAndCta(media);
+        renderMetaAndCta(media); // Re-render
       } else {
         await chAuth.upsertWatchlistEntry({
           anilistId: media.id,
@@ -290,6 +254,7 @@ function renderMetaAndCta(media) {
         label.textContent = 'Status: ' + status.toUpperCase();
         showToast('Updated to ' + status);
         currentStatus = status;
+        renderMetaAndCta(media); // Re-render
       }
     };
   });
@@ -424,12 +389,8 @@ function renderCharacters(media) {
 
     return `
       <div class="character-card" title="${chEscapeHtml(charName)}">
-        <div class="character-card__side">
-          ${charImg ? `<img src="${chEscapeHtml(charImg)}" alt="${chEscapeHtml(charName)}" loading="lazy">` : ''}
-        </div>
-        <div class="character-card__side character-card__side--va ${vaImg ? '' : 'character-card__side--empty'}">
-          ${vaImg ? `<img src="${chEscapeHtml(vaImg)}" alt="${chEscapeHtml(vaName)}" loading="lazy">` : 'No VA'}
-        </div>
+        <div class="character-card__side">${charImg ? `<img src="${chEscapeHtml(charImg)}" alt="${chEscapeHtml(charName)}" loading="lazy">` : ''}</div>
+        <div class="character-card__side character-card__side--va ${vaImg ? '' : 'character-card__side--empty'}">${vaImg ? `<img src="${chEscapeHtml(vaImg)}" alt="${chEscapeHtml(vaName)}" loading="lazy">` : 'No VA'}</div>
         <div class="character-card__info">
           <div class="character-card__name">${chEscapeHtml(charName)}</div>
           <div class="character-card__role">${chEscapeHtml(role)}</div>
@@ -537,7 +498,7 @@ async function initPreview() {
   }
 
   const tmdbPromise = tmdbLookup(titleOf(media), media.seasonYear).catch(() => null);
-  const epsPromise = fetchFastEpisodes(id);
+  const epsPromise = fetchProviderEpisodes(id);
 
   renderMetaAndCta(media);
   renderDescription(media);
