@@ -61,6 +61,16 @@ async function initProfile() {
     $('profileBg').style.backgroundImage = `url('${profile.avatar_url}')`;
   }
 
+  // --- ADD FRIEND BUTTON LOGIC ---
+  const actionsWrap = document.querySelector('.profile-actions');
+  if (actionsWrap) {
+    if (window.chAuth && chAuth.user && chAuth.user.id === profile.id) {
+      actionsWrap.innerHTML = `<a href="/user/settings" class="ch-btn ch-btn--ghost" style="width:100%">Edit Profile</a>`;
+    } else {
+      actionsWrap.innerHTML = `<button type="button" class="ch-btn ch-btn--primary" style="width:100%" disabled>Add Friend (Coming Soon)</button>`;
+    }
+  }
+
   // 3. Fetch Stats
   let stats = null;
   const { data: statsData } = await chAuth.client
