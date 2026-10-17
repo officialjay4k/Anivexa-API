@@ -106,9 +106,16 @@ function fmtDate(d) {
 }
 function fmtNumber(n) { return n == null ? '—' : n.toLocaleString('en-US'); }
 
+// ---------- Watchlist Helpers ----------
+function getLocalWatchlist() {
+  try { return JSON.parse(localStorage.getItem(CH.STORAGE_WATCHLIST)) || {}; } catch { return {}; }
+}
+function saveLocalWatchlist(w) {
+  try { localStorage.setItem(CH.STORAGE_WATCHLIST, JSON.stringify(w)); } catch {}
+}
+
 // ---------- Fast Episode Fetching ----------
 async function fetchFastEpisodes(anilistId) {
-  // Check local storage cache first
   try {
     const cache = JSON.parse(localStorage.getItem(CH.STORAGE_EP_CACHE)) || {};
     if (cache[anilistId] && Date.now() - cache[anilistId].ts < 1000 * 60 * 60 * 6) {
@@ -127,16 +134,13 @@ async function fetchFastEpisodes(anilistId) {
     })
     .catch(() => null);
 
-  // Race the top 3 fastest providers
   const fastest = ['reanime', 'anikoto', 'kaa'];
   const promises = fastest.map(fetchPromise);
   
   let result = null;
   try {
-    // Promise.any resolves as soon as the first one succeeds
     result = await Promise.any(promises);
   } catch (e) {
-    // If all fail, try the rest
     const rest = EP_FETCH_PROVIDERS.filter(p => !fastest.includes(p));
     const restPromises = rest.map(fetchPromise);
     try { result = await Promise.any(restPromises); } catch(e2) {}
@@ -152,7 +156,6 @@ async function fetchFastEpisodes(anilistId) {
   chosen.sort((a, b) => Number(a.number) - Number(b.number));
   const out = { episodes: chosen, languages };
 
-  // Cache the result
   try {
     const cache = JSON.parse(localStorage.getItem(CH.STORAGE_EP_CACHE)) || {};
     cache[anilistId] = { ts: Date.now(), data: out };
@@ -199,7 +202,7 @@ async function renderHero(media, tmdb) {
   `;
 }
 
-// ---------- Meta row + CTAs & Watchlist (STARS) ----------
+// ---------- Meta row + CTAs & Watchlist ----------
 function renderMetaAndCta(media) {
   const meta = document.getElementById('previewMeta');
   const cta = document.getElementById('previewCta');
@@ -218,7 +221,6 @@ function renderMetaAndCta(media) {
   let currentStatus = localWl.status;
   let currentScore = localWl.score || 0;
 
-  // Build 10 stars
   let starsHtml = '';
   for (let i = 1; i <= 10; i++) {
     starsHtml += `<button class="ch-star ${i <= currentScore ? 'is-active' : ''}" data-val="${i}">★</button>`;
@@ -247,9 +249,7 @@ function renderMetaAndCta(media) {
     </div>
 
     <div class="ch-rating" style="margin-left: 16px;">
-      <div class="ch-stars" id="previewStars">
-        ${starsHtml}
-      </div>
+      <div class="ch-stars" id="previewStars">${starsHtml}</div>
     </div>
   `;
 
@@ -274,6 +274,8 @@ function renderMetaAndCta(media) {
         label.textContent = 'Add to List';
         showToast('Removed from list');
         currentStatus = 'none';
+        // Re-render to remove the "Remove" button
+        renderMetaAndCta(media);
       } else {
         await chAuth.upsertWatchlistEntry({
           anilistId: media.id,
