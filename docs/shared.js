@@ -41,7 +41,6 @@ function chFormatTimeUntil(unixSec) {
   return `in ${Math.floor(diff / 86400)}d`;
 }
 
-// Kept for backward-compat. Now prefers the live Supabase session.
 function chIsSignedIn() {
   if (window.chAuth && chAuth.user) return true;
   try {
@@ -111,7 +110,6 @@ async function mountHeader() {
   const mount = document.getElementById('ch-header-mount');
   if (!mount) return;
 
-  // Ensure auth is fresh
   let user = null;
   let profile = null;
   if (window.chAuth) {
@@ -269,8 +267,8 @@ function mountFooter() {
         </div>
         <div class="ch-footer__col">
           <h4>Info</h4>
-          <a href="#">About</a>
-          <a href="#">Contact</a>
+          <a href="/privacy">Privacy</a>
+          <a href="/tos">Terms</a>
         </div>
       </div>
       <div class="ch-container ch-footer__bottom">
@@ -321,6 +319,16 @@ function openReportModal(context) {
       <div class="ch-report-modal__inner">
         <h3 class="ch-report-modal__title">Report an Issue</h3>
         <p class="ch-report-modal__sub" id="chReportSub">Tell us what's wrong. We read every report.</p>
+        
+        <div style="margin-bottom: 12px;">
+          <select id="chReportCategory" style="width:100%; padding:10px; background:var(--ch-bg-2); border:1px solid var(--ch-border-soft); border-radius:var(--r-md); color:#fff; font-family:inherit; font-size:14px;">
+            <option value="player">Video Player / Stream Error</option>
+            <option value="anime">Anime Data / Missing Show</option>
+            <option value="account">Account / Login Issue</option>
+            <option value="other">Other</option>
+          </select>
+        </div>
+
         <textarea class="ch-report-modal__textarea" id="chReportText" placeholder="Describe the issue..."></textarea>
         <div class="ch-report-modal__actions">
           <button type="button" class="ch-btn ch-btn--quiet ch-btn--sm" id="chReportCancel">Cancel</button>
@@ -331,17 +339,59 @@ function openReportModal(context) {
     document.body.appendChild(modal);
     modal.addEventListener('click', (e) => { if (e.target === modal) modal.classList.remove('is-open'); });
     document.getElementById('chReportCancel').addEventListener('click', () => modal.classList.remove('is-open'));
-    document.getElementById('chReportSubmit').addEventListener('click', () => {
+    
+    document.getElementById('chReportSubmit').addEventListener('click', async () => {
       const text = document.getElementById('chReportText').value.trim();
+      const category = document.getElementById('chReportCategory').value;
+      
       if (!text) { showToast('Please describe the issue'); return; }
-      modal.classList.remove('is-open');
-      document.getElementById('chReportText').value = '';
-      showToast('Thanks — report received');
+      
+      const btn = document.getElementById('chReportSubmit');
+      btn.disabled = true;
+      btn.textContent = 'Submitting…';
+
+      const userId = window.chAuth?.user?.id || null;
+      const username = window.chAuth?.profile?.username || null;
+
+      try {
+        const { error } = await window.chAuth.client.from('reports').insert({
+          user_id: userId,
+          username: username,
+          category: category,
+          context: context || 'Unknown Page',
+          message: text
+        });
+
+        if (error) throw error;
+
+        modal.classList.remove('is-open');
+        document.getElementById('chReportText').value = '';
+        showToast('Thanks — report received');
+      } catch (err) {
+        console.error('Report error:', err);
+        showToast('Failed to submit report. Try again.');
+      } finally {
+        btn.disabled = false;
+        btn.textContent = 'Submit';
+      }
     });
   }
-  document.getElementById('chReportSub').textContent = context
-    ? `Context: ${context}`
-    : "Tell us what's wrong. We read every report.";
+  
+  const subEl = document.getElementById('chReportSub');
+  if (subEl) {
+    subEl.textContent = context
+      ? `Context: ${context}`
+      : "Tell us what's wrong. We read every report.";
+  }
+  
+  // Pre-select category based on context keywords
+  const catEl = document.getElementById('chReportCategory');
+  if (catEl) {
+    if (context && context.toLowerCase().includes('watch')) catEl.value = 'player';
+    else if (context && context.toLowerCase().includes('account')) catEl.value = 'account';
+    else catEl.value = 'player';
+  }
+
   modal.classList.add('is-open');
 }
 
@@ -362,7 +412,6 @@ window.openReportModal = openReportModal;
 window.chPageReady = chPageReady;
 
 document.addEventListener('DOMContentLoaded', async () => {
-  // Wait for auth if available
   if (window.chAuth) {
     try { await chAuth.refresh(); } catch (e) {}
   }
