@@ -337,16 +337,14 @@
     ).join('');
   }
 
-  function renderCards(mediaList, tmdbResults) {
+  function renderCards(mediaList) {
     const fragment = document.createDocumentFragment();
 
-    for (let i = 0; i < mediaList.length; i++) {
-      const media = mediaList[i];
+    for (const media of mediaList) {
       if (!media || renderedIds.has(media.id)) continue;
 
       renderedIds.add(media.id);
 
-      const tmdb = tmdbResults[i];
       const title = titleOf(media);
       const cover = media.coverImage?.extraLarge || media.coverImage?.large || '';
 
@@ -363,16 +361,7 @@
         media.seasonYear
       ].filter(Boolean).join(' · ');
 
-      // THE LOGO HOVER EFFECT
-      const titleWrap = tmdb?.logoUrl
-        ? `<div class="home-card__title-wrap">
-             <img class="home-card__title-logo" src="${escapeHtml(tmdb.logoUrl)}" alt="${escapeHtml(title)}" loading="lazy">
-             <div class="home-card__title-text">${escapeHtml(title)}</div>
-           </div>`
-        : `<div class="home-card__title-wrap">
-             <div class="home-card__title-text" style="opacity:1;">${escapeHtml(title)}</div>
-           </div>`;
-
+      // Render text initially
       card.innerHTML = `
         <div class="home-card__thumb">
           ${cover ? `<img src="${escapeHtml(cover)}" alt="${escapeHtml(title)}" loading="lazy" decoding="async">` : ''}
@@ -382,15 +371,35 @@
           </div>
           <div class="home-card__chiprow" style="pointer-events:none;">${scoreBadge}</div>
         </div>
-        ${titleWrap}
+        <div class="home-card__title-wrap">
+          <div class="home-card__title-text" style="opacity:1;">${escapeHtml(title)}</div>
+        </div>
         <div class="home-card__meta">${escapeHtml(metadata)}</div>
       `;
 
       const image = card.querySelector('img[alt]');
       if (image) {
-        image.addEventListener('error', () => {
-          image.hidden = true;
-        }, { once: true });
+        image.addEventListener('error', () => { image.hidden = true; }, { once: true });
+      }
+
+      // Async fetch TMDB logo and swap if found
+      if (typeof window.tmdbLookup === 'function') {
+        window.tmdbLookup(title, media.seasonYear)
+          .then(tmdb => {
+            if (tmdb?.logoUrl) {
+              const titleWrap = card.querySelector('.home-card__title-wrap');
+              if (titleWrap) {
+                titleWrap.innerHTML = `
+                  <img class="home-card__title-logo" src="${escapeHtml(tmdb.logoUrl)}" alt="${escapeHtml(title)}" loading="lazy">
+                  <div class="home-card__title-text">${escapeHtml(title)}</div>
+                `;
+                if (typeof window.detectTitleOverflow === 'function') {
+                  window.detectTitleOverflow(card);
+                }
+              }
+            }
+          })
+          .catch(() => {});
       }
 
       fragment.appendChild(card);
@@ -398,13 +407,8 @@
 
     $('searchResults').appendChild(fragment);
 
-    // Trigger the scroll animation detector
     if (typeof window.detectTitleOverflow === 'function') {
-      try {
-        window.detectTitleOverflow($('searchResults'));
-      } catch (error) {
-        console.warn('[Search] Title layout failed:', error);
-      }
+      try { window.detectTitleOverflow($('searchResults')); } catch (e) {}
     }
   }
 
@@ -540,14 +544,7 @@
         $('searchResults').replaceChildren();
       }
 
-      // Fetch TMDB logos in parallel before rendering
-      const tmdbResults = await Promise.all(
-        page.media.map(m => tmdbLookup(titleOf(m), m.seasonYear).catch(() => null))
-      );
-
-      if (myGeneration !== generation) return;
-
-      renderCards(page.media, tmdbResults);
+      renderCards(page.media);
 
       currentPage = requestedPage;
       hasNextPage =
