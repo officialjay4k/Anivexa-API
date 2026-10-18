@@ -2,7 +2,7 @@
 // Cloud Hub — search.js
 // ============================================================
 
-const JIKAN_API = 'https://api.jikan.moe/v4/anime';
+const ANILIST_GRAPHQL = CH.ANILIST_GRAPHQL;
 const $ = (id) => document.getElementById(id);
 
 let currentPage = 1;
@@ -19,46 +19,46 @@ let currentFilters = {
 let searchToken = 0;
 let observer = null;
 
-const GENRE_MAP = {
-  'Action': '1', 'Adventure': '2', 'Comedy': '4', 'Drama': '8',
-  'Fantasy': '10', 'Horror': '14', 'Mecha': '18', 'Music': '19',
-  'Mystery': '7', 'Psychological': '40', 'Romance': '22', 'Sci-Fi': '24',
-  'Slice of Life': '36', 'Sports': '30', 'Supernatural': '37', 'Thriller': '41'
-};
-
-async function fetchJikan(page, query, filters) {
-  const p = new URLSearchParams();
-  p.set('page', page);
-  p.set('limit', 24);
-  p.set('sfw', 'true');
-  p.set('status', 'airing,complete'); // Kills all unreleased slop
-  
-  if (query) p.set('q', query);
-  if (filters.genre) p.set('genres', GENRE_MAP[filters.genre] || '');
-  if (filters.year) p.set('start_date', filters.year);
-  
-  if (filters.format) {
-     const fmt = filters.format.toLowerCase();
-     if (['tv', 'movie', 'ova', 'ona', 'special'].includes(fmt)) p.set('type', fmt);
-  }
-
-  let orderBy = 'members';
-  let sort = 'desc';
-  
-  if (filters.sort === 'SCORE_DESC') { orderBy = 'score'; }
-  else if (filters.sort === 'START_DATE_DESC') { orderBy = 'start_date'; }
-  else if (filters.sort === 'POPULARITY_DESC') { orderBy = 'members'; }
-  else if (filters.sort === 'SEARCH_MATCH') {
-    if (query) { orderBy = 'score'; } else { orderBy = 'members'; }
-  }
-
-  p.set('order_by', orderBy);
-  p.set('sort', sort);
-
-  const res = await fetch(`${JIKAN_API}?${p.toString()}`);
-  if (!res.ok) throw new Error('Jikan API error');
-  return res.json();
+async function anilistQuery(query, variables = {}) {
+  const res = await fetch(ANILIST_GRAPHQL, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', 'Accept': 'application/json' },
+    body: JSON.stringify({ query, variables })
+  });
+  if (!res.ok) throw new Error(`AniList HTTP ${res.status}`);
+  const json = await res.json();
+  if (json.errors) throw new Error(json.errors[0].message);
+  return json.data;
 }
+
+// EXACT SAME LOGIC AS HOME PAGE
+// type: ANIME, isAdult: false, sort: POPULARITY_DESC
+const SEARCH_QUERY = `
+  query ($page: Int, $search: String, $genre: String, $year: Int, $format: MediaFormat, $sort: [MediaSort]) {
+    Page(page: $page, perPage: 30) {
+      pageInfo { total currentPage lastPage hasNextPage }
+      media(
+        type: ANIME, 
+        search: $search, 
+        genre: $genre, 
+        seasonYear: $year, 
+        format: $format, 
+        sort: $sort, 
+        isAdult: false
+      ) {
+        id 
+        title { romaji english } 
+        coverImage { extraLarge large } 
+        format 
+        averageScore 
+        seasonYear
+      }
+    }
+  }
+`;
+
+function titleOf(media) { return media?.title?.english || media?.title?.romaji || 'Untitled'; }
+function formatFormat(f) { return f ? f.replace(/_/g, ' ').replace(/\b\w/g, c => c.toUpperCase()) : ''; }
 
 function updateUrl() {
   const p = new URLSearchParams();
@@ -111,12 +111,27 @@ async function fetchResults(reset = false) {
     $('searchLoadMore').hidden = true;
   }
 
+  // Default to POPULARITY_DESC so we never get slop
+  let finalSort = currentFilters.sort;
+  
+  const vars = {
+    page: currentPage,
+    search: currentQuery || null,
+    genre: currentFilters.genre || null,
+    year: currentFilters.year ? parseInt(currentFilters.year, 10) : null,
+    format: currentFilters.format || null,
+    sort: [finalSort]
+  };
+
   try {
-    const json = await fetchJikan(currentPage, currentQuery, currentFilters);
+    const data = await anilistQuery(SEARCH_QUERY, vars);
     if (myToken !== searchToken) return;
 
-    const results = json.data || [];
-    hasNextPage = json.pagination?.has_next_page || false;
+    const page = data?.Page;
+    if (!page) throw new Error('No data');
+
+    const results = page.media || [];
+    hasNextPage = page.pageInfo?.hasNextPage || false;
 
     if (reset) $('searchResults').innerHTML = '';
 
@@ -124,13 +139,12 @@ async function fetchResults(reset = false) {
       $('searchResults').innerHTML = '<div class="search-empty">No results found.</div>';
     } else {
       results.forEach(m => {
-        const cover = m.images?.jpg?.large_image_url || m.images?.jpg?.image_url || '';
+        const cover = m.coverImage?.extraLarge || m.coverImage?.large || '';
         const card = document.createElement('a');
         card.className = 'home-card';
-        card.href = `/preview?mal=${m.mal_id}`; // Route using MAL ID
+        card.href = `/preview?id=${m.id}`;
         
-        const scoreBadge = m.score ? `<div class="home-card__chip home-card__chip--score"><span class="star">★</span>${m.score}</div>` : '';
-        const year = m.year || (m.aired?.prop?.from?.year) || '';
+        const scoreBadge = m.averageScore ? `<div class="home-card__chip home-card__chip--score"><span class="star">★</span>${m.averageScore}</div>` : '';
         
         card.innerHTML = `
           <div class="home-card__thumb">
@@ -142,9 +156,9 @@ async function fetchResults(reset = false) {
             <div class="home-card__chiprow" style="pointer-events:none;">${scoreBadge}</div>
           </div>
           <div class="home-card__title-wrap">
-            <div class="home-card__title-text" style="opacity:1; -webkit-line-clamp: 2; font-weight: 700;">${chEscapeHtml(m.title)}</div>
+            <div class="home-card__title-text" style="opacity:1; -webkit-line-clamp: 2; font-weight: 700;">${chEscapeHtml(titleOf(m))}</div>
           </div>
-          <div class="home-card__meta">${m.type || 'TV'}${year ? ' · ' + year : ''}</div>
+          <div class="home-card__meta">${formatFormat(m.format)}${m.seasonYear ? ' · ' + m.seasonYear : ''}</div>
         `;
         $('searchResults').appendChild(card);
       });
@@ -185,7 +199,7 @@ function init() {
   currentFilters.genre = p.get('genre') || '';
   currentFilters.year = p.get('year') || '';
   currentFilters.format = p.get('format') || '';
-  currentFilters.sort = p.get('sort') || (currentQuery ? 'SEARCH_MATCH' : 'POPULARITY_DESC');
+  currentFilters.sort = p.get('sort') || 'POPULARITY_DESC';
 
   $('searchInput').value = currentQuery;
   $('filterGenre').value = currentFilters.genre;
