@@ -18,7 +18,7 @@
     <div class="ch-container">
       
       <header class="search-hero">
-        <h1 class="search-title" id="searchTitle">Search Anime</h1>
+        <h1 class="search-title" id="searchTitle">Popular Anime</h1>
         <div class="search-bar">
           <input type="text" id="searchInput" placeholder="Search by title..." autocomplete="off">
           <button class="ch-btn ch-btn--primary" id="searchBtn">Search</button>
@@ -81,11 +81,11 @@
       </div>
 
       <div class="search-results" id="searchResults">
-        <div class="search-empty">Type a title or select filters to search.</div>
+        <!-- Results inject here -->
       </div>
 
       <div class="search-load-more" id="searchLoadMore" hidden>
-        <button class="ch-btn ch-btn--ghost" id="loadMoreBtn">Load More</button>
+        <div style="color:var(--ch-fg-muted); font-size:14px; text-align:center; padding: 20px;">Loading more results…</div>
       </div>
 
     </div>
@@ -93,7 +93,6 @@
 
   <div id="ch-footer-mount"></div>
 
-  <script src="/tmdb.js"></script>
   <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.45.0/dist/umd/supabase.min.js"></script>
   <script src="/supabase-config.js"></script>
   <script src="/shared.js"></script>
