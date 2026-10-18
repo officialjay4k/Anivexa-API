@@ -26,6 +26,7 @@ const chPlayer = (function () {
 
   const ICON_REW = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 40 40" style="width:32px;height:32px;display:block;"><path d="M14 8 L6 16 L14 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"/><path d="M6 16 H22 A10 10 0 1 1 12 26" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round" opacity="0.55"/><text x="24" y="27" text-anchor="middle" font-size="15" font-weight="900" font-family="system-ui, sans-serif" fill="currentColor" stroke="none">5</text></svg>`;
   const ICON_FWD = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 40 40" style="width:32px;height:32px;display:block;"><path d="M26 8 L34 16 L26 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"/><path d="M34 16 H18 A10 10 0 1 0 28 26" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round" opacity="0.55"/><text x="16" y="27" text-anchor="middle" font-size="15" font-weight="900" font-family="system-ui, sans-serif" fill="currentColor" stroke="none">5</text></svg>`;
+  const ICON_CAMERA = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M23 19a2 2 0 0 1-2 2H3a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h4l2-3h6l2 3h4a2 2 0 0 1 2 2z"></path><circle cx="12" cy="13" r="4"></circle></svg>`;
 
   function showScreenshotUI(base64) {
     let ui = document.getElementById('ch-screenshot-ui');
@@ -165,6 +166,15 @@ const chPlayer = (function () {
       controls: [
         { name: 'rewind', position: 'left', index: 11, html: ICON_REW, tooltip: 'Rewind 5s', click: function () { if (!art || !art.video) return; art.video.currentTime = Math.max(0, art.video.currentTime - 5); } },
         { name: 'forward', position: 'left', index: 12, html: ICON_FWD, tooltip: 'Forward 5s', click: function () { if (!art || !art.video) return; const dur = art.duration || art.video.duration || Infinity; art.video.currentTime = Math.min(dur, art.video.currentTime + 5); } },
+        { name: 'screenshot', position: 'right', html: ICON_CAMERA, tooltip: 'Screenshot', click: function () { 
+            if(!art) return;
+            art.screenshot().then(base64 => {
+              showScreenshotUI(base64);
+            }).catch(err => {
+              console.warn('Screenshot blocked:', err);
+              if (typeof showToast === 'function') showToast('Screenshot failed. Stream security blocked the capture.');
+            });
+        }},
         { name: 'subtitle', position: 'right', html: 'CC', selector: subMenu, onSelect: function (item) { if (typeof opts.onSelectSubtitle === 'function') opts.onSelectSubtitle(item); chSubs.applyToPlayer(art, item); return 'CC'; } }
       ]
     };
@@ -281,26 +291,16 @@ const chPlayer = (function () {
     artConfig.plugins = [artplayerPluginLibass(libassOpts)];
 
     artConfig.settings = [
-      { name: 'sub-size', html: 'Subtitle Size', tooltip: 'Change subtitle size', selector: [
+      { name: 'sub-size', html: 'Subtitle Size', selector: [
         { html: 'Small', value: 'small' },
         { html: 'Medium', value: 'medium' },
         { html: 'Large', value: 'large' }
       ], onSelect: function(item) { applySubtitleSize(item.value); return item.html; } },
-      { name: 'loop', html: 'Loop Episode', tooltip: 'Loop current episode', switch: !!settingsRef.loop, onSwitch: function(item) { if(art) art.video.loop = !item.switch; return !item.switch; } },
-      { name: 'auto-next', html: 'Auto Next Episode', tooltip: 'Play next episode automatically', switch: !!settingsRef.autoNext, onSwitch: function(item) { if(typeof callbacks.onToggleAutoNext === 'function') callbacks.onToggleAutoNext(); return !item.switch; } },
-      { name: 'sleep', html: 'Sleep Timer', tooltip: 'Stop playback after set time', selector: [
+      { name: 'loop', html: 'Loop Episode', switch: !!settingsRef.loop, onSwitch: function(item) { if(art) art.video.loop = !item.switch; return !item.switch; } },
+      { name: 'auto-next', html: 'Auto Next Episode', switch: !!settingsRef.autoNext, onSwitch: function(item) { if(typeof callbacks.onToggleAutoNext === 'function') callbacks.onToggleAutoNext(); return !item.switch; } },
+      { name: 'sleep', html: 'Sleep Timer', selector: [
         { html: 'Off', value: 'off' }, { html: '10m', value: 10 }, { html: '15m', value: 15 }, { html: '20m', value: 20 }, { html: '25m', value: 25 }, { html: 'End of Video', value: 'end' }
-      ], onSelect: function(item) { setSleepTimer(item.value); return item.html; } },
-      { name: 'screenshot', html: 'Take Screenshot', tooltip: 'Capture current frame', click: function(item) { 
-          if(!art) return item.html;
-          art.screenshot().then(base64 => {
-            showScreenshotUI(base64);
-          }).catch(err => {
-            console.warn('Screenshot blocked by CORS:', err);
-            if (typeof showToast === 'function') showToast('Screenshot failed. Stream security blocked the capture.');
-          });
-          return item.html;
-      }}
+      ], onSelect: function(item) { setSleepTimer(item.value); return item.html; } }
     ];
 
     return await new Promise(function (resolve) {
