@@ -212,7 +212,7 @@ async function mountHeader() {
       e.preventDefault();
       const v = input.value.trim();
       if (!v) return;
-      window.location.href = `/home?q=${encodeURIComponent(v)}`;
+      window.location.href = `/search?q=${encodeURIComponent(v)}`; // FIXED: Routes to /search
     });
   }
 
@@ -220,8 +220,7 @@ async function mountHeader() {
   if (filterBtn) {
     filterBtn.addEventListener('click', (e) => {
       e.preventDefault();
-      filterBtn.classList.toggle('is-active');
-      showToast('Advanced filters coming soon');
+      window.location.href = '/search'; // FIXED: Routes to /search
     });
   }
 
