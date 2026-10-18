@@ -31,9 +31,8 @@ async function anilistQuery(query, variables = {}) {
   return json.data;
 }
 
-// The magic line is `status_not: NOT_YET_RELEASED`. 
-// It instantly kills the placeholder covers and 2030 Netflix shows, 
-// but lets normal searches (like "attack on") work perfectly.
+// 1. status_not: NOT_YET_RELEASED kills the 2026/2027 placeholder slop.
+// 2. No other restrictions, so "attack on" actually works.
 const SEARCH_QUERY = `
   query ($page: Int, $search: String, $genre: String, $year: Int, $format: MediaFormat, $sort: [MediaSort]) {
     Page(page: $page, perPage: 30) {
