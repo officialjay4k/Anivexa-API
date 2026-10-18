@@ -13,7 +13,7 @@ let currentFilters = {
   genre: '',
   year: '',
   format: '',
-  sort: 'POPULARITY_DESC' // Default to popular if empty
+  sort: 'POPULARITY_DESC'
 };
 
 let searchToken = 0;
@@ -31,11 +31,12 @@ async function anilistQuery(query, variables = {}) {
   return json.data;
 }
 
+// THE FIX: Added `type: ANIME` to the media query to block manga/light novels.
 const SEARCH_QUERY = `
   query ($page: Int, $search: String, $genre: String, $year: Int, $format: MediaFormat, $sort: [MediaSort]) {
     Page(page: $page, perPage: 30) {
       pageInfo { total currentPage lastPage hasNextPage }
-      media(search: $search, genre: $genre, seasonYear: $year, format: $format, sort: $sort, isAdult: false) {
+      media(type: ANIME, search: $search, genre: $genre, seasonYear: $year, format: $format, sort: $sort, isAdult: false) {
         id 
         title { romaji english } 
         coverImage { extraLarge large } 
@@ -59,7 +60,8 @@ function updateUrl() {
   if (currentFilters.sort !== 'POPULARITY_DESC') p.set('sort', currentFilters.sort);
   
   const newUrl = '/search' + (p.toString() ? '?' + p.toString() : '');
-  if (location.pathname + location.search !== newUrl) {
+  // Prevent infinite loops by checking if the URL actually changed
+  if (window.location.pathname + window.location.search !== newUrl) {
     history.replaceState(null, '', newUrl);
   }
 }
@@ -101,7 +103,6 @@ async function fetchResults(reset = false) {
     $('searchLoadMore').hidden = true;
   }
 
-  // If sort is SEARCH_MATCH and there's no query, fallback to POPULARITY_DESC
   let finalSort = currentFilters.sort;
   if (finalSort === 'SEARCH_MATCH' && !currentQuery) finalSort = 'POPULARITY_DESC';
 
@@ -158,7 +159,7 @@ async function fetchResults(reset = false) {
     }
 
     $('searchLoadMore').hidden = !hasNextPage;
-    if (hasNextPage) setupObserver(); // Setup infinite scroll
+    if (hasNextPage) setupObserver();
   } catch (e) {
     if (myToken !== searchToken) return;
     console.error(e);
@@ -204,7 +205,7 @@ function init() {
     $('searchTitle').textContent = 'Popular Anime';
   }
   
-  fetchResults(true); // Always fetch initially
+  fetchResults(true);
 
   const debouncedSearch = debounce(() => {
     currentQuery = $('searchInput').value.trim();
