@@ -58,13 +58,33 @@
         </div>
       </section>
 
-      <!-- Preferences Section (NEW) -->
+      <!-- Playback Section -->
       <section class="settings-card">
         <div class="settings-card__head">
-          <h2 class="settings-card__title">Preferences</h2>
+          <h2 class="settings-card__title">Playback</h2>
+        </div>
+        <div class="settings-account">
+          <div class="settings-account__row" style="align-items: center; justify-content: space-between;">
+            <div>
+              <span class="settings-account__label" style="display:block; margin-bottom: 4px;">Video Quality</span>
+              <span style="font-size: 13px; color: var(--ch-fg-muted);">Set your default streaming quality.</span>
+            </div>
+            <select id="prefQuality" class="ch-select" style="min-width: 120px;">
+              <option value="auto">Auto</option>
+              <option value="1080p">1080p</option>
+              <option value="720p">720p</option>
+              <option value="480p">480p</option>
+            </select>
+          </div>
+        </div>
+      </section>
+
+      <!-- Privacy Section -->
+      <section class="settings-card">
+        <div class="settings-card__head">
+          <h2 class="settings-card__title">Privacy</h2>
         </div>
         <div class="settings-account" style="gap: 16px;">
-          
           <div class="settings-account__row" style="align-items: center; justify-content: space-between; border-bottom: none; padding: 0;">
             <div>
               <span class="settings-account__label" style="display:block; margin-bottom: 4px; color:#fff;">Notifications</span>
@@ -75,7 +95,6 @@
               <span class="settings-toggle__slider"></span>
             </label>
           </div>
-
           <div class="settings-account__row" style="align-items: center; justify-content: space-between; border-bottom: none; padding: 0;">
             <div>
               <span class="settings-account__label" style="display:block; margin-bottom: 4px; color:#fff;">Public Profile</span>
@@ -86,7 +105,6 @@
               <span class="settings-toggle__slider"></span>
             </label>
           </div>
-
           <div class="settings-account__row" style="align-items: center; justify-content: space-between; border-bottom: none; padding: 0;">
             <div>
               <span class="settings-account__label" style="display:block; margin-bottom: 4px; color:#fff;">Hide Statistics</span>
@@ -97,7 +115,6 @@
               <span class="settings-toggle__slider"></span>
             </label>
           </div>
-          
           <div class="settings-account__row" style="align-items: center; justify-content: space-between; border-bottom: none; padding: 0;">
             <div>
               <span class="settings-account__label" style="display:block; margin-bottom: 4px; color:#fff;">Discord Integration</span>
@@ -108,7 +125,6 @@
               <span class="settings-toggle__slider"></span>
             </label>
           </div>
-
         </div>
       </section>
 
