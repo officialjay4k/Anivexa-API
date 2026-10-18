@@ -37,7 +37,6 @@
     seasonYear
   `;
 
-  // Active filters are inserted below; inactive arguments are omitted.
   const SEARCH_QUERY = `
     query SearchAnime(
       $page: Int!
@@ -338,30 +337,25 @@
     ).join('');
   }
 
-  function renderCards(mediaList) {
+  function renderCards(mediaList, tmdbResults) {
     const fragment = document.createDocumentFragment();
 
-    for (const media of mediaList) {
+    for (let i = 0; i < mediaList.length; i++) {
+      const media = mediaList[i];
       if (!media || renderedIds.has(media.id)) continue;
 
       renderedIds.add(media.id);
 
+      const tmdb = tmdbResults[i];
       const title = titleOf(media);
-      const cover =
-        media.coverImage?.extraLarge ||
-        media.coverImage?.large ||
-        '';
+      const cover = media.coverImage?.extraLarge || media.coverImage?.large || '';
 
       const card = document.createElement('a');
       card.className = 'home-card';
       card.href = `/preview?id=${encodeURIComponent(media.id)}`;
 
       const scoreBadge = media.averageScore != null
-        ? `
-          <div class="home-card__chip home-card__chip--score">
-            <span class="star">★</span>${escapeHtml(media.averageScore)}
-          </div>
-        `
+        ? `<div class="home-card__chip home-card__chip--score"><span class="star">★</span>${escapeHtml(media.averageScore)}</div>`
         : '';
 
       const metadata = [
@@ -369,44 +363,30 @@
         media.seasonYear
       ].filter(Boolean).join(' · ');
 
+      // THE LOGO HOVER EFFECT
+      const titleWrap = tmdb?.logoUrl
+        ? `<div class="home-card__title-wrap">
+             <img class="home-card__title-logo" src="${escapeHtml(tmdb.logoUrl)}" alt="${escapeHtml(title)}" loading="lazy">
+             <div class="home-card__title-text">${escapeHtml(title)}</div>
+           </div>`
+        : `<div class="home-card__title-wrap">
+             <div class="home-card__title-text" style="opacity:1;">${escapeHtml(title)}</div>
+           </div>`;
+
       card.innerHTML = `
         <div class="home-card__thumb">
-          ${cover ? `
-            <img
-              src="${escapeHtml(cover)}"
-              alt="${escapeHtml(title)}"
-              loading="lazy"
-              decoding="async"
-            >
-          ` : ''}
+          ${cover ? `<img src="${escapeHtml(cover)}" alt="${escapeHtml(title)}" loading="lazy" decoding="async">` : ''}
           <div class="home-card__ribbon">
-            <svg
-              width="12"
-              height="12"
-              viewBox="0 0 24 24"
-              fill="currentColor"
-              aria-hidden="true"
-            >
-              <polygon points="6 4 20 12 6 20"></polygon>
-            </svg>
+            <svg width="12" height="12" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><polygon points="6 4 20 12 6 20"></polygon></svg>
             <span>View</span>
           </div>
-          <div
-            class="home-card__chiprow"
-            style="pointer-events:none;"
-          >${scoreBadge}</div>
+          <div class="home-card__chiprow" style="pointer-events:none;">${scoreBadge}</div>
         </div>
-        <div class="home-card__title-wrap">
-          <div
-            class="home-card__title-text"
-            style="opacity:1;-webkit-line-clamp:2;font-weight:700;"
-          >${escapeHtml(title)}</div>
-        </div>
+        ${titleWrap}
         <div class="home-card__meta">${escapeHtml(metadata)}</div>
       `;
 
-      const image = card.querySelector('img');
-
+      const image = card.querySelector('img[alt]');
       if (image) {
         image.addEventListener('error', () => {
           image.hidden = true;
@@ -418,6 +398,7 @@
 
     $('searchResults').appendChild(fragment);
 
+    // Trigger the scroll animation detector
     if (typeof window.detectTitleOverflow === 'function') {
       try {
         window.detectTitleOverflow($('searchResults'));
@@ -559,7 +540,14 @@
         $('searchResults').replaceChildren();
       }
 
-      renderCards(page.media);
+      // Fetch TMDB logos in parallel before rendering
+      const tmdbResults = await Promise.all(
+        page.media.map(m => tmdbLookup(titleOf(m), m.seasonYear).catch(() => null))
+      );
+
+      if (myGeneration !== generation) return;
+
+      renderCards(page.media, tmdbResults);
 
       currentPage = requestedPage;
       hasNextPage =
