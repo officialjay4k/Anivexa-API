@@ -13,11 +13,11 @@ let currentFilters = {
   genre: '',
   year: '',
   format: '',
-  sort: 'SEARCH_MATCH'
+  sort: 'POPULARITY_DESC' // Default to popular if empty
 };
 
-// Search token to prevent race conditions when typing fast
 let searchToken = 0;
+let observer = null;
 
 async function anilistQuery(query, variables = {}) {
   const res = await fetch(ANILIST_GRAPHQL, {
@@ -33,10 +33,15 @@ async function anilistQuery(query, variables = {}) {
 
 const SEARCH_QUERY = `
   query ($page: Int, $search: String, $genre: String, $year: Int, $format: MediaFormat, $sort: [MediaSort]) {
-    Page(page: $page, perPage: 24) {
+    Page(page: $page, perPage: 30) {
       pageInfo { total currentPage lastPage hasNextPage }
       media(search: $search, genre: $genre, seasonYear: $year, format: $format, sort: $sort, isAdult: false) {
-        id title { romaji english } coverImage { extraLarge large } format averageScore seasonYear
+        id 
+        title { romaji english } 
+        coverImage { extraLarge large } 
+        format 
+        averageScore 
+        seasonYear
       }
     }
   }
@@ -51,10 +56,9 @@ function updateUrl() {
   if (currentFilters.genre) p.set('genre', currentFilters.genre);
   if (currentFilters.year) p.set('year', currentFilters.year);
   if (currentFilters.format) p.set('format', currentFilters.format);
-  if (currentFilters.sort !== 'SEARCH_MATCH') p.set('sort', currentFilters.sort);
+  if (currentFilters.sort !== 'POPULARITY_DESC') p.set('sort', currentFilters.sort);
   
-  // Only update history if the URL actually changed to prevent spam
-  const newUrl = '/search?' + p.toString();
+  const newUrl = '/search' + (p.toString() ? '?' + p.toString() : '');
   if (location.pathname + location.search !== newUrl) {
     history.replaceState(null, '', newUrl);
   }
@@ -72,6 +76,19 @@ function debounce(func, wait) {
   };
 }
 
+function showSkeleton() {
+  const results = $('searchResults');
+  results.innerHTML = '';
+  for (let i = 0; i < 12; i++) {
+    results.innerHTML += `
+      <div class="home-card">
+        <div class="home-card__thumb" style="background:var(--ch-bg-2); animation: home-shimmer 1.6s infinite;"></div>
+        <div class="home-card__title-wrap"><div class="ch-skel ch-skel-line" style="width:80%; margin-top:8px;"></div></div>
+      </div>
+    `;
+  }
+}
+
 async function fetchResults(reset = false) {
   if (isLoading) return;
   isLoading = true;
@@ -80,9 +97,13 @@ async function fetchResults(reset = false) {
 
   if (reset) {
     currentPage = 1;
-    $('searchResults').innerHTML = '<div class="search-empty">Searching…</div>';
+    showSkeleton();
     $('searchLoadMore').hidden = true;
   }
+
+  // If sort is SEARCH_MATCH and there's no query, fallback to POPULARITY_DESC
+  let finalSort = currentFilters.sort;
+  if (finalSort === 'SEARCH_MATCH' && !currentQuery) finalSort = 'POPULARITY_DESC';
 
   const vars = {
     page: currentPage,
@@ -90,13 +111,11 @@ async function fetchResults(reset = false) {
     genre: currentFilters.genre || null,
     year: currentFilters.year ? parseInt(currentFilters.year, 10) : null,
     format: currentFilters.format || null,
-    sort: [currentFilters.sort]
+    sort: [finalSort]
   };
 
   try {
     const data = await anilistQuery(SEARCH_QUERY, vars);
-    
-    // Ignore response if a newer search was triggered while this was fetching
     if (myToken !== searchToken) return;
 
     const page = data?.Page;
@@ -110,12 +129,7 @@ async function fetchResults(reset = false) {
     if (!results.length && reset) {
       $('searchResults').innerHTML = '<div class="search-empty">No results found.</div>';
     } else {
-      const tmdbResults = await Promise.all(results.map(m => tmdbLookup(titleOf(m), m.seasonYear).catch(() => null)));
-      
-      if (myToken !== searchToken) return;
-
-      results.forEach((m, i) => {
-        const tmdb = tmdbResults[i];
+      results.forEach(m => {
         const cover = m.coverImage?.extraLarge || m.coverImage?.large || '';
         const card = document.createElement('a');
         card.className = 'home-card';
@@ -123,15 +137,6 @@ async function fetchResults(reset = false) {
         
         const scoreBadge = m.averageScore ? `<div class="home-card__chip home-card__chip--score"><span class="star">★</span>${m.averageScore}</div>` : '';
         
-        const titleWrap = tmdb?.logoUrl
-          ? `<div class="home-card__title-wrap">
-               <img class="home-card__title-logo" src="${chEscapeHtml(tmdb.logoUrl)}" alt="${chEscapeHtml(titleOf(m))}" loading="lazy">
-               <div class="home-card__title-text">${chEscapeHtml(titleOf(m))}</div>
-             </div>`
-          : `<div class="home-card__title-wrap">
-               <div class="home-card__title-text" style="opacity:1;">${chEscapeHtml(titleOf(m))}</div>
-             </div>`;
-
         card.innerHTML = `
           <div class="home-card__thumb">
             <img src="${chEscapeHtml(cover)}" alt="" loading="lazy">
@@ -141,7 +146,9 @@ async function fetchResults(reset = false) {
             </div>
             <div class="home-card__chiprow" style="pointer-events:none;">${scoreBadge}</div>
           </div>
-          ${titleWrap}
+          <div class="home-card__title-wrap">
+            <div class="home-card__title-text" style="opacity:1; -webkit-line-clamp: 2; font-weight: 700;">${chEscapeHtml(titleOf(m))}</div>
+          </div>
           <div class="home-card__meta">${formatFormat(m.format)}${m.seasonYear ? ' · ' + m.seasonYear : ''}</div>
         `;
         $('searchResults').appendChild(card);
@@ -151,6 +158,7 @@ async function fetchResults(reset = false) {
     }
 
     $('searchLoadMore').hidden = !hasNextPage;
+    if (hasNextPage) setupObserver(); // Setup infinite scroll
   } catch (e) {
     if (myToken !== searchToken) return;
     console.error(e);
@@ -162,13 +170,27 @@ async function fetchResults(reset = false) {
   }
 }
 
+function setupObserver() {
+  if (observer) observer.disconnect();
+  const sentinel = $('searchLoadMore');
+  
+  observer = new IntersectionObserver((entries) => {
+    if (entries[0].isIntersecting && hasNextPage && !isLoading) {
+      currentPage++;
+      fetchResults(false);
+    }
+  }, { rootMargin: '200px' });
+  
+  observer.observe(sentinel);
+}
+
 function init() {
   const p = new URLSearchParams(location.search);
   currentQuery = p.get('q') || '';
   currentFilters.genre = p.get('genre') || '';
   currentFilters.year = p.get('year') || '';
   currentFilters.format = p.get('format') || '';
-  currentFilters.sort = p.get('sort') || 'SEARCH_MATCH';
+  currentFilters.sort = p.get('sort') || (currentQuery ? 'SEARCH_MATCH' : 'POPULARITY_DESC');
 
   $('searchInput').value = currentQuery;
   $('filterGenre').value = currentFilters.genre;
@@ -177,14 +199,16 @@ function init() {
   $('filterSort').value = currentFilters.sort;
 
   if (currentQuery || currentFilters.genre || currentFilters.year || currentFilters.format) {
-    $('searchTitle').textContent = currentQuery ? `Results for "${currentQuery}"` : 'Filtered Results';
-    fetchResults(true);
+    $('searchTitle').textContent = currentQuery ? `Results for "${currentQuery}"` : 'Trending Anime';
+  } else {
+    $('searchTitle').textContent = 'Popular Anime';
   }
+  
+  fetchResults(true); // Always fetch initially
 
-  // Live search debounced by 400ms
   const debouncedSearch = debounce(() => {
     currentQuery = $('searchInput').value.trim();
-    $('searchTitle').textContent = currentQuery ? `Results for "${currentQuery}"` : 'Search Anime';
+    $('searchTitle').textContent = currentQuery ? `Results for "${currentQuery}"` : 'Popular Anime';
     updateUrl();
     fetchResults(true);
   }, 400);
@@ -194,7 +218,7 @@ function init() {
   $('searchBtn').onclick = () => {
     currentQuery = $('searchInput').value.trim();
     updateUrl();
-    $('searchTitle').textContent = currentQuery ? `Results for "${currentQuery}"` : 'Search Anime';
+    $('searchTitle').textContent = currentQuery ? `Results for "${currentQuery}"` : 'Popular Anime';
     fetchResults(true);
   };
 
@@ -209,16 +233,10 @@ function init() {
       currentFilters.format = $('filterFormat').value;
       currentFilters.sort = $('filterSort').value;
       updateUrl();
-      $('searchTitle').textContent = currentQuery ? `Results for "${currentQuery}"` : 'Filtered Results';
+      $('searchTitle').textContent = currentQuery ? `Results for "${currentQuery}"` : 'Trending Anime';
       fetchResults(true);
     };
   });
-
-  $('loadMoreBtn').onclick = () => {
-    if (!hasNextPage || isLoading) return;
-    currentPage++;
-    fetchResults(false);
-  };
 
   if (typeof chPageReady === 'function') chPageReady();
 }
