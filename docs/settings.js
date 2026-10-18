@@ -48,15 +48,17 @@ function renderProfileFields(profile) {
   $('usernameInput').value = profile?.username || '';
   $('displayNameInput').value = profile?.display_name || '';
   $('bioInput').value = profile?.bio || '';
-  
-  // Default to FALSE if null/undefined for stats
   $('hideStatsToggle').checked = profile?.hidden ?? false;
   
-  // Load Preferences from localStorage
   try {
     const prefs = JSON.parse(localStorage.getItem('ch_prefs')) || {};
     $('toggleNotifications').checked = prefs.notifications ?? true;
     $('togglePublic').checked = prefs.public ?? true;
+  } catch(e) {}
+  
+  try {
+    const appSettings = JSON.parse(localStorage.getItem(CH.STORAGE_SETTINGS)) || {};
+    $('prefQuality').value = appSettings.quality || 'auto';
   } catch(e) {}
 
   updateBioCount();
@@ -90,6 +92,7 @@ $('saveProfileBtn').addEventListener('click', async () => {
   const displayName = $('displayNameInput').value.trim() || null;
   const bio = $('bioInput').value.trim() || null;
   const hidden = $('hideStatsToggle').checked;
+  const quality = $('prefQuality').value;
 
   if (!USERNAME_RE.test(username)) {
     showProfileMsg('Username must be 3–20 characters: letters, numbers, dots, underscores.', false);
@@ -110,13 +113,16 @@ $('saveProfileBtn').addEventListener('click', async () => {
     return;
   }
 
-  // Save toggles locally
   try {
     const prefs = {
       notifications: $('toggleNotifications').checked,
       public: $('togglePublic').checked
     };
     localStorage.setItem('ch_prefs', JSON.stringify(prefs));
+    
+    const appSettings = JSON.parse(localStorage.getItem(CH.STORAGE_SETTINGS)) || {};
+    appSettings.quality = quality;
+    localStorage.setItem(CH.STORAGE_SETTINGS, JSON.stringify(appSettings));
   } catch(e) {}
 
   showProfileMsg('Saved.', true);
