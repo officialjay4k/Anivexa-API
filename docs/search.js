@@ -13,8 +13,11 @@ let currentFilters = {
   genre: '',
   year: '',
   format: '',
-  sort: 'POPULARITY_DESC'
+  sort: 'SEARCH_MATCH'
 };
+
+// Search token to prevent race conditions when typing fast
+let searchToken = 0;
 
 async function anilistQuery(query, variables = {}) {
   const res = await fetch(ANILIST_GRAPHQL, {
@@ -48,13 +51,32 @@ function updateUrl() {
   if (currentFilters.genre) p.set('genre', currentFilters.genre);
   if (currentFilters.year) p.set('year', currentFilters.year);
   if (currentFilters.format) p.set('format', currentFilters.format);
-  if (currentFilters.sort !== 'POPULARITY_DESC') p.set('sort', currentFilters.sort);
-  history.replaceState(null, '', '/search?' + p.toString());
+  if (currentFilters.sort !== 'SEARCH_MATCH') p.set('sort', currentFilters.sort);
+  
+  // Only update history if the URL actually changed to prevent spam
+  const newUrl = '/search?' + p.toString();
+  if (location.pathname + location.search !== newUrl) {
+    history.replaceState(null, '', newUrl);
+  }
+}
+
+function debounce(func, wait) {
+  let timeout;
+  return function executedFunction(...args) {
+    const later = () => {
+      clearTimeout(timeout);
+      func(...args);
+    };
+    clearTimeout(timeout);
+    timeout = setTimeout(later, wait);
+  };
 }
 
 async function fetchResults(reset = false) {
   if (isLoading) return;
   isLoading = true;
+
+  const myToken = ++searchToken;
 
   if (reset) {
     currentPage = 1;
@@ -73,6 +95,10 @@ async function fetchResults(reset = false) {
 
   try {
     const data = await anilistQuery(SEARCH_QUERY, vars);
+    
+    // Ignore response if a newer search was triggered while this was fetching
+    if (myToken !== searchToken) return;
+
     const page = data?.Page;
     if (!page) throw new Error('No data');
 
@@ -84,14 +110,15 @@ async function fetchResults(reset = false) {
     if (!results.length && reset) {
       $('searchResults').innerHTML = '<div class="search-empty">No results found.</div>';
     } else {
-      // Fetch TMDB logos for the results in parallel
       const tmdbResults = await Promise.all(results.map(m => tmdbLookup(titleOf(m), m.seasonYear).catch(() => null)));
       
+      if (myToken !== searchToken) return;
+
       results.forEach((m, i) => {
         const tmdb = tmdbResults[i];
         const cover = m.coverImage?.extraLarge || m.coverImage?.large || '';
         const card = document.createElement('a');
-        card.className = 'home-card'; // Reuse home.css classes
+        card.className = 'home-card';
         card.href = `/preview?id=${m.id}`;
         
         const scoreBadge = m.averageScore ? `<div class="home-card__chip home-card__chip--score"><span class="star">★</span>${m.averageScore}</div>` : '';
@@ -125,10 +152,13 @@ async function fetchResults(reset = false) {
 
     $('searchLoadMore').hidden = !hasNextPage;
   } catch (e) {
+    if (myToken !== searchToken) return;
     console.error(e);
     if (reset) $('searchResults').innerHTML = '<div class="search-empty">Failed to load results. Try again.</div>';
   } finally {
-    isLoading = false;
+    if (myToken === searchToken) {
+      isLoading = false;
+    }
   }
 }
 
@@ -138,7 +168,7 @@ function init() {
   currentFilters.genre = p.get('genre') || '';
   currentFilters.year = p.get('year') || '';
   currentFilters.format = p.get('format') || '';
-  currentFilters.sort = p.get('sort') || 'POPULARITY_DESC';
+  currentFilters.sort = p.get('sort') || 'SEARCH_MATCH';
 
   $('searchInput').value = currentQuery;
   $('filterGenre').value = currentFilters.genre;
@@ -150,6 +180,16 @@ function init() {
     $('searchTitle').textContent = currentQuery ? `Results for "${currentQuery}"` : 'Filtered Results';
     fetchResults(true);
   }
+
+  // Live search debounced by 400ms
+  const debouncedSearch = debounce(() => {
+    currentQuery = $('searchInput').value.trim();
+    $('searchTitle').textContent = currentQuery ? `Results for "${currentQuery}"` : 'Search Anime';
+    updateUrl();
+    fetchResults(true);
+  }, 400);
+
+  $('searchInput').addEventListener('input', debouncedSearch);
 
   $('searchBtn').onclick = () => {
     currentQuery = $('searchInput').value.trim();
