@@ -1,0 +1,78 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Dashboard — Cloud Hub</title>
+  <link rel="icon" type="image/png" href="/favicon.png">
+  <link rel="apple-touch-icon" href="/apple-touch-icon.png">
+  <link rel="stylesheet" href="/shared.css">
+  <link rel="stylesheet" href="/dashboard.css">
+</head>
+<body>
+
+  <div id="ch-header-mount"></div>
+
+  <main class="dashboard-main">
+    <div class="ch-container">
+      
+      <header class="dashboard-hero">
+        <div class="dashboard-hero__profile">
+          <div class="dashboard-avatar" id="dashAvatar"></div>
+          <div class="dashboard-hero__text">
+            <h1 class="dashboard-title" id="dashUsername">Loading…</h1>
+            <p class="dashboard-sub" id="dashDisplayName">Welcome back</p>
+          </div>
+        </div>
+        <div class="dashboard-actions">
+          <a href="/user/settings" class="ch-btn ch-btn--quiet">Edit Profile</a>
+          <a href="/user/settings" class="ch-btn ch-btn--primary" id="dashPublicProfileLink">View Public Profile</a>
+        </div>
+      </header>
+
+      <section class="dashboard-stats">
+        <div class="dashboard-stat-card">
+          <div class="dashboard-stat-card__val" id="statFinished">0</div>
+          <div class="dashboard-stat-card__label">Completed</div>
+        </div>
+        <div class="dashboard-stat-card">
+          <div class="dashboard-stat-card__val" id="statWatching">0</div>
+          <div class="dashboard-stat-card__label">Watching</div>
+        </div>
+        <div class="dashboard-stat-card">
+          <div class="dashboard-stat-card__val" id="statPlanned">0</div>
+          <div class="dashboard-stat-card__label">Plan to Watch</div>
+        </div>
+        <div class="dashboard-stat-card">
+          <div class="dashboard-stat-card__val" id="statDropped">0</div>
+          <div class="dashboard-stat-card__label">Dropped</div>
+        </div>
+        <div class="dashboard-stat-card">
+          <div class="dashboard-stat-card__val" id="statHours">0</div>
+          <div class="dashboard-stat-card__label">Hours Watched</div>
+        </div>
+      </section>
+
+      <div class="dashboard-tabs" id="dashTabs">
+        <button class="dashboard-tab is-active" data-tab="watching">Watching</button>
+        <button class="dashboard-tab" data-tab="completed">Completed</button>
+        <button class="dashboard-tab" data-tab="plan">Plan to Watch</button>
+        <button class="dashboard-tab" data-tab="dropped">Dropped</button>
+      </div>
+
+      <div class="dashboard-content" id="dashContent">
+        <div class="dashboard-loading">Loading your list…</div>
+      </div>
+
+    </div>
+  </main>
+
+  <div id="ch-footer-mount"></div>
+
+  <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.45.0/dist/umd/supabase.min.js"></script>
+  <script src="/supabase-config.js"></script>
+  <script src="/shared.js"></script>
+  <script src="/auth.js"></script>
+  <script src="/dashboard.js"></script>
+</body>
+</html>
