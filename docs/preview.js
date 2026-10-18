@@ -8,9 +8,10 @@ const API_BASE = CH.API_BASE;
 function getIdFromUrl() {
   const params = new URLSearchParams(location.search);
   const id = params.get('id');
-  if (!id) return null;
-  const n = parseInt(id, 10);
-  return Number.isFinite(n) && n > 0 ? n : null;
+  const mal = params.get('mal');
+  if (id) return { key: 'id', val: parseInt(id, 10) };
+  if (mal) return { key: 'idMal', val: parseInt(mal, 10) };
+  return null;
 }
 
 async function anilistQuery(query, variables = {}) {
@@ -26,8 +27,8 @@ async function anilistQuery(query, variables = {}) {
 }
 
 const MEDIA_QUERY = `
-  query ($id: Int) {
-    Media(id: $id, type: ANIME) {
+  query ($id: Int, $idMal: Int) {
+    Media(id: $id, idMal: $idMal, type: ANIME) {
       id idMal title { romaji english native } synonyms description(asHtml: false)
       coverImage { extraLarge large color } bannerImage format status episodes duration season seasonYear
       startDate { year month day } endDate { year month day } averageScore meanScore popularity favourites
@@ -233,7 +234,7 @@ function renderMetaAndCta(media) {
         label.textContent = 'Add to List';
         showToast('Removed from list');
         currentStatus = 'none';
-        renderMetaAndCta(media);
+        renderMetaAndCta(media); // Re-render
       } else {
         await chAuth.upsertWatchlistEntry({
           anilistId: media.id,
@@ -248,7 +249,7 @@ function renderMetaAndCta(media) {
         label.textContent = 'Status: ' + status.toUpperCase();
         showToast('Updated to ' + status);
         currentStatus = status;
-        renderMetaAndCta(media);
+        renderMetaAndCta(media); // Re-render
       }
     };
   });
@@ -333,7 +334,6 @@ function renderTags(media) {
     const cls = t.rank >= 75 ? 'preview-tag--top' : '';
     const spoiler = t.isMediaSpoiler ? 'preview-tag--spoiler' : '';
     const suffix = t.isMediaSpoiler ? ' (Spoiler)' : '';
-    // FIXED: Routes to /search instead of /home
     return `<a href="/search?q=${encodeURIComponent(t.name)}" class="preview-tag ${cls} ${spoiler}">${chEscapeHtml(t.name)}${suffix}</a>`;
   }).join('');
 }
@@ -463,17 +463,17 @@ async function renderRecommendations(media) {
 }
 
 async function initPreview() {
-  const id = getIdFromUrl();
-  if (!id) {
+  const idParam = getIdFromUrl();
+  if (!idParam) {
     document.getElementById('previewDesc').textContent = 'No anime specified. Go back to the home page.';
     document.getElementById('epList').innerHTML = '<div class="preview-sidebar__loading">—</div>';
     return;
   }
-  anilistIdGlobal = id;
 
   let media = null;
   try {
-    const data = await anilistQuery(MEDIA_QUERY, { id });
+    const vars = { [idParam.key]: idParam.val };
+    const data = await anilistQuery(MEDIA_QUERY, vars);
     media = data?.Media;
   } catch (err) {
     console.error('Media fetch failed:', err);
@@ -483,9 +483,11 @@ async function initPreview() {
     document.getElementById('previewDesc').textContent = 'Failed to load this anime.';
     return;
   }
+  
+  anilistIdGlobal = media.id;
 
   const tmdbPromise = tmdbLookup(titleOf(media), media.seasonYear).catch(() => null);
-  const epsPromise = fetchProviderEpisodes(id);
+  const epsPromise = fetchProviderEpisodes(anilistIdGlobal);
 
   renderMetaAndCta(media);
   renderDescription(media);
