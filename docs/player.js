@@ -18,19 +18,15 @@ const chPlayer = (function () {
   let currentAudioPref = 'dub';
   let settingsRef = null;
   
-  // Sleep Timer State
   let sleepTimerInterval = null;
   let sleepTimerEndTime = 0;
 
-  // Blob URLs for cleanup
   let currentWorkerBlobUrl = null;
   let currentWasmBlobUrl = null;
-  let currentSubBlobUrl = null;
 
   const ICON_REW = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 40 40" style="width:32px;height:32px;display:block;"><path d="M14 8 L6 16 L14 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"/><path d="M6 16 H22 A10 10 0 1 1 12 26" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round" opacity="0.55"/><text x="24" y="27" text-anchor="middle" font-size="15" font-weight="900" font-family="system-ui, sans-serif" fill="currentColor" stroke="none">5</text></svg>`;
   const ICON_FWD = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 40 40" style="width:32px;height:32px;display:block;"><path d="M26 8 L34 16 L26 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"/><path d="M34 16 H18 A10 10 0 1 0 28 26" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round" opacity="0.55"/><text x="16" y="27" text-anchor="middle" font-size="15" font-weight="900" font-family="system-ui, sans-serif" fill="currentColor" stroke="none">5</text></svg>`;
 
-  // ---------- Screenshot UI ----------
   function showScreenshotUI(base64) {
     let ui = document.getElementById('ch-screenshot-ui');
     if (ui) ui.remove();
@@ -59,12 +55,28 @@ const chPlayer = (function () {
     `;
     document.body.appendChild(ui);
     
-    // Auto-hide after 10 seconds
     setTimeout(() => { if (ui.parentNode) ui.remove(); }, 10000);
     document.getElementById('ch-screenshot-close').onclick = () => ui.remove();
   }
 
-  // ---------- Preview & Skip Buttons ----------
+  function takeScreenshot() {
+    if (!art || !art.video) return;
+    const video = art.video;
+    const canvas = document.createElement('canvas');
+    canvas.width = video.videoWidth;
+    canvas.height = video.videoHeight;
+    const ctx = canvas.getContext('2d');
+    
+    try {
+      ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
+      const base64 = canvas.toDataURL('image/png');
+      showScreenshotUI(base64);
+    } catch (e) {
+      console.warn('Screenshot failed:', e);
+      if (typeof showToast === 'function') showToast('Screenshot blocked by stream security (CORS).');
+    }
+  }
+
   function ensurePreviewTooltip() { let el = document.querySelector('.watch-preview-tip'); if (el) return el; el = document.createElement('div'); el.className = 'watch-preview-tip'; el.innerHTML = '<video muted playsinline preload="auto"></video><div class="watch-preview-tip__time">0:00</div>'; document.body.appendChild(el); return el; }
   function destroyPreview() { if (previewHls) { try { previewHls.destroy(); } catch (e) {} previewHls = null; } const el = document.querySelector('.watch-preview-tip'); if (el) { const v = el.querySelector('video'); try { v.pause(); v.removeAttribute('src'); v.load(); } catch (e) {} el.style.display = 'none'; } }
   function initPreview(streamUrl, isMp4) { destroyPreview(); const el = ensurePreviewTooltip(); const video = el.querySelector('video'); if (isMp4) { video.src = streamUrl; return; } if (window.Hls && Hls.isSupported()) { const h = new Hls({ enableWorker: true, autoStartLoad: false, capLevelToPlayerSize: true }); previewHls = h; h.loadSource(streamUrl); h.attachMedia(video); h.startLoad(-1); } }
@@ -75,7 +87,6 @@ const chPlayer = (function () {
   function updateSkipButton() { if (!art || !art.video) return; const t = art.video.currentTime; const inOp = skipIntervals.op && t >= skipIntervals.op.startTime && t < skipIntervals.op.endTime; const inEd = skipIntervals.ed && t >= skipIntervals.ed.startTime && t < skipIntervals.ed.endTime; if (!inOp && !inEd) { if (skipBtn) skipBtn.style.display = 'none'; skipFired.op = false; skipFired.ed = false; return; } const interval = inOp ? skipIntervals.op : skipIntervals.ed; const label = inOp ? 'Intro' : 'Outro'; const key = inOp ? 'op' : 'ed'; const autoSkip = !!(settingsRef && settingsRef.autoSkip); if (autoSkip) { if (!skipFired[key]) { skipFired[key] = true; art.currentTime = interval.endTime; } if (skipBtn) skipBtn.style.display = 'none'; return; } if (skipBtn) { skipBtn.textContent = 'Skip ' + label + ' ➔'; skipBtn.style.display = 'block'; skipBtn.onclick = function (e) { e.stopPropagation(); art.currentTime = interval.endTime; }; } }
   function mountMarkers() { if (!art || !art.template || !art.template.$progress) return; const inner = art.template.$progress.querySelector('.art-control-progress-inner'); if (!inner) return; inner.querySelectorAll('.watch-marker').forEach(function (el) { el.remove(); }); if (!art.duration || !isFinite(art.duration)) return; function add(interval, label) { if (!interval) return; const start = Math.max(0, interval.startTime); const end = Math.min(art.duration, interval.endTime); if (end <= start) return; const left = (start / art.duration) * 100; const width = ((end - start) / art.duration) * 100; const m = document.createElement('div'); m.className = 'watch-marker'; m.title = label; Object.assign(m.style, { position: 'absolute', left: left + '%', width: width + '%', top: '0', height: '100%', background: 'linear-gradient(90deg, #e50914, #ff2b3a)', opacity: '0.85', borderRadius: '2px', pointerEvents: 'none', zIndex: '25' }); inner.appendChild(m); } add(skipIntervals.op, 'Intro'); add(skipIntervals.ed, 'Outro'); }
 
-  // ---------- Sleep Timer ----------
   function setSleepTimer(minutes) {
     if (sleepTimerInterval) { clearInterval(sleepTimerInterval); sleepTimerInterval = null; }
     sleepTimerEndTime = 0;
@@ -102,7 +113,6 @@ const chPlayer = (function () {
     }, 1000);
   }
 
-  // ---------- Subtitle Sizing ----------
   function applySubtitleSize(size) {
     const styleId = 'ch-sub-size-style';
     let el = document.getElementById(styleId);
@@ -114,10 +124,8 @@ const chPlayer = (function () {
     const sizes = { small: '80%', medium: '100%', large: '140%' };
     const scale = sizes[size] || '100%';
     
-    // Native VTT/SRT
     el.textContent = `video::cue { font-size: ${scale} !important; }`;
     
-    // Libass Canvas
     const libassCanvas = art?.template?.$player.querySelector('canvas');
     if (libassCanvas) {
       libassCanvas.style.transform = size === 'small' ? 'scale(0.8)' : size === 'large' ? 'scale(1.4)' : 'scale(1)';
@@ -125,7 +133,6 @@ const chPlayer = (function () {
     }
   }
 
-  // ---------- Main Mount ----------
   async function fetchAsBlobUrl(proxyUrl, opts) { opts = opts || {}; const res = await fetch(proxyUrl, { cache: 'no-store' }); if (!res.ok) throw new Error('HTTP ' + res.status); const buf = await res.arrayBuffer(); if (opts.expectWasm) { const head = new Uint8Array(buf.slice(0, 8)); const isWasm = head[0] === 0x00 && head[1] === 0x61 && head[2] === 0x73 && head[3] === 0x6d; if (!isWasm) throw new Error('Not WASM'); } return URL.createObjectURL(new Blob([buf], { type: opts.mimeType || 'application/javascript' })); }
   
   async function prepareLibassAssets(isMp4) {
@@ -161,7 +168,7 @@ const chPlayer = (function () {
       muted: false,
       volume: 1,
       setting: true,
-      settings: [], // We inject these dynamically
+      settings: [],
       playbackRate: true,
       aspectRatio: true,
       fullscreen: true,
@@ -176,13 +183,7 @@ const chPlayer = (function () {
         { name: 'rewind', position: 'left', index: 11, html: ICON_REW, tooltip: 'Rewind 5s', click: function () { if (!art || !art.video) return; art.video.currentTime = Math.max(0, art.video.currentTime - 5); } },
         { name: 'forward', position: 'left', index: 12, html: ICON_FWD, tooltip: 'Forward 5s', click: function () { if (!art || !art.video) return; const dur = art.duration || art.video.duration || Infinity; art.video.currentTime = Math.min(dur, art.video.currentTime + 5); } },
         { name: 'subtitle', position: 'right', html: 'CC', selector: subMenu, onSelect: function (item) { if (typeof opts.onSelectSubtitle === 'function') opts.onSelectSubtitle(item); chSubs.applyToPlayer(art, item); return 'CC'; } }
-      ],
-      icons: {
-        loading: `<div class="ch-spinner"></div>`,
-        state: `<div class="ch-spinner"></div>`,
-        play: `<svg width="18" height="18" viewBox="0 0 24 24" fill="currentColor"><polygon points="6 4 20 12 6 20"></polygon></svg>`,
-        pause: `<svg width="18" height="18" viewBox="0 0 24 24" fill="currentColor"><rect x="6" y="4" width="4" height="16"/><rect x="14" y="4" width="4" height="16"/></svg>`,
-      }
+      ]
     };
 
     if (!isMp4) {
@@ -200,7 +201,6 @@ const chPlayer = (function () {
           myHls.attachMedia(video);
 
           myHls.on(Hls.Events.MANIFEST_PARSED, function (e, data) {
-            // Inject Quality Settings
             const levels = myHls.levels || [];
             let qualityList = [{ html: 'Auto', value: -1 }];
             if (levels.length > 0) {
@@ -219,7 +219,6 @@ const chPlayer = (function () {
               }
             });
 
-            // Apply saved quality if it exists
             if (settingsRef.quality && settingsRef.quality !== 'auto') {
                const found = qualityList.find(q => q.html === settingsRef.quality);
                if (found) {
@@ -298,7 +297,6 @@ const chPlayer = (function () {
 
     artConfig.plugins = [artplayerPluginLibass(libassOpts)];
 
-    // Add the extra settings
     artConfig.settings = [
       { name: 'sub-size', html: 'Subtitle Size', selector: [
         { html: 'Small', value: 'small' },
@@ -310,10 +308,7 @@ const chPlayer = (function () {
       { name: 'sleep', html: 'Sleep Timer', selector: [
         { html: 'Off', value: 'off' }, { html: '10m', value: 10 }, { html: '15m', value: 15 }, { html: '20m', value: 20 }, { html: '25m', value: 25 }, { html: 'End of Video', value: 'end' }
       ], onSelect: function(item) { setSleepTimer(item.value); return item.html; } },
-      { name: 'screenshot', html: 'Take Screenshot', click: function() { 
-          if(!art) return;
-          art.screenshot().then(base64 => showScreenshotUI(base64)).catch(err => console.warn('Screenshot failed:', err));
-      }}
+      { name: 'screenshot', html: 'Take Screenshot', click: function() { takeScreenshot(); }}
     ];
 
     return await new Promise(function (resolve) {
