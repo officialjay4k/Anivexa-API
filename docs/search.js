@@ -31,18 +31,29 @@ async function anilistQuery(query, variables = {}) {
   return json.data;
 }
 
-// THE FIX: Added `type: ANIME` to the media query to block manga/light novels.
+// THE FIX: `status_not: NOT_YET_RELEASED` kills all the placeholder/announcement posters.
+// Only shows anime that have actually aired (FINISHED, RELEASING, HIATUS, CANCELLED).
 const SEARCH_QUERY = `
   query ($page: Int, $search: String, $genre: String, $year: Int, $format: MediaFormat, $sort: [MediaSort]) {
     Page(page: $page, perPage: 30) {
       pageInfo { total currentPage lastPage hasNextPage }
-      media(type: ANIME, search: $search, genre: $genre, seasonYear: $year, format: $format, sort: $sort, isAdult: false) {
+      media(
+        type: ANIME, 
+        search: $search, 
+        genre: $genre, 
+        seasonYear: $year, 
+        format: $format, 
+        sort: $sort, 
+        isAdult: false,
+        status_not: NOT_YET_RELEASED
+      ) {
         id 
         title { romaji english } 
         coverImage { extraLarge large } 
         format 
         averageScore 
         seasonYear
+        status
       }
     }
   }
@@ -60,7 +71,6 @@ function updateUrl() {
   if (currentFilters.sort !== 'POPULARITY_DESC') p.set('sort', currentFilters.sort);
   
   const newUrl = '/search' + (p.toString() ? '?' + p.toString() : '');
-  // Prevent infinite loops by checking if the URL actually changed
   if (window.location.pathname + window.location.search !== newUrl) {
     history.replaceState(null, '', newUrl);
   }
