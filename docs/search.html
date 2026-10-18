@@ -1,0 +1,102 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Search — Cloud Hub</title>
+  <link rel="icon" type="image/png" href="/favicon.png">
+  <link rel="apple-touch-icon" href="/apple-touch-icon.png">
+  <link rel="stylesheet" href="/shared.css">
+  <link rel="stylesheet" href="/home.css">
+  <link rel="stylesheet" href="/search.css">
+</head>
+<body>
+
+  <div id="ch-header-mount"></div>
+
+  <main class="search-main">
+    <div class="ch-container">
+      
+      <header class="search-hero">
+        <h1 class="search-title" id="searchTitle">Search Anime</h1>
+        <div class="search-bar">
+          <input type="text" id="searchInput" placeholder="Search by title...">
+          <button class="ch-btn ch-btn--primary" id="searchBtn">Search</button>
+        </div>
+      </header>
+
+      <div class="search-filters">
+        <select id="filterGenre" class="ch-select">
+          <option value="">All Genres</option>
+          <option value="Action">Action</option>
+          <option value="Adventure">Adventure</option>
+          <option value="Comedy">Comedy</option>
+          <option value="Drama">Drama</option>
+          <option value="Fantasy">Fantasy</option>
+          <option value="Horror">Horror</option>
+          <option value="Mecha">Mecha</option>
+          <option value="Music">Music</option>
+          <option value="Mystery">Mystery</option>
+          <option value="Psychological">Psychological</option>
+          <option value="Romance">Romance</option>
+          <option value="Sci-Fi">Sci-Fi</option>
+          <option value="Slice of Life">Slice of Life</option>
+          <option value="Sports">Sports</option>
+          <option value="Supernatural">Supernatural</option>
+          <option value="Thriller">Thriller</option>
+        </select>
+
+        <select id="filterYear" class="ch-select">
+          <option value="">Any Year</option>
+          <option value="2026">2026</option>
+          <option value="2025">2025</option>
+          <option value="2024">2024</option>
+          <option value="2023">2023</option>
+          <option value="2022">2022</option>
+          <option value="2021">2021</option>
+          <option value="2020">2020</option>
+          <option value="2019">2019</option>
+          <option value="2018">2018</option>
+          <option value="2017">2017</option>
+          <option value="2016">2016</option>
+          <option value="2015">2015</option>
+        </select>
+
+        <select id="filterFormat" class="ch-select">
+          <option value="">Any Format</option>
+          <option value="TV">TV Series</option>
+          <option value="MOVIE">Movie</option>
+          <option value="OVA">OVA</option>
+          <option value="ONA">ONA</option>
+          <option value="SPECIAL">Special</option>
+        </select>
+
+        <select id="filterSort" class="ch-select">
+          <option value="POPULARITY_DESC">Most Popular</option>
+          <option value="SCORE_DESC">Highest Rated</option>
+          <option value="START_DATE_DESC">Newest</option>
+          <option value="TRENDING_DESC">Trending</option>
+        </select>
+      </div>
+
+      <div class="search-results" id="searchResults">
+        <div class="search-empty">Type a title or select filters to search.</div>
+      </div>
+
+      <div class="search-load-more" id="searchLoadMore" hidden>
+        <button class="ch-btn ch-btn--ghost" id="loadMoreBtn">Load More</button>
+      </div>
+
+    </div>
+  </main>
+
+  <div id="ch-footer-mount"></div>
+
+  <script src="/tmdb.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.45.0/dist/umd/supabase.min.js"></script>
+  <script src="/supabase-config.js"></script>
+  <script src="/shared.js"></script>
+  <script src="/auth.js"></script>
+  <script src="/search.js"></script>
+</body>
+</html>
