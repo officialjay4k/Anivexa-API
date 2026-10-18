@@ -154,7 +154,7 @@ const chPlayer = (function () {
       settings: [],
       playbackRate: true,
       aspectRatio: true,
-      screenshot: true,
+      // REMOVED: screenshot: true, 
       fullscreen: true,
       fullscreenWeb: true,
       pip: true,
@@ -166,15 +166,21 @@ const chPlayer = (function () {
       controls: [
         { name: 'rewind', position: 'left', index: 11, html: ICON_REW, tooltip: 'Rewind 5s', click: function () { if (!art || !art.video) return; art.video.currentTime = Math.max(0, art.video.currentTime - 5); } },
         { name: 'forward', position: 'left', index: 12, html: ICON_FWD, tooltip: 'Forward 5s', click: function () { if (!art || !art.video) return; const dur = art.duration || art.video.duration || Infinity; art.video.currentTime = Math.min(dur, art.video.currentTime + 5); } },
-        { name: 'screenshot', position: 'right', html: ICON_CAMERA, tooltip: 'Screenshot', click: function () { 
-            if(!art) return;
-            art.screenshot().then(base64 => {
-              showScreenshotUI(base64);
-            }).catch(err => {
-              console.warn('Screenshot blocked:', err);
-              if (typeof showToast === 'function') showToast('Screenshot failed. Stream security blocked the capture.');
-            });
-        }},
+        { 
+          name: 'ch-screenshot', // Changed name to avoid collision
+          position: 'right', 
+          html: ICON_CAMERA, 
+          tooltip: 'Screenshot', 
+          click: function () { 
+              if(!art) return;
+              art.screenshot().then(base64 => {
+                showScreenshotUI(base64);
+              }).catch(err => {
+                console.warn('Screenshot blocked:', err);
+                if (typeof showToast === 'function') showToast('Screenshot failed. Stream security blocked the capture.');
+              });
+          }
+        },
         { name: 'subtitle', position: 'right', html: 'CC', selector: subMenu, onSelect: function (item) { if (typeof opts.onSelectSubtitle === 'function') opts.onSelectSubtitle(item); chSubs.applyToPlayer(art, item); return 'CC'; } }
       ]
     };
