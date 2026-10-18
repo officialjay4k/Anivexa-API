@@ -31,8 +31,9 @@ async function anilistQuery(query, variables = {}) {
   return json.data;
 }
 
-// EXACT SAME LOGIC AS HOME PAGE
-// type: ANIME, isAdult: false, sort: POPULARITY_DESC
+// The magic line is `status_not: NOT_YET_RELEASED`. 
+// It instantly kills the placeholder covers and 2030 Netflix shows, 
+// but lets normal searches (like "attack on") work perfectly.
 const SEARCH_QUERY = `
   query ($page: Int, $search: String, $genre: String, $year: Int, $format: MediaFormat, $sort: [MediaSort]) {
     Page(page: $page, perPage: 30) {
@@ -44,7 +45,8 @@ const SEARCH_QUERY = `
         seasonYear: $year, 
         format: $format, 
         sort: $sort, 
-        isAdult: false
+        isAdult: false,
+        status_not: NOT_YET_RELEASED
       ) {
         id 
         title { romaji english } 
@@ -111,16 +113,13 @@ async function fetchResults(reset = false) {
     $('searchLoadMore').hidden = true;
   }
 
-  // Default to POPULARITY_DESC so we never get slop
-  let finalSort = currentFilters.sort;
-  
   const vars = {
     page: currentPage,
     search: currentQuery || null,
     genre: currentFilters.genre || null,
     year: currentFilters.year ? parseInt(currentFilters.year, 10) : null,
     format: currentFilters.format || null,
-    sort: [finalSort]
+    sort: [currentFilters.sort]
   };
 
   try {
