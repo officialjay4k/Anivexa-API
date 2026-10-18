@@ -106,7 +106,6 @@ const chPlayer = (function () {
     const scales = { small: 0.8, medium: 1.0, large: 1.4 };
     const scale = scales[size] || 1.0;
     
-    // Scale both native VTT tracks and the libass canvas
     el.innerHTML = `
       video::cue { font-size: ${scale * 100}% !important; }
       .art-libass canvas { 
@@ -154,6 +153,7 @@ const chPlayer = (function () {
       settings: [],
       playbackRate: true,
       aspectRatio: true,
+      screenshot: true,
       fullscreen: true,
       fullscreenWeb: true,
       pip: true,
@@ -281,24 +281,25 @@ const chPlayer = (function () {
     artConfig.plugins = [artplayerPluginLibass(libassOpts)];
 
     artConfig.settings = [
-      { name: 'sub-size', html: 'Subtitle Size', selector: [
+      { name: 'sub-size', html: 'Subtitle Size', tooltip: 'Change subtitle size', selector: [
         { html: 'Small', value: 'small' },
         { html: 'Medium', value: 'medium' },
         { html: 'Large', value: 'large' }
       ], onSelect: function(item) { applySubtitleSize(item.value); return item.html; } },
-      { name: 'loop', html: 'Loop Episode', switch: !!settingsRef.loop, onSwitch: function(item) { if(art) art.video.loop = !item.switch; return !item.switch; } },
-      { name: 'auto-next', html: 'Auto Next Episode', switch: !!settingsRef.autoNext, onSwitch: function(item) { if(typeof callbacks.onToggleAutoNext === 'function') callbacks.onToggleAutoNext(); return !item.switch; } },
-      { name: 'sleep', html: 'Sleep Timer', selector: [
+      { name: 'loop', html: 'Loop Episode', tooltip: 'Loop current episode', switch: !!settingsRef.loop, onSwitch: function(item) { if(art) art.video.loop = !item.switch; return !item.switch; } },
+      { name: 'auto-next', html: 'Auto Next Episode', tooltip: 'Play next episode automatically', switch: !!settingsRef.autoNext, onSwitch: function(item) { if(typeof callbacks.onToggleAutoNext === 'function') callbacks.onToggleAutoNext(); return !item.switch; } },
+      { name: 'sleep', html: 'Sleep Timer', tooltip: 'Stop playback after set time', selector: [
         { html: 'Off', value: 'off' }, { html: '10m', value: 10 }, { html: '15m', value: 15 }, { html: '20m', value: 20 }, { html: '25m', value: 25 }, { html: 'End of Video', value: 'end' }
       ], onSelect: function(item) { setSleepTimer(item.value); return item.html; } },
-      { name: 'screenshot', html: 'Take Screenshot', click: function() { 
-          if(!art) return;
+      { name: 'screenshot', html: 'Take Screenshot', tooltip: 'Capture current frame', click: function(item) { 
+          if(!art) return item.html;
           art.screenshot().then(base64 => {
             showScreenshotUI(base64);
           }).catch(err => {
             console.warn('Screenshot blocked by CORS:', err);
             if (typeof showToast === 'function') showToast('Screenshot failed. Stream security blocked the capture.');
           });
+          return item.html;
       }}
     ];
 
