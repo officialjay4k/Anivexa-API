@@ -59,24 +59,6 @@ const chPlayer = (function () {
     document.getElementById('ch-screenshot-close').onclick = () => ui.remove();
   }
 
-  function takeScreenshot() {
-    if (!art || !art.video) return;
-    const video = art.video;
-    const canvas = document.createElement('canvas');
-    canvas.width = video.videoWidth;
-    canvas.height = video.videoHeight;
-    const ctx = canvas.getContext('2d');
-    
-    try {
-      ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
-      const base64 = canvas.toDataURL('image/png');
-      showScreenshotUI(base64);
-    } catch (e) {
-      console.warn('Screenshot failed:', e);
-      if (typeof showToast === 'function') showToast('Screenshot blocked by stream security (CORS).');
-    }
-  }
-
   function ensurePreviewTooltip() { let el = document.querySelector('.watch-preview-tip'); if (el) return el; el = document.createElement('div'); el.className = 'watch-preview-tip'; el.innerHTML = '<video muted playsinline preload="auto"></video><div class="watch-preview-tip__time">0:00</div>'; document.body.appendChild(el); return el; }
   function destroyPreview() { if (previewHls) { try { previewHls.destroy(); } catch (e) {} previewHls = null; } const el = document.querySelector('.watch-preview-tip'); if (el) { const v = el.querySelector('video'); try { v.pause(); v.removeAttribute('src'); v.load(); } catch (e) {} el.style.display = 'none'; } }
   function initPreview(streamUrl, isMp4) { destroyPreview(); const el = ensurePreviewTooltip(); const video = el.querySelector('video'); if (isMp4) { video.src = streamUrl; return; } if (window.Hls && Hls.isSupported()) { const h = new Hls({ enableWorker: true, autoStartLoad: false, capLevelToPlayerSize: true }); previewHls = h; h.loadSource(streamUrl); h.attachMedia(video); h.startLoad(-1); } }
@@ -114,23 +96,24 @@ const chPlayer = (function () {
   }
 
   function applySubtitleSize(size) {
-    const styleId = 'ch-sub-size-style';
-    let el = document.getElementById(styleId);
+    let el = document.getElementById('ch-sub-size-style');
     if (!el) {
       el = document.createElement('style');
-      el.id = styleId;
+      el.id = 'ch-sub-size-style';
       document.head.appendChild(el);
     }
-    const sizes = { small: '80%', medium: '100%', large: '140%' };
-    const scale = sizes[size] || '100%';
     
-    el.textContent = `video::cue { font-size: ${scale} !important; }`;
+    const scales = { small: 0.8, medium: 1.0, large: 1.4 };
+    const scale = scales[size] || 1.0;
     
-    const libassCanvas = art?.template?.$player.querySelector('canvas');
-    if (libassCanvas) {
-      libassCanvas.style.transform = size === 'small' ? 'scale(0.8)' : size === 'large' ? 'scale(1.4)' : 'scale(1)';
-      libassCanvas.style.transformOrigin = 'bottom center';
-    }
+    // Scale both native VTT tracks and the libass canvas
+    el.innerHTML = `
+      video::cue { font-size: ${scale * 100}% !important; }
+      .art-libass canvas { 
+        transform: scale(${scale}) !important; 
+        transform-origin: bottom center !important; 
+      }
+    `;
   }
 
   async function fetchAsBlobUrl(proxyUrl, opts) { opts = opts || {}; const res = await fetch(proxyUrl, { cache: 'no-store' }); if (!res.ok) throw new Error('HTTP ' + res.status); const buf = await res.arrayBuffer(); if (opts.expectWasm) { const head = new Uint8Array(buf.slice(0, 8)); const isWasm = head[0] === 0x00 && head[1] === 0x61 && head[2] === 0x73 && head[3] === 0x6d; if (!isWasm) throw new Error('Not WASM'); } return URL.createObjectURL(new Blob([buf], { type: opts.mimeType || 'application/javascript' })); }
@@ -308,7 +291,15 @@ const chPlayer = (function () {
       { name: 'sleep', html: 'Sleep Timer', selector: [
         { html: 'Off', value: 'off' }, { html: '10m', value: 10 }, { html: '15m', value: 15 }, { html: '20m', value: 20 }, { html: '25m', value: 25 }, { html: 'End of Video', value: 'end' }
       ], onSelect: function(item) { setSleepTimer(item.value); return item.html; } },
-      { name: 'screenshot', html: 'Take Screenshot', click: function() { takeScreenshot(); }}
+      { name: 'screenshot', html: 'Take Screenshot', click: function() { 
+          if(!art) return;
+          art.screenshot().then(base64 => {
+            showScreenshotUI(base64);
+          }).catch(err => {
+            console.warn('Screenshot blocked by CORS:', err);
+            if (typeof showToast === 'function') showToast('Screenshot failed. Stream security blocked the capture.');
+          });
+      }}
     ];
 
     return await new Promise(function (resolve) {
