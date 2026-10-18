@@ -75,7 +75,6 @@ function fmtDate(d) {
 }
 function fmtNumber(n) { return n == null ? '—' : n.toLocaleString('en-US'); }
 
-// ---------- Watchlist Helpers ----------
 function getLocalWatchlist() {
   try { return JSON.parse(localStorage.getItem(CH.STORAGE_WATCHLIST)) || {}; } catch { return {}; }
 }
@@ -83,10 +82,8 @@ function saveLocalWatchlist(w) {
   try { localStorage.setItem(CH.STORAGE_WATCHLIST, JSON.stringify(w)); } catch {}
 }
 
-// ---------- Stable Episode Fetching ----------
 async function fetchProviderEpisodes(anilistId) {
   try {
-    // Try reanime first (usually fastest and most complete)
     const res = await fetch(`${API_BASE}/episodes/reanime/${anilistId}`, { cache: 'no-store' });
     if (res.ok) {
       const data = await res.json();
@@ -107,7 +104,6 @@ async function fetchProviderEpisodes(anilistId) {
   } catch {}
 
   try {
-    // Fallback to anikoto
     const res = await fetch(`${API_BASE}/episodes/anikoto/${anilistId}`, { cache: 'no-store' });
     if (res.ok) {
       const data = await res.json();
@@ -130,7 +126,6 @@ async function fetchProviderEpisodes(anilistId) {
   return { episodes: [], languages: [] };
 }
 
-// ---------- Hero ----------
 async function renderHero(media, tmdb) {
   const bg = document.getElementById('previewHeroBg');
   const inner = document.getElementById('previewHeroInner');
@@ -167,7 +162,6 @@ async function renderHero(media, tmdb) {
   `;
 }
 
-// ---------- Meta row + CTAs & Watchlist ----------
 function renderMetaAndCta(media) {
   const meta = document.getElementById('previewMeta');
   const cta = document.getElementById('previewCta');
@@ -239,7 +233,7 @@ function renderMetaAndCta(media) {
         label.textContent = 'Add to List';
         showToast('Removed from list');
         currentStatus = 'none';
-        renderMetaAndCta(media); // Re-render
+        renderMetaAndCta(media);
       } else {
         await chAuth.upsertWatchlistEntry({
           anilistId: media.id,
@@ -254,7 +248,7 @@ function renderMetaAndCta(media) {
         label.textContent = 'Status: ' + status.toUpperCase();
         showToast('Updated to ' + status);
         currentStatus = status;
-        renderMetaAndCta(media); // Re-render
+        renderMetaAndCta(media);
       }
     };
   });
@@ -285,13 +279,11 @@ function renderMetaAndCta(media) {
   });
 }
 
-// ---------- Synopsis ----------
 function renderDescription(media) {
   const el = document.getElementById('previewDesc');
   el.textContent = cleanDescription(media.description) || 'No description available.';
 }
 
-// ---------- Facts ----------
 function renderFacts(media, languages) {
   const el = document.getElementById('previewFacts');
   const rows = [];
@@ -330,7 +322,6 @@ function renderFacts(media, languages) {
   `).join('');
 }
 
-// ---------- Tags (Clickable) ----------
 function renderTags(media) {
   const el = document.getElementById('previewTags');
   const tags = (media.tags || []).slice().sort((a, b) => b.rank - a.rank).slice(0, 14);
@@ -342,11 +333,11 @@ function renderTags(media) {
     const cls = t.rank >= 75 ? 'preview-tag--top' : '';
     const spoiler = t.isMediaSpoiler ? 'preview-tag--spoiler' : '';
     const suffix = t.isMediaSpoiler ? ' (Spoiler)' : '';
-    return `<a href="/home?q=${encodeURIComponent(t.name)}" class="preview-tag ${cls} ${spoiler}">${chEscapeHtml(t.name)}${suffix}</a>`;
+    // FIXED: Routes to /search instead of /home
+    return `<a href="/search?q=${encodeURIComponent(t.name)}" class="preview-tag ${cls} ${spoiler}">${chEscapeHtml(t.name)}${suffix}</a>`;
   }).join('');
 }
 
-// ---------- Staff ----------
 function renderStaff(media) {
   const section = document.getElementById('staffBlock');
   const wrap = document.getElementById('previewStaff');
@@ -370,7 +361,6 @@ function renderStaff(media) {
   }).join('');
 }
 
-// ---------- Characters ----------
 function renderCharacters(media) {
   const section = document.getElementById('charactersSection');
   const row = document.getElementById('charactersRow');
@@ -401,7 +391,6 @@ function renderCharacters(media) {
   }).join('');
 }
 
-// ---------- Episodes sidebar ----------
 function renderEpisodes(episodes, languages) {
   const list = document.getElementById('epList');
   const count = document.getElementById('epCount');
@@ -437,7 +426,6 @@ function renderEpisodes(episodes, languages) {
 
 let anilistIdGlobal = null;
 
-// ---------- Recommendations ----------
 async function renderRecommendations(media) {
   const section = document.getElementById('recsSection');
   const grid = document.getElementById('recsGrid');
@@ -474,7 +462,6 @@ async function renderRecommendations(media) {
   });
 }
 
-// ---------- Boot ----------
 async function initPreview() {
   const id = getIdFromUrl();
   if (!id) {
