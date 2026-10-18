@@ -8,7 +8,7 @@ const SETTINGS_KEY = CH.STORAGE_SETTINGS;
 const EP_FETCH_PROVIDERS = ['reanime', 'anikoto', 'animegg', 'aniwaves', 'senshi', 'anizone', 'kaa'];
 const CARD_LAYOUT_THRESHOLD = 12;
 
-const DEFAULTS = { autoSkip: false, autoNext: false, autoPlay: false, subtitlesOn: false, audio: 'dub' };
+const DEFAULTS = { autoSkip: false, autoNext: false, autoPlay: false, subtitlesOn: false, audio: 'dub', quality: 'auto' };
 function loadSettings() {
   try {
     const raw = localStorage.getItem(SETTINGS_KEY);
@@ -113,17 +113,41 @@ async function fetchProvidersEpisodes(anilistId) {
   return { results: results, hasSub: subOk, hasDub: dubOk };
 }
 
-// Provider list is now the absolute source of truth
-function pickBestEpisodeList(results, audio) {
+function computeAiredCap(media) {
+  if (!media) return null;
+  const next = media.nextAiringEpisode;
+  if (next && Number.isFinite(Number(next.episode))) return Number(next.episode) - 1;
+  return null;
+}
+
+function pickBestEpisodeList(results, audio, media) {
   let best = { provider: null, list: [] };
   if (!results.length) return best;
+
+  const airedCap = computeAiredCap(media);
+  const expectedCount = media && Number.isFinite(media.episodes) ? media.episodes : null;
+
+  const filterAired = function (list) {
+    if (!list || !list.length) return [];
+    if (airedCap == null) return list;
+    return list.filter(function (e) { return Number(e.number) <= airedCap; });
+  };
+
+  const scoreList = function (list) {
+    if (!list || !list.length) return -Infinity;
+    if (expectedCount != null && expectedCount > 0) {
+      const diff = Math.abs(list.length - expectedCount);
+      return -diff * 10 + list.length * 0.1;
+    }
+    return list.length;
+  };
 
   let bestScore = -Infinity;
   for (const r of results) {
     const raw = audio === 'sub' ? r.sub : r.dub;
-    if (!raw || !raw.length) continue;
-    const s = raw.length; // Just pick the provider with the most episodes
-    if (s > bestScore) { bestScore = s; best = { provider: r.provider, list: raw }; }
+    const list = filterAired(raw);
+    const s = scoreList(list);
+    if (s > bestScore) { bestScore = s; best = { provider: r.provider, list: list }; }
   }
   return best;
 }
@@ -182,7 +206,7 @@ function initWatchlistButton() {
         localStorage.setItem(CH.STORAGE_WATCHLIST, JSON.stringify(w));
         btn.textContent = 'Add to List';
         showToast('Removed from list');
-        initWatchlistButton(); // Re-render to remove the "Remove" button
+        initWatchlistButton(); // Re-render
       } else {
         await chAuth.upsertWatchlistEntry({
           anilistId: media.id,
@@ -197,7 +221,7 @@ function initWatchlistButton() {
         localStorage.setItem(CH.STORAGE_WATCHLIST, JSON.stringify(w));
         btn.textContent = 'Status: ' + status.toUpperCase();
         showToast('Updated to ' + status);
-        initWatchlistButton(); // Re-render to add the "Remove" button
+        initWatchlistButton(); // Re-render
       }
     };
   });
@@ -250,7 +274,6 @@ function renderNextAiring() {
   if (!next || !next.airingAt) { box.hidden = true; return; }
 
   const nowSec = Math.floor(Date.now() / 1000);
-  // ONLY SHOW IF LESS THAN 30 DAYS AWAY (Fixes the 1-year countdown)
   const thirtyDays = 30 * 24 * 60 * 60;
   if (next.airingAt - nowSec > thirtyDays || next.airingAt <= nowSec - 3600) {
     box.hidden = true;
@@ -309,6 +332,7 @@ function renderEpisodes() {
     if (!isFinite(n)) continue;
     const isWatched = watched.has(n);
     const isCurrent = n === currentEp;
+    const isPending = raw.isPending;
     const title = raw.title || ('Episode ' + n);
     const thumb = raw.image || (media && media.coverImage && (media.coverImage.extraLarge || media.coverImage.large)) || '';
 
@@ -318,6 +342,7 @@ function renderEpisodes() {
       btn.className = 'watch-ep-card';
       if (isWatched) btn.classList.add('watched');
       if (isCurrent) btn.classList.add('current');
+      if (isPending) btn.classList.add('is-pending');
       btn.dataset.ep = n;
       btn.innerHTML =
         '<div class="watch-ep-card__thumb" style="background-image:url(\'' + chEscapeHtml(thumb).replace(/'/g, '%27') + '\')"></div>' +
@@ -333,6 +358,7 @@ function renderEpisodes() {
       btn.className = 'watch-ep-pill';
       if (isWatched) btn.classList.add('watched');
       if (isCurrent) btn.classList.add('current');
+      if (isPending) btn.classList.add('is-pending');
       btn.dataset.ep = n;
       btn.textContent = n;
       btn.title = 'Episode ' + n + (title && title !== 'Episode ' + n ? ' — ' + title : '');
@@ -348,8 +374,8 @@ function renderEpisodes() {
 function goToEpisode(n) {
   if (n === currentEp) return;
   const found = episodeList.find(function (e) { return Number(e.number) === Number(n); });
-  if (!found) {
-    if (typeof showToast === 'function') showToast('Episode ' + n + ' isn\'t available on this provider yet.');
+  if (!found || found.isPending) {
+    if (typeof showToast === 'function') showToast('Episode ' + n + ' isn\'t available yet. The provider hasn\'t uploaded it.');
     return;
   }
   saveNow();
@@ -665,6 +691,11 @@ chPipeline.on('stream', async function (data) {
         chProgress.set(anilistId, titleOf(media), media && media.coverImage && (media.coverImage.extraLarge || media.coverImage.large), currentEp, currentAudio, t, d);
         syncWatchData();
       },
+      onToggleAutoNext: function() {
+        appSettings.autoNext = !appSettings.autoNext;
+        saveSettings(appSettings);
+        refreshControls();
+      },
       onEnded: function () {
         if (!appSettings.autoNext || autoNextFired) return;
         autoNextFired = true;
@@ -811,16 +842,23 @@ async function initWatch() {
   }
   refreshControls();
 
-  epCache.sub = pickBestEpisodeList(fetched.results, 'sub');
-  epCache.dub = pickBestEpisodeList(fetched.results, 'dub');
+  epCache.sub = pickBestEpisodeList(fetched.results, 'sub', media);
+  epCache.dub = pickBestEpisodeList(fetched.results, 'dub', media);
   const chosen = currentAudio === 'sub' ? epCache.sub : epCache.dub;
   episodeList = (chosen.list || []).slice().sort(function (a, b) { return Number(a.number) - Number(b.number); });
 
   const epExists = episodeList.find(function (e) { return Number(e.number) === Number(currentEp); });
   if (!epExists && episodeList.length) {
-    currentEp = Number(episodeList[episodeList.length - 1].number);
-    updateUrlParams({ ep: currentEp });
-    renderInfo();
+    const cap = computeAiredCap(media);
+    if (cap && Number(currentEp) <= cap) {
+      episodeList.push({ number: Number(currentEp), title: 'Episode ' + currentEp, isPending: true });
+      episodeList.sort(function(a,b) { return Number(a.number) - Number(b.number); });
+      if (typeof showToast === 'function') showToast('This episode hasn\'t been uploaded by the provider yet.');
+    } else {
+      currentEp = Number(episodeList[episodeList.length - 1].number);
+      updateUrlParams({ ep: currentEp });
+      renderInfo();
+    }
   }
 
   renderEpisodes();
