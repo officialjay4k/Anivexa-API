@@ -20,7 +20,7 @@
       <header class="search-hero">
         <h1 class="search-title" id="searchTitle">Search Anime</h1>
         <div class="search-bar">
-          <input type="text" id="searchInput" placeholder="Search by title...">
+          <input type="text" id="searchInput" placeholder="Search by title..." autocomplete="off">
           <button class="ch-btn ch-btn--primary" id="searchBtn">Search</button>
         </div>
       </header>
@@ -72,6 +72,7 @@
         </select>
 
         <select id="filterSort" class="ch-select">
+          <option value="SEARCH_MATCH">Best Match</option>
           <option value="POPULARITY_DESC">Most Popular</option>
           <option value="SCORE_DESC">Highest Rated</option>
           <option value="START_DATE_DESC">Newest</option>
