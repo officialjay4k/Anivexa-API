@@ -31,8 +31,7 @@ async function anilistQuery(query, variables = {}) {
   return json.data;
 }
 
-// 1. status_not: NOT_YET_RELEASED kills the 2026/2027 placeholder slop.
-// 2. No other restrictions, so "attack on" actually works.
+// Clean, standard AniList query. No broken status filters.
 const SEARCH_QUERY = `
   query ($page: Int, $search: String, $genre: String, $year: Int, $format: MediaFormat, $sort: [MediaSort]) {
     Page(page: $page, perPage: 30) {
@@ -44,8 +43,7 @@ const SEARCH_QUERY = `
         seasonYear: $year, 
         format: $format, 
         sort: $sort, 
-        isAdult: false,
-        status_not: NOT_YET_RELEASED
+        isAdult: false
       ) {
         id 
         title { romaji english } 
@@ -112,13 +110,20 @@ async function fetchResults(reset = false) {
     $('searchLoadMore').hidden = true;
   }
 
+  // Magic logic: If there's a search query, use SEARCH_MATCH to find exact titles.
+  // If empty, just use POPULARITY_DESC (exact same as Home page).
+  let sortParam = currentQuery ? ['SEARCH_MATCH', 'POPULARITY_DESC'] : ['POPULARITY_DESC'];
+  if (currentFilters.sort !== 'POPULARITY_DESC') {
+    sortParam = [currentFilters.sort];
+  }
+
   const vars = {
     page: currentPage,
     search: currentQuery || null,
     genre: currentFilters.genre || null,
     year: currentFilters.year ? parseInt(currentFilters.year, 10) : null,
     format: currentFilters.format || null,
-    sort: [currentFilters.sort]
+    sort: sortParam
   };
 
   try {
