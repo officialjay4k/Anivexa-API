@@ -2,6 +2,17 @@
 // Cloud Hub — player.js
 // ============================================================
 
+// GLOBAL DOWNLOAD BLOCKER
+document.addEventListener('click', function(e) {
+  const a = e.target.closest('a');
+  if (a && (a.hasAttribute('download') || a.href.startsWith('data:image'))) {
+    e.preventDefault();
+    e.stopPropagation();
+    console.log('[Block] Download blocked.');
+    return false;
+  }
+}, true);
+
 const chPlayer = (function () {
   const FALLBACK_FONT_URL = 'https://cdn.jsdelivr.net/fontsource/fonts/roboto@latest/latin-400-normal.woff2';
   const MAX_UNIQUE_FRAGMENT_ERRORS = 3;
@@ -38,7 +49,6 @@ const chPlayer = (function () {
     ui = document.createElement('div');
     ui.id = 'ch-screenshot-ui';
     
-    // Removed ALL download attributes and renamed classes to stop AutoClickers
     ui.innerHTML = `
       <div class="ch-ss-card">
         <img src="${base64}" alt="Screenshot">
