@@ -37,30 +37,30 @@ const chPlayer = (function () {
 
     ui = document.createElement('div');
     ui.id = 'ch-screenshot-ui';
-    // Replaced <a> tag with <button> to prevent AutoClicker extensions from downloading it instantly
+    
+    // Removed ALL download attributes and renamed classes to stop AutoClickers
     ui.innerHTML = `
-      <div class="ch-screenshot-card">
+      <div class="ch-ss-card">
         <img src="${base64}" alt="Screenshot">
-        <div class="ch-screenshot-actions">
-          <button type="button" class="ch-screenshot-btn" id="ch-screenshot-download">
-            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
-            Download
+        <div class="ch-ss-actions">
+          <button type="button" class="ch-ss-btn" id="ch-ss-view">
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="3"/></svg>
+            View
           </button>
-          <button type="button" class="ch-screenshot-btn" onclick="alert('Saving to CloudHub profile coming soon!');">
+          <button type="button" class="ch-ss-btn" id="ch-ss-save">
             <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M19 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11l5 5v11a2 2 0 0 1-2 2z"/><polyline points="17 21 17 13 7 13 7 21"/><polyline points="7 3 7 8 15 8"/></svg>
             Save
           </button>
-          <button type="button" class="ch-screenshot-btn" disabled title="Coming soon">
+          <button type="button" class="ch-ss-btn" disabled title="Coming soon">
             <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="18" cy="5" r="3"/><circle cx="6" cy="12" r="3"/><circle cx="18" cy="19" r="3"/><line x1="8.59" y1="13.51" x2="15.42" y2="17.49"/><line x1="15.41" y1="6.51" x2="8.59" y2="10.49"/></svg>
             Share
           </button>
         </div>
-        <button class="ch-screenshot-close" id="ch-screenshot-close">&times;</button>
+        <button class="ch-ss-close" id="ch-ss-close">&times;</button>
       </div>
     `;
     document.body.appendChild(ui);
     
-    // Hover pause logic
     ui.addEventListener('mouseenter', () => {
       if (screenshotTimer) clearTimeout(screenshotTimer);
     });
@@ -70,20 +70,18 @@ const chPlayer = (function () {
       screenshotTimer = setTimeout(() => { if (ui.parentNode) ui.remove(); }, 3000);
     });
 
-    // Start initial timer
     screenshotTimer = setTimeout(() => { if (ui.parentNode) ui.remove(); }, 10000);
 
-    // Trigger download only on explicit click
-    document.getElementById('ch-screenshot-download').onclick = () => {
-      const a = document.createElement('a');
-      a.href = base64;
-      a.download = `cloudhub-${Date.now()}.png`;
-      document.body.appendChild(a);
-      a.click();
-      document.body.removeChild(a);
+    document.getElementById('ch-ss-view').onclick = () => {
+      const w = window.open("");
+      w.document.write(`<img src="${base64}" style="max-width:100%;">`);
+    };
+    
+    document.getElementById('ch-ss-save').onclick = () => {
+      if (typeof showToast === 'function') showToast('Saving to CloudHub profile coming soon!');
     };
 
-    document.getElementById('ch-screenshot-close').onclick = () => {
+    document.getElementById('ch-ss-close').onclick = () => {
       if (screenshotTimer) clearTimeout(screenshotTimer);
       ui.remove();
     };
