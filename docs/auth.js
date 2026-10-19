@@ -21,6 +21,7 @@ const chAuth = (() => {
       fetchNotifications: () => Promise.resolve([]),
       markNotificationRead: () => Promise.resolve(),
       markAllNotificationsRead: () => Promise.resolve(),
+      createNotification: noop,
       upsertWatchlistEntry: noop, removeWatchlistEntry: noop,
       recomputeStats: () => Promise.resolve(null),
       tierFromScore: () => 'Chunin',
@@ -77,25 +78,14 @@ const chAuth = (() => {
     const { data, error } = await sb.auth.signUp({
       email,
       password,
-      options: {
-        data: {
-          username: clean,
-          display_name: clean
-        }
-      }
+      options: { data: { username: clean, display_name: clean } }
     });
     if (error) return { ok: false, error: error.message };
     const user = data.user;
     if (!user) return { ok: false, error: 'Signup succeeded but no user returned.' };
 
     if (!data.session) {
-      return {
-        ok: true,
-        needsEmailConfirm: true,
-        user: user,
-        profile: null,
-        message: 'Check your email for a confirmation code, then enter it here.'
-      };
+      return { ok: true, needsEmailConfirm: true, user: user, profile: null, message: 'Check your email.' };
     }
 
     let upErr = null;
@@ -115,7 +105,7 @@ const chAuth = (() => {
     const { error } = await sb.auth.signInWithPassword({ email, password });
     if (error) {
       if (/email not confirmed/i.test(error.message)) {
-        return { ok: false, error: 'Please confirm your email first — check your inbox for the code.', code: 'EMAIL_NOT_CONFIRMED' };
+        return { ok: false, error: 'Please confirm your email first.', code: 'EMAIL_NOT_CONFIRMED' };
       }
       return { ok: false, error: error.message };
     }
@@ -126,9 +116,7 @@ const chAuth = (() => {
   async function signInWithGoogle() {
     const { error } = await sb.auth.signInWithOAuth({
       provider: 'google',
-      options: {
-        redirectTo: location.origin + '/auth/callback'
-      }
+      options: { redirectTo: location.origin + '/auth/callback' }
     });
     if (error) return { ok: false, error: error.message };
     return { ok: true };
@@ -155,7 +143,6 @@ const chAuth = (() => {
     const clean = {};
     for (const k of allowed) if (k in patch) clean[k] = patch[k];
 
-    // BUG FIX: Only check availability if the username is ACTUALLY changing.
     if (clean.username) {
       const currentName = (cachedProfile?.username || '').toLowerCase();
       if (clean.username.toLowerCase() !== currentName) {
@@ -174,9 +161,7 @@ const chAuth = (() => {
   async function uploadAvatar(file) {
     if (!cachedUser) return { ok: false, error: 'Not signed in' };
     if (!file) return { ok: false, error: 'No file' };
-    if (!/^image\/(png|jpe?g|webp|gif)$/i.test(file.type)) {
-      return { ok: false, error: 'Must be an image (png/jpg/webp/gif)' };
-    }
+    if (!/^image\/(png|jpe?g|webp|gif)$/i.test(file.type)) return { ok: false, error: 'Must be an image (png/jpg/webp/gif)' };
     if (file.size > 4 * 1024 * 1024) return { ok: false, error: 'Image too large (max 4 MB)' };
 
     const ext = (file.type.split('/')[1] || 'png').replace('jpeg', 'jpg');
@@ -205,33 +190,20 @@ const chAuth = (() => {
   }
 
   async function fetchPublicProfile(username) {
-    const { data, error } = await sb
-      .from('public_profiles')
-      .select('*')
-      .ilike('username', username)
-      .maybeSingle();
+    const { data, error } = await sb.from('public_profiles').select('*').ilike('username', username).maybeSingle();
     if (error || !data) return null;
     return data;
   }
 
   async function fetchWatchlist(userId) {
-    const { data, error } = await sb
-      .from('watchlist')
-      .select('*')
-      .eq('user_id', userId)
-      .order('updated_at', { ascending: false });
+    const { data, error } = await sb.from('watchlist').select('*').eq('user_id', userId).order('updated_at', { ascending: false });
     if (error) return [];
     return data || [];
   }
 
   async function fetchNotifications() {
     if (!cachedUser) return [];
-    const { data, error } = await sb
-      .from('notifications')
-      .select('*')
-      .eq('user_id', cachedUser.id)
-      .order('created_at', { ascending: false })
-      .limit(30);
+    const { data, error } = await sb.from('notifications').select('*').eq('user_id', cachedUser.id).order('created_at', { ascending: false }).limit(30);
     if (error) return [];
     return data || [];
   }
@@ -244,6 +216,74 @@ const chAuth = (() => {
   async function markAllNotificationsRead() {
     if (!cachedUser) return;
     await sb.from('notifications').update({ read: true }).eq('user_id', cachedUser.id).eq('read', false);
+  }
+
+  async function createNotification(title, message, link) {
+    if (!cachedUser) return;
+    // Check if we already sent this exact notification in the last 24h to prevent spam
+    const oneDayAgo = new Date(Date.now() - 86400000).toISOString();
+    const { data: existing } = await sb.from('notifications')
+      .select('id')
+      .eq('user_id', cachedUser.id)
+      .eq('title', title)
+      .gte('created_at', oneDayAgo)
+      .limit(1);
+      
+    if (existing && existing.length > 0) return;
+
+    await sb.from('notifications').insert({
+      user_id: cachedUser.id,
+      title: title,
+      message: message,
+      link: link,
+      read: false
+    });
+  }
+
+  async function checkWatchlistAnnouncements() {
+    if (!cachedUser) return;
+    try {
+      const list = await fetchWatchlist(cachedUser.id);
+      const watching = list.filter(w => w.status === 'watching');
+      if (!watching.length) return;
+
+      const ids = watching.map(w => w.anilist_id);
+      
+      const query = `
+        query ($ids: [Int]) {
+          Page(page: 1, perPage: 50) {
+            media(id_in: $ids, type: ANIME) {
+              id title { english romaji }
+              nextAiringEpisode { episode airingAt }
+            }
+          }
+        }
+      `;
+      
+      const res = await fetch('https://graphql.anilist.co', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ query, variables: { ids } })
+      });
+      const json = await res.json();
+      const media = json.data?.Page?.media || [];
+      const now = Math.floor(Date.now() / 1000);
+
+      for (const m of media) {
+        if (m.nextAiringEpisode && m.nextAiringEpisode.airingAt < now && m.nextAiringEpisode.airingAt > now - 86400 * 3) {
+           // Episode aired in the last 3 days
+           const title = m.title.english || m.title.romaji;
+           const ep = m.nextAiringEpisode.episode - 1;
+           await createNotification(
+             `New Episode: ${title}`,
+             `Episode ${ep} is now available to watch!`,
+             `/watch?id=${m.id}&ep=${ep}&lang=dub`
+           );
+        }
+      }
+    } catch(e) {
+      console.warn('Announcement check failed:', e);
+    }
   }
 
   function tierFromScore(score) {
@@ -318,7 +358,8 @@ const chAuth = (() => {
     signUp, signIn, signInWithGoogle, signOut,
     checkUsernameAvailable, updateProfile, uploadAvatar,
     fetchPublicProfile, fetchWatchlist,
-    fetchNotifications, markNotificationRead, markAllNotificationsRead,
+    fetchNotifications, markNotificationRead, markAllNotificationsRead, createNotification,
+    checkWatchlistAnnouncements,
     upsertWatchlistEntry, removeWatchlistEntry,
     recomputeStats, tierFromScore, formatUserId,
     get user()    { return cachedUser; },
