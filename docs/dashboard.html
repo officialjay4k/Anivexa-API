@@ -26,31 +26,55 @@
         </div>
         <div class="dashboard-actions">
           <a href="/user/settings" class="ch-btn ch-btn--quiet">Edit Profile</a>
-          <a href="/user/settings" class="ch-btn ch-btn--primary" id="dashPublicProfileLink">View Public Profile</a>
+          <a href="#" class="ch-btn ch-btn--primary" id="dashPublicProfileLink">View Public Profile</a>
         </div>
       </header>
 
-      <section class="dashboard-stats">
-        <div class="dashboard-stat-card">
-          <div class="dashboard-stat-card__val" id="statFinished">0</div>
-          <div class="dashboard-stat-card__label">Completed</div>
+      <!-- High-Tech Stats Grid -->
+      <section class="dashboard-analytics">
+        
+        <!-- Pie Chart -->
+        <div class="dash-chart-card">
+          <h3 class="dash-chart-title">Watchlist Breakdown</h3>
+          <div class="dash-pie-wrap">
+            <div class="dash-pie" id="dashPieChart"></div>
+            <div class="dash-legend">
+              <div class="dash-legend-item"><span class="dot dot-red"></span> Watching</div>
+              <div class="dash-legend-item"><span class="dot dot-green"></span> Completed</div>
+              <div class="dash-legend-item"><span class="dot dot-blue"></span> Planned</div>
+              <div class="dash-legend-item"><span class="dot dot-gray"></span> Dropped</div>
+            </div>
+          </div>
         </div>
-        <div class="dashboard-stat-card">
-          <div class="dashboard-stat-card__val" id="statWatching">0</div>
-          <div class="dashboard-stat-card__label">Watching</div>
+
+        <!-- Podium Graph -->
+        <div class="dash-chart-card">
+          <h3 class="dash-chart-title">Top Stats</h3>
+          <div class="dash-podium" id="dashPodium">
+            <!-- Injected by JS -->
+          </div>
         </div>
-        <div class="dashboard-stat-card">
-          <div class="dashboard-stat-card__val" id="statPlanned">0</div>
-          <div class="dashboard-stat-card__label">Plan to Watch</div>
+
+        <!-- Circular Progress -->
+        <div class="dash-chart-card">
+          <h3 class="dash-chart-title">Completion Rate</h3>
+          <div class="dash-ring-wrap">
+            <svg class="dash-ring" viewBox="0 0 100 100">
+              <circle class="dash-ring-bg" cx="50" cy="50" r="40"/>
+              <circle class="dash-ring-fill" cx="50" cy="50" r="40" id="dashRingFill"/>
+            </svg>
+            <div class="dash-ring-text" id="dashRingText">0%</div>
+          </div>
         </div>
-        <div class="dashboard-stat-card">
-          <div class="dashboard-stat-card__val" id="statDropped">0</div>
-          <div class="dashboard-stat-card__label">Dropped</div>
-        </div>
-        <div class="dashboard-stat-card">
-          <div class="dashboard-stat-card__val" id="statHours">0</div>
-          <div class="dashboard-stat-card__label">Hours Watched</div>
-        </div>
+
+      </section>
+
+      <!-- Continue Watching -->
+      <section class="dashboard-section" id="dashContinueSection" hidden>
+        <header class="ch-section-head" style="margin-bottom: var(--s-4);">
+          <h2 class="ch-section-title">Continue Watching</h2>
+        </header>
+        <div class="dashboard-row" id="dashContinueRow"></div>
       </section>
 
       <div class="dashboard-tabs" id="dashTabs">
