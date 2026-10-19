@@ -63,14 +63,16 @@ async function initProfile() {
 
   // Add Friend button logic
   const actionsWrap = $('profileActions');
-  if (window.chAuth && chAuth.user && chAuth.user.id === profile.id) {
-    actionsWrap.innerHTML = `<a href="/user/settings" class="ch-btn ch-btn--ghost" style="width:100%">Edit Profile</a>`;
-  } else {
-    actionsWrap.innerHTML = `
-      <button type="button" class="ch-btn ch-btn--primary" style="width:100%" disabled>
-        Add Friend (Coming Soon)
-      </button>
-    `;
+  if (actionsWrap) {
+    if (window.chAuth && chAuth.user && chAuth.user.id === profile.id) {
+      actionsWrap.innerHTML = `<a href="/user/settings" class="ch-btn ch-btn--ghost" style="width:100%">Edit Profile</a>`;
+    } else {
+      actionsWrap.innerHTML = `
+        <button type="button" class="ch-btn ch-btn--primary" style="width:100%" disabled>
+          Add Friend (Coming Soon)
+        </button>
+      `;
+    }
   }
 
   // Fetch Stats
@@ -88,7 +90,7 @@ async function initProfile() {
   const tier = chAuth.tierFromScore(score);
   $('profileTier').innerHTML = `<span class="profile-tier__badge">${chEscapeHtml(tier)}</span>`;
 
-  // Render Stats Grid (Fixed: 0 instead of Empty)
+  // Render Stats Grid
   const statsGrid = $('profileStatsGrid');
   if (profile.hidden && stats) {
     statsGrid.innerHTML = `<div class="profile-wl-empty">This user has chosen to hide their stats.</div>`;
