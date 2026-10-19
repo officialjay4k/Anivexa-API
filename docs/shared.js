@@ -118,6 +118,7 @@ async function mountHeader() {
       const r = await chAuth.refresh();
       user = r.user;
       profile = r.profile;
+      if (user) chAuth.checkWatchlistAnnouncements().catch(() => {});
     } catch (e) {
       console.warn('[shared] auth refresh failed:', e);
     }
@@ -132,10 +133,34 @@ async function mountHeader() {
     const avatarUrl = profile?.avatar_url || '';
     const displayName = profile?.username || 'User';
     const userId = profile?.user_id ? chAuth.formatUserId(profile.user_id) : '';
-    const avatarInner = avatarUrl
-      ? `<img src="${chEscapeHtml(avatarUrl)}" alt="">`
-      : `<span style="font-weight:800;color:#fff;">${chEscapeHtml(initial)}</span>`;
+    const avatarInner = avatarUrl ? `<img src="${chEscapeHtml(avatarUrl)}" alt="">` : `<span style="font-weight:800;color:#fff;">${chEscapeHtml(initial)}</span>`;
+    
+    const notifications = await chAuth.fetchNotifications().catch(() => []);
+    const unreadCount = notifications.filter(n => !n.read).length;
+
     navRight = `
+      <div class="ch-notif-wrap" id="chNotifWrap">
+        <button type="button" class="ch-notif-btn" id="chNotifBtn" aria-label="Notifications">
+          <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M18 8A6 6 0 0 0 6 8c0 7-3 9-3 9h18s-3-2-3-9"/><path d="M13.73 21a2 2 0 0 1-3.46 0"/></svg>
+          ${unreadCount > 0 ? `<span class="ch-notif-badge">${unreadCount}</span>` : ''}
+        </button>
+        <div class="ch-notif-menu" id="chNotifMenu">
+          <div class="ch-notif-menu__head">
+            <span>Notifications</span>
+            <button type="button" class="ch-notif-read-all" id="chNotifReadAll">Mark all read</button>
+          </div>
+          <div class="ch-notif-list" id="chNotifList">
+            ${notifications.length ? notifications.map(n => `
+              <a href="${n.link || '#'}" class="ch-notif-item ${n.read ? '' : 'is-unread'}" data-id="${n.id}">
+                <div class="ch-notif-item__title">${chEscapeHtml(n.title)}</div>
+                <div class="ch-notif-item__msg">${chEscapeHtml(n.message)}</div>
+                <div class="ch-notif-item__time">${chFormatTimeAgo(new Date(n.created_at).getTime() / 1000)}</div>
+              </a>
+            `).join('') : '<div class="ch-notif-empty">No notifications yet.</div>'}
+          </div>
+        </div>
+      </div>
+
       <div class="ch-pfp-wrap" id="chPfpWrap">
         <button type="button" class="ch-header__avatar" id="chPfpBtn" aria-label="Profile menu">
           ${avatarInner}
@@ -212,7 +237,7 @@ async function mountHeader() {
       e.preventDefault();
       const v = input.value.trim();
       if (!v) return;
-      window.location.href = `/search?q=${encodeURIComponent(v)}`; // FIXED: Routes to /search
+      window.location.href = `/search?q=${encodeURIComponent(v)}`;
     });
   }
 
@@ -220,14 +245,58 @@ async function mountHeader() {
   if (filterBtn) {
     filterBtn.addEventListener('click', (e) => {
       e.preventDefault();
-      window.location.href = '/search'; // FIXED: Routes to /search
+      window.location.href = '/search';
     });
   }
 
+  // Notification Logic
+  const notifBtn = document.getElementById('chNotifBtn');
+  const notifMenu = document.getElementById('chNotifMenu');
+  if (notifBtn && notifMenu) {
+    notifBtn.addEventListener('click', (e) => {
+      e.stopPropagation();
+      notifMenu.classList.toggle('is-open');
+      const pfpMenu = document.getElementById('chPfpMenu');
+      if (pfpMenu) pfpMenu.classList.remove('is-open');
+    });
+    
+    document.addEventListener('click', (e) => {
+      if (!notifMenu.contains(e.target) && e.target !== notifBtn) notifMenu.classList.remove('is-open');
+    });
+
+    const readAllBtn = document.getElementById('chNotifReadAll');
+    if (readAllBtn) {
+      readAllBtn.addEventListener('click', async () => {
+        await chAuth.markAllNotificationsRead();
+        notifMenu.querySelectorAll('.ch-notif-item.is-unread').forEach(el => el.classList.remove('is-unread'));
+        const badge = notifBtn.querySelector('.ch-notif-badge');
+        if (badge) badge.remove();
+      });
+    }
+
+    notifMenu.querySelectorAll('.ch-notif-item.is-unread').forEach(item => {
+      item.addEventListener('click', async () => {
+        await chAuth.markNotificationRead(item.dataset.id);
+        item.classList.remove('is-unread');
+        const badge = notifBtn.querySelector('.ch-notif-badge');
+        if (badge) {
+          let count = parseInt(badge.textContent, 10) - 1;
+          if (count <= 0) badge.remove();
+          else badge.textContent = count;
+        }
+      });
+    });
+  }
+
+  // PFP Logic
   const pfpBtn = document.getElementById('chPfpBtn');
   const pfpMenu = document.getElementById('chPfpMenu');
   if (pfpBtn && pfpMenu) {
-    pfpBtn.addEventListener('click', (e) => { e.stopPropagation(); pfpMenu.classList.toggle('is-open'); });
+    pfpBtn.addEventListener('click', (e) => {
+      e.stopPropagation();
+      pfpMenu.classList.toggle('is-open');
+      if (notifMenu) notifMenu.classList.remove('is-open');
+    });
     document.addEventListener('click', (e) => {
       if (!pfpMenu.contains(e.target) && e.target !== pfpBtn) pfpMenu.classList.remove('is-open');
     });
@@ -319,7 +388,6 @@ function openReportModal(context) {
       <div class="ch-report-modal__inner">
         <h3 class="ch-report-modal__title">Report an Issue</h3>
         <p class="ch-report-modal__sub" id="chReportSub">Tell us what's wrong. We read every report.</p>
-        
         <div style="margin-bottom: 12px;">
           <select id="chReportCategory" style="width:100%; padding:10px; background:var(--ch-bg-2); border:1px solid var(--ch-border-soft); border-radius:var(--r-md); color:#fff; font-family:inherit; font-size:14px;">
             <option value="player">Video Player / Stream Error</option>
@@ -328,7 +396,6 @@ function openReportModal(context) {
             <option value="other">Other</option>
           </select>
         </div>
-
         <textarea class="ch-report-modal__textarea" id="chReportText" placeholder="Describe the issue..."></textarea>
         <div class="ch-report-modal__actions">
           <button type="button" class="ch-btn ch-btn--quiet ch-btn--sm" id="chReportCancel">Cancel</button>
@@ -343,7 +410,6 @@ function openReportModal(context) {
     document.getElementById('chReportSubmit').addEventListener('click', async () => {
       const text = document.getElementById('chReportText').value.trim();
       const category = document.getElementById('chReportCategory').value;
-      
       if (!text) { showToast('Please describe the issue'); return; }
       
       const btn = document.getElementById('chReportSubmit');
@@ -355,20 +421,14 @@ function openReportModal(context) {
 
       try {
         const { error } = await window.chAuth.client.from('reports').insert({
-          user_id: userId,
-          username: username,
-          category: category,
-          context: context || 'Unknown Page',
-          message: text
+          user_id: userId, username: username, category: category,
+          context: context || 'Unknown Page', message: text
         });
-
         if (error) throw error;
-
         modal.classList.remove('is-open');
         document.getElementById('chReportText').value = '';
         showToast('Thanks — report received');
       } catch (err) {
-        console.error('Report error:', err);
         showToast('Failed to submit report. Try again.');
       } finally {
         btn.disabled = false;
@@ -378,11 +438,7 @@ function openReportModal(context) {
   }
   
   const subEl = document.getElementById('chReportSub');
-  if (subEl) {
-    subEl.textContent = context
-      ? `Context: ${context}`
-      : "Tell us what's wrong. We read every report.";
-  }
+  if (subEl) subEl.textContent = context ? `Context: ${context}` : "Tell us what's wrong. We read every report.";
   
   const catEl = document.getElementById('chReportCategory');
   if (catEl) {
