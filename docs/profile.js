@@ -61,17 +61,19 @@ async function initProfile() {
     $('profileBg').style.backgroundImage = `url('${profile.avatar_url}')`;
   }
 
-  // --- ADD FRIEND BUTTON LOGIC ---
-  const actionsWrap = document.querySelector('.profile-actions');
-  if (actionsWrap) {
-    if (window.chAuth && chAuth.user && chAuth.user.id === profile.id) {
-      actionsWrap.innerHTML = `<a href="/user/settings" class="ch-btn ch-btn--ghost" style="width:100%">Edit Profile</a>`;
-    } else {
-      actionsWrap.innerHTML = `<button type="button" class="ch-btn ch-btn--primary" style="width:100%" disabled>Add Friend (Coming Soon)</button>`;
-    }
+  // Add Friend button logic
+  const actionsWrap = $('profileActions');
+  if (window.chAuth && chAuth.user && chAuth.user.id === profile.id) {
+    actionsWrap.innerHTML = `<a href="/user/settings" class="ch-btn ch-btn--ghost" style="width:100%">Edit Profile</a>`;
+  } else {
+    actionsWrap.innerHTML = `
+      <button type="button" class="ch-btn ch-btn--primary" style="width:100%" disabled>
+        Add Friend (Coming Soon)
+      </button>
+    `;
   }
 
-  // 3. Fetch Stats
+  // Fetch Stats
   let stats = null;
   const { data: statsData } = await chAuth.client
     .from('stats')
@@ -86,7 +88,7 @@ async function initProfile() {
   const tier = chAuth.tierFromScore(score);
   $('profileTier').innerHTML = `<span class="profile-tier__badge">${chEscapeHtml(tier)}</span>`;
 
-  // Render Stats Grid
+  // Render Stats Grid (Fixed: 0 instead of Empty)
   const statsGrid = $('profileStatsGrid');
   if (profile.hidden && stats) {
     statsGrid.innerHTML = `<div class="profile-wl-empty">This user has chosen to hide their stats.</div>`;
@@ -99,23 +101,17 @@ async function initProfile() {
       { label: 'Rated', val: stats.rated || 0 },
       { label: 'Hours', val: stats.watch_hours || 0 }
     ];
-    statsGrid.innerHTML = statBoxes.map(b => {
-      if (b.val === 0) {
-        return `<div class="profile-stat-box">
-          <div class="profile-stat-box__val" style="color:var(--ch-fg-muted); font-size:14px; margin-top:5px;">Empty</div>
-          <div class="profile-stat-box__label">${b.label}</div>
-        </div>`;
-      }
-      return `<div class="profile-stat-box">
+    statsGrid.innerHTML = statBoxes.map(b => `
+      <div class="profile-stat-box">
         <div class="profile-stat-box__val">${b.val}</div>
         <div class="profile-stat-box__label">${b.label}</div>
-      </div>`;
-    }).join('');
+      </div>
+    `).join('');
   } else {
     statsGrid.innerHTML = `<div class="profile-wl-empty">This user's statistics are empty.</div>`;
   }
 
-  // 4. Fetch Watchlist
+  // Fetch Watchlist
   const watchlist = await chAuth.fetchWatchlist(profile.id);
   const wlContainer = $('profileWatchlist');
   
@@ -150,8 +146,10 @@ async function initProfile() {
       if (items.length === 0) {
         html += `<div class="profile-wl-empty" style="margin-bottom: var(--s-4);">This user's ${group.label.toLowerCase()} list is empty.</div>`;
       } else {
+        // Show first 6 items
+        const visibleItems = items.slice(0, 6);
         html += `<div class="profile-wl-grid">`;
-        items.forEach(item => {
+        visibleItems.forEach(item => {
           const img = item.image || '';
           const title = item.title || `AniList ${item.anilist_id}`;
           html += `
@@ -164,13 +162,24 @@ async function initProfile() {
           `;
         });
         html += `</div>`;
+        
+        // Add "Show More" if there are more than 6
+        if (items.length > 6) {
+          html += `
+            <div style="text-align:center; margin-top: 12px; margin-bottom: 24px;">
+              <button class="ch-btn ch-btn--quiet ch-btn--sm" onclick="alert('Full list view coming soon!')">
+                Show All ${items.length} Anime
+              </button>
+            </div>
+          `;
+        }
       }
     });
 
     wlContainer.innerHTML = html;
   }
 
-  // 5. Reveal Page
+  // Reveal Page
   $('profileLoading').hidden = true;
   $('profileMain').hidden = false;
   
