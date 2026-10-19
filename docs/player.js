@@ -24,6 +24,8 @@ const chPlayer = (function () {
   let currentWorkerBlobUrl = null;
   let currentWasmBlobUrl = null;
 
+  let screenshotTimer = null;
+
   const ICON_REW = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 40 40" style="width:32px;height:32px;display:block;"><path d="M14 8 L6 16 L14 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"/><path d="M6 16 H22 A10 10 0 1 1 12 26" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round" opacity="0.55"/><text x="24" y="27" text-anchor="middle" font-size="15" font-weight="900" font-family="system-ui, sans-serif" fill="currentColor" stroke="none">5</text></svg>`;
   const ICON_FWD = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 40 40" style="width:32px;height:32px;display:block;"><path d="M26 8 L34 16 L26 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"/><path d="M34 16 H18 A10 10 0 1 0 28 26" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round" opacity="0.55"/><text x="16" y="27" text-anchor="middle" font-size="15" font-weight="900" font-family="system-ui, sans-serif" fill="currentColor" stroke="none">5</text></svg>`;
   const ICON_CAMERA = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M23 19a2 2 0 0 1-2 2H3a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h4l2-3h6l2 3h4a2 2 0 0 1 2 2z"></path><circle cx="12" cy="13" r="4"></circle></svg>`;
@@ -31,17 +33,19 @@ const chPlayer = (function () {
   function showScreenshotUI(base64) {
     let ui = document.getElementById('ch-screenshot-ui');
     if (ui) ui.remove();
+    if (screenshotTimer) clearTimeout(screenshotTimer);
 
     ui = document.createElement('div');
     ui.id = 'ch-screenshot-ui';
+    // Replaced <a> tag with <button> to prevent AutoClicker extensions from downloading it instantly
     ui.innerHTML = `
       <div class="ch-screenshot-card">
         <img src="${base64}" alt="Screenshot">
         <div class="ch-screenshot-actions">
-          <a href="${base64}" download="cloudhub-${Date.now()}.png" class="ch-screenshot-btn">
+          <button type="button" class="ch-screenshot-btn" id="ch-screenshot-download">
             <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
             Download
-          </a>
+          </button>
           <button type="button" class="ch-screenshot-btn" onclick="alert('Saving to CloudHub profile coming soon!');">
             <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M19 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11l5 5v11a2 2 0 0 1-2 2z"/><polyline points="17 21 17 13 7 13 7 21"/><polyline points="7 3 7 8 15 8"/></svg>
             Save
@@ -56,8 +60,33 @@ const chPlayer = (function () {
     `;
     document.body.appendChild(ui);
     
-    setTimeout(() => { if (ui.parentNode) ui.remove(); }, 10000);
-    document.getElementById('ch-screenshot-close').onclick = () => ui.remove();
+    // Hover pause logic
+    ui.addEventListener('mouseenter', () => {
+      if (screenshotTimer) clearTimeout(screenshotTimer);
+    });
+
+    ui.addEventListener('mouseleave', () => {
+      if (screenshotTimer) clearTimeout(screenshotTimer);
+      screenshotTimer = setTimeout(() => { if (ui.parentNode) ui.remove(); }, 3000);
+    });
+
+    // Start initial timer
+    screenshotTimer = setTimeout(() => { if (ui.parentNode) ui.remove(); }, 10000);
+
+    // Trigger download only on explicit click
+    document.getElementById('ch-screenshot-download').onclick = () => {
+      const a = document.createElement('a');
+      a.href = base64;
+      a.download = `cloudhub-${Date.now()}.png`;
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+    };
+
+    document.getElementById('ch-screenshot-close').onclick = () => {
+      if (screenshotTimer) clearTimeout(screenshotTimer);
+      ui.remove();
+    };
   }
 
   function ensurePreviewTooltip() { let el = document.querySelector('.watch-preview-tip'); if (el) return el; el = document.createElement('div'); el.className = 'watch-preview-tip'; el.innerHTML = '<video muted playsinline preload="auto"></video><div class="watch-preview-tip__time">0:00</div>'; document.body.appendChild(el); return el; }
@@ -154,7 +183,6 @@ const chPlayer = (function () {
       settings: [],
       playbackRate: true,
       aspectRatio: true,
-      // REMOVED: screenshot: true, 
       fullscreen: true,
       fullscreenWeb: true,
       pip: true,
@@ -167,18 +195,25 @@ const chPlayer = (function () {
         { name: 'rewind', position: 'left', index: 11, html: ICON_REW, tooltip: 'Rewind 5s', click: function () { if (!art || !art.video) return; art.video.currentTime = Math.max(0, art.video.currentTime - 5); } },
         { name: 'forward', position: 'left', index: 12, html: ICON_FWD, tooltip: 'Forward 5s', click: function () { if (!art || !art.video) return; const dur = art.duration || art.video.duration || Infinity; art.video.currentTime = Math.min(dur, art.video.currentTime + 5); } },
         { 
-          name: 'ch-screenshot', // Changed name to avoid collision
+          name: 'ch-screenshot',
           position: 'right', 
           html: ICON_CAMERA, 
           tooltip: 'Screenshot', 
           click: function () { 
-              if(!art) return;
-              art.screenshot().then(base64 => {
+              if(!art || !art.video) return;
+              try {
+                const video = art.video;
+                const canvas = document.createElement('canvas');
+                canvas.width = video.videoWidth;
+                canvas.height = video.videoHeight;
+                const ctx = canvas.getContext('2d');
+                ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
+                const base64 = canvas.toDataURL('image/png');
                 showScreenshotUI(base64);
-              }).catch(err => {
-                console.warn('Screenshot blocked:', err);
+              } catch (err) {
+                console.warn('Screenshot failed:', err);
                 if (typeof showToast === 'function') showToast('Screenshot failed. Stream security blocked the capture.');
-              });
+              }
           }
         },
         { name: 'subtitle', position: 'right', html: 'CC', selector: subMenu, onSelect: function (item) { if (typeof opts.onSelectSubtitle === 'function') opts.onSelectSubtitle(item); chSubs.applyToPlayer(art, item); return 'CC'; } }
