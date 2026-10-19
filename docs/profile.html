@@ -15,7 +15,6 @@
 
   <main class="profile-main" id="profileMain" hidden>
     
-    <!-- Hero / Banner -->
     <div class="profile-hero">
       <div class="profile-hero__bg" id="profileBg"></div>
       <div class="profile-hero__scrim"></div>
@@ -23,7 +22,6 @@
 
     <div class="ch-container profile-layout">
       
-      <!-- Left Column: Avatar & Identity -->
       <aside class="profile-sidebar">
         <div class="profile-card">
           <div class="profile-avatar-wrap">
@@ -47,16 +45,13 @@
             </div>
           </div>
 
-          <div class="profile-actions">
-            <button type="button" class="ch-btn ch-btn--primary" style="width:100%" disabled>Add Friend (Coming Soon)</button>
+          <div class="profile-actions" id="profileActions">
+            <!-- Injected by JS -->
           </div>
         </div>
       </aside>
 
-      <!-- Right Column: Stats & Watchlist -->
       <div class="profile-content">
-        
-        <!-- Stats -->
         <section class="profile-section" id="statsSection">
           <header class="profile-section__head">
             <h2 class="profile-section__title">Statistics</h2>
@@ -66,17 +61,15 @@
           </div>
         </section>
 
-        <!-- Watchlist Sections -->
         <section class="profile-section">
           <header class="profile-section__head">
             <h2 class="profile-section__title">Anime List</h2>
           </header>
           
           <div class="profile-watchlist" id="profileWatchlist">
-            <div class="profile-wl-empty">This user's watchlist is private or empty.</div>
+            <div class="profile-wl-empty">Loading watchlist…</div>
           </div>
         </section>
-
       </div>
     </div>
   </main>
