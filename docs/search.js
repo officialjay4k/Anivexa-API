@@ -19,7 +19,6 @@
     'TRENDING_DESC'
   ]);
 
-  // Standard vs Adult Genres
   const STANDARD_GENRES = `
     <option value="">All Genres</option>
     <option value="Action">Action</option>
@@ -62,7 +61,7 @@
       $page: Int!
       $search: String
       $genre: String
-      $tag: String
+      $tags: [String]
       $year: Int
       $format: MediaFormat
       $sort: [MediaSort]!
@@ -76,10 +75,9 @@
           search: $search
           sort: $sort
           genre: $genre
-          tag: $tag
+          tag_in: $tags
           seasonYear: $year
           format: $format
-          status_in: [FINISHED, RELEASING, HIATUS]
         ) {
           ${MEDIA_FIELDS}
         }
@@ -91,7 +89,7 @@
     query BrowseAnime(
       $page: Int!
       $genre: String
-      $tag: String
+      $tags: [String]
       $year: Int
       $format: MediaFormat
       $sort: [MediaSort]!
@@ -104,10 +102,9 @@
           isAdult: $isAdult
           sort: $sort
           genre: $genre
-          tag: $tag
+          tag_in: $tags
           seasonYear: $year
           format: $format
-          status_in: [FINISHED, RELEASING, HIATUS]
         ) {
           ${MEDIA_FIELDS}
         }
@@ -120,7 +117,7 @@
   let isLoading = false;
   let currentQuery = '';
   
-  let ageVerified = false; // Session flag
+  let ageVerified = false;
 
   let currentFilters = {
     genre: '',
@@ -223,7 +220,7 @@
 
     if (currentFilters.genre) {
       if (currentFilters.genre === 'Uncensored') {
-        variables.tag = 'Uncensored';
+        variables.tags = ['Uncensored'];
       } else {
         variables.genre = currentFilters.genre;
       }
@@ -481,7 +478,6 @@
     const params = new URLSearchParams(location.search);
     $('searchInput').value = (params.get('q') || '').trim();
     
-    // Restore Age Toggle
     const isAdult = params.get('adult') === 'true';
     $('filterAdult').classList.toggle('is-active', isAdult);
     $('filterGenre').innerHTML = isAdult ? ADULT_GENRES : STANDARD_GENRES;
@@ -521,7 +517,6 @@
       $(id).addEventListener('change', runSearch);
     });
 
-    // 18+ Toggle Logic with Age Gate
     const ageGate = $('ageGateModal');
     const filterBtn = $('filterAdult');
 
@@ -529,7 +524,6 @@
       const isCurrentlyActive = filterBtn.classList.contains('is-active');
       
       if (isCurrentlyActive) {
-        // Turning OFF
         filterBtn.classList.remove('is-active');
         $('filterGenre').innerHTML = STANDARD_GENRES;
         runSearch();
@@ -537,14 +531,12 @@
       }
 
       if (ageVerified) {
-        // Already verified this session
         filterBtn.classList.add('is-active');
         $('filterGenre').innerHTML = ADULT_GENRES;
         runSearch();
         return;
       }
 
-      // Show Age Gate
       ageGate.classList.add('is-open');
     });
 
