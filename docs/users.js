@@ -7,17 +7,12 @@ const $ = (id) => document.getElementById(id);
 let allUsers = [];
 let currentUser = null;
 
-// Simple deterministic hash to assign consistent online status
-function getIsOnline(userId) {
-  if (window.chAuth && chAuth.user && chAuth.user.id === userId) return true;
-  
-  // Generate a pseudo-random status based on their UUID so it looks alive
-  let hash = 0;
-  for (let i = 0; i < userId.length; i++) {
-    hash = (hash << 5) - hash + userId.charCodeAt(i);
-    hash |= 0;
-  }
-  return (Math.abs(hash) % 3) === 0; // 33% chance of being "online"
+function getIsOnline(lastSeenStr) {
+  if (!lastSeenStr) return false;
+  const lastSeen = new Date(lastSeenStr).getTime();
+  const now = Date.now();
+  // Online if seen in the last 2 minutes
+  return (now - lastSeen) < 120000;
 }
 
 function renderUsers(users) {
@@ -33,7 +28,7 @@ function renderUsers(users) {
   users.forEach(user => {
     const initial = (user.username || 'U').charAt(0).toUpperCase();
     const avatarStyle = user.avatar_url ? `background-image: url('${chEscapeHtml(user.avatar_url)}');` : '';
-    const isOnline = getIsOnline(user.id);
+    const isOnline = getIsOnline(user.last_seen);
 
     const card = document.createElement('a');
     card.className = 'user-card';
@@ -79,10 +74,10 @@ async function initUsers() {
   const grid = $('usersGrid');
   
   try {
-    // Fetch all users from the public_profiles view
+    // Fetch all users, including their last_seen time
     const { data, error } = await chAuth.client
       .from('public_profiles')
-      .select('id, username, display_name, avatar_url')
+      .select('id, username, display_name, avatar_url, last_seen')
       .order('username', { ascending: true });
 
     if (error) throw error;
