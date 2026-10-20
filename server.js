@@ -22,7 +22,8 @@ const PAGE_ROUTES = {
   "/auth/callback":  "callback.html",
   "/user/settings":  "settings.html",
   "/user/dashboard": "dashboard.html",
-  "/search":         "search.html"
+  "/search":         "search.html",
+  "/users":          "users.html"
 };
 
 const MIME = {
