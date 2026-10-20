@@ -107,3 +107,89 @@
   font-size: 14px;
   font-weight: 700;
 }
+
+/* ============================================================
+   Age Gate Modal
+   ============================================================ */
+.ch-modal-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 9999;
+  background: rgba(5, 2, 3, 0.9);
+  backdrop-filter: blur(8px);
+  -webkit-backdrop-filter: blur(8px);
+  display: none;
+  align-items: center;
+  justify-content: center;
+  padding: 24px;
+}
+
+.ch-modal-overlay.is-open {
+  display: flex;
+  animation: ch-fade-in 200ms var(--ease);
+}
+
+@keyframes ch-fade-in {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+
+.ch-modal-box {
+  background: linear-gradient(180deg, rgba(30, 8, 12, 0.98), rgba(14, 4, 6, 0.98));
+  border: 1px solid rgba(217, 24, 40, 0.4);
+  border-radius: var(--r-lg);
+  padding: var(--s-6);
+  max-width: 440px;
+  width: 100%;
+  text-align: center;
+  box-shadow: 0 20px 60px rgba(0,0,0,0.9), 0 0 60px -10px rgba(229, 9, 20, 0.6);
+  animation: ch-pop-in 300ms cubic-bezier(0.34, 1.56, 0.64, 1);
+}
+
+@keyframes ch-pop-in {
+  from { opacity: 0; transform: translateY(20px) scale(0.95); }
+  to { opacity: 1; transform: translateY(0) scale(1); }
+}
+
+.ch-modal-icon {
+  width: 80px;
+  height: 80px;
+  margin: 0 auto var(--s-4);
+  border-radius: 50%;
+  background: rgba(217, 24, 40, 0.1);
+  border: 1px solid rgba(217, 24, 40, 0.5);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--ch-red-bright);
+  box-shadow: 0 0 30px rgba(217, 24, 40, 0.4);
+}
+
+.ch-modal-title {
+  font-size: 24px;
+  font-weight: 900;
+  color: #fff;
+  margin-bottom: var(--s-3);
+}
+
+.ch-modal-desc {
+  font-size: 14px;
+  color: var(--ch-fg-dim);
+  line-height: 1.6;
+  margin-bottom: var(--s-6);
+}
+
+.ch-modal-actions {
+  display: flex;
+  gap: var(--s-3);
+  justify-content: center;
+}
+
+@media (max-width: 480px) {
+  .ch-modal-actions {
+    flex-direction: column-reverse;
+  }
+  .ch-modal-actions button {
+    width: 100%;
+  }
+}
