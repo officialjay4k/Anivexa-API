@@ -23,7 +23,8 @@ const PAGE_ROUTES = {
   "/user/settings":  "settings.html",
   "/user/dashboard": "dashboard.html",
   "/search":         "search.html",
-  "/users":          "users.html"
+  "/users":          "users.html",
+  "/admin":          "admin.html"
 };
 
 const MIME = {
