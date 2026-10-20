@@ -345,6 +345,27 @@ h1, h2, h3, h4, h5, h6 {
 .ch-header__link:hover { color: var(--ch-white); }
 .ch-header__link.is-active { color: var(--ch-white); background: var(--ch-red-soft); }
 
+/* Mobile Header Optimizations */
+@media (max-width: 768px) {
+  .ch-header__inner {
+    flex-wrap: wrap;
+    gap: var(--s-3);
+    padding-block: var(--s-2);
+  }
+  .ch-header__logo img, .ch-header__logo svg { height: 44px; transform: scaleY(1.12); }
+  .ch-header__search {
+    order: 3;
+    flex: 1 1 100%;
+    max-width: 100%;
+    margin-top: 4px;
+  }
+  .ch-header__nav { gap: 4px; }
+  .ch-header__link { display: none; }
+}
+@media (max-width: 520px) {
+  .ch-header__logo img, .ch-header__logo svg { height: 36px; transform: scaleY(1.1); }
+}
+
 .ch-pfp-wrap { position: relative; }
 .ch-header__avatar {
   width: 40px; height: 40px; border-radius: 50%;
@@ -385,27 +406,6 @@ h1, h2, h3, h4, h5, h6 {
 }
 .ch-pfp-menu__item:hover { background: var(--ch-red-soft); color: var(--ch-white); }
 .ch-pfp-menu__item--danger:hover { background: rgba(179, 19, 31, 0.4); }
-
-/* Mobile Header Optimizations */
-@media (max-width: 768px) {
-  .ch-header__inner {
-    flex-wrap: wrap;
-    gap: var(--s-3);
-    padding-block: var(--s-2);
-  }
-  .ch-header__logo img, .ch-header__logo svg { height: 44px; transform: scaleY(1.12); }
-  .ch-header__search {
-    order: 3;
-    flex: 1 1 100%;
-    max-width: 100%;
-    margin-top: 4px;
-  }
-  .ch-header__nav { gap: 4px; }
-  .ch-header__link { display: none; } /* Hide Home/Dashboard links, use PFP menu */
-}
-@media (max-width: 520px) {
-  .ch-header__logo img, .ch-header__logo svg { height: 36px; transform: scaleY(1.1); }
-}
 
 .report-strip {
   margin-top: var(--s-7);
@@ -665,30 +665,6 @@ h1, h2, h3, h4, h5, h6 {
   text-decoration: none; color: inherit;
   transition: background 150ms var(--ease);
   position: relative;
-}
-.ch-notif-item:hover { background: rgba(179, 19, 31, 0.1); }
-.ch-notif-item:last-child { border-bottom: none; }
-.ch-notif-item.is-unread { background: rgba(179, 19, 31, 0.06); }
-.ch-notif-item.is-unread::before {
-  content: ''; position: absolute; left: 6px; top: 16px;
-  width: 6px; height: 6px; border-radius: 50%;
-  background: var(--ch-red-bright);
-  box-shadow: 0 0 8px var(--ch-red-bright);
-}
-.ch-notif-item__title { font-size: 13px; font-weight: 800; color: #fff; margin-bottom: 2px; }
-.ch-notif-item__msg { font-size: 12px; color: var(--ch-fg-dim); line-height: 1.4; margin-bottom: 4px; }
-.ch-notif-item__time { font-size: 10px; color: var(--ch-fg-subtle); font-weight: 600; }
-.ch-notif-empty { padding: 24px; text-align: center; font-size: 13px; color: var(--ch-fg-muted); }
-
-/* ... (Keep all the previous CSS) ... */
-
-.ch-notif-list { max-height: 360px; overflow-y: auto; display: flex; flex-direction: column; }
-.ch-notif-item {
-  padding: 12px 16px;
-  border-bottom: 1px solid var(--ch-glass-stroke);
-  text-decoration: none; color: inherit;
-  transition: background 150ms var(--ease);
-  position: relative;
   display: flex;
   gap: 12px;
 }
@@ -702,7 +678,6 @@ h1, h2, h3, h4, h5, h6 {
   box-shadow: 0 0 8px var(--ch-red-bright);
 }
 
-/* Notification Image */
 .ch-notif-item__img {
   width: 48px;
   height: 48px;
@@ -711,13 +686,89 @@ h1, h2, h3, h4, h5, h6 {
   background: var(--ch-bg-3);
   flex-shrink: 0;
 }
-
-.ch-notif-item__content {
-  flex: 1;
-  min-width: 0;
-}
-
+.ch-notif-item__content { flex: 1; min-width: 0; }
 .ch-notif-item__title { font-size: 13px; font-weight: 800; color: #fff; margin-bottom: 2px; }
 .ch-notif-item__msg { font-size: 12px; color: var(--ch-fg-dim); line-height: 1.4; margin-bottom: 4px; }
 .ch-notif-item__time { font-size: 10px; color: var(--ch-fg-subtle); font-weight: 600; }
 .ch-notif-empty { padding: 24px; text-align: center; font-size: 13px; color: var(--ch-fg-muted); }
+
+/* Notification Full View Modal */
+.ch-notif-view-modal {
+  position: fixed; inset: 0; z-index: 500;
+  background: rgba(5, 2, 3, 0.85);
+  display: flex; align-items: center; justify-content: center;
+  padding: 24px;
+  backdrop-filter: blur(8px); -webkit-backdrop-filter: blur(8px);
+  opacity: 0;
+  transition: opacity 200ms var(--ease);
+}
+.ch-notif-view-modal.is-open { opacity: 1; }
+
+.ch-notif-view-inner {
+  background: linear-gradient(180deg, rgba(30, 8, 12, 0.98), rgba(14, 4, 6, 0.98));
+  border: 1px solid var(--ch-border-hi);
+  border-radius: var(--r-lg);
+  width: 100%;
+  max-width: 540px;
+  max-height: calc(100vh - 48px);
+  overflow-y: auto;
+  padding: var(--s-6);
+  box-shadow: 0 30px 80px rgba(0,0,0,0.9), 0 0 60px -10px rgba(229, 9, 20, 0.5);
+  position: relative;
+  transform: translateY(20px) scale(0.95);
+  transition: transform 300ms cubic-bezier(0.34, 1.56, 0.64, 1);
+}
+.ch-notif-view-modal.is-open .ch-notif-view-inner {
+  transform: translateY(0) scale(1);
+}
+
+.ch-notif-view-close {
+  position: absolute;
+  top: 16px; right: 16px;
+  width: 32px; height: 32px;
+  border-radius: 50%;
+  background: rgba(222, 208, 179, 0.1);
+  color: #fff;
+  border: none;
+  font-size: 20px;
+  display: flex; align-items: center; justify-content: center;
+  cursor: pointer;
+  transition: background 150ms, transform 150ms;
+}
+.ch-notif-view-close:hover {
+  background: rgba(217, 24, 40, 0.8);
+  transform: scale(1.1);
+}
+
+.ch-notif-view-img {
+  width: calc(100% + var(--s-6) * 2);
+  margin: calc(var(--s-6) * -1) calc(var(--s-6) * -1) var(--s-5) calc(var(--s-6) * -1);
+  max-height: 300px;
+  object-fit: cover;
+  border-top-left-radius: var(--r-lg);
+  border-top-right-radius: var(--r-lg);
+  display: block;
+}
+
+.ch-notif-view-title {
+  font-size: 24px; font-weight: 900; color: #fff;
+  margin-bottom: 8px;
+}
+
+.ch-notif-view-time {
+  font-size: 12px; color: var(--ch-fg-muted); font-weight: 600;
+  margin-bottom: var(--s-4);
+  text-transform: uppercase; letter-spacing: 0.05em;
+}
+
+.ch-notif-view-msg {
+  font-size: 15px; color: var(--ch-fg-dim); line-height: 1.7;
+  margin-bottom: var(--s-6);
+}
+.ch-notif-view-msg b, .ch-notif-view-msg strong { color: #fff; font-weight: 800; }
+.ch-notif-view-msg i, .ch-notif-view-msg em { color: var(--ch-cream); }
+.ch-notif-view-msg a { color: var(--ch-red-bright); text-decoration: underline; }
+
+.ch-notif-view-actions {
+  display: flex; flex-direction: column; gap: var(--s-2);
+}
