@@ -38,11 +38,7 @@ let playbackUnavailable = false;
 function parseParams() {
   const p = new URLSearchParams(location.search);
   const langRaw = p.get('lang') || p.get('audio') || 'dub';
-  return {
-    id: p.get('id'),
-    ep: parseInt(p.get('ep') || '1', 10) || 1,
-    lang: langRaw === 'sub' ? 'sub' : 'dub'
-  };
+  return { id: p.get('id'), ep: parseInt(p.get('ep') || '1', 10) || 1, lang: langRaw === 'sub' ? 'sub' : 'dub' };
 }
 function updateUrlParams(opts) {
   const p = new URLSearchParams(location.search);
@@ -68,28 +64,17 @@ async function anilistQuery(query, variables) {
 const MEDIA_QUERY = 'query ($id: Int) { Media(id: $id, type: ANIME) { id title { romaji english } coverImage { extraLarge large } format episodes duration seasonYear averageScore description(asHtml: false) genres tags { id name rank isMediaSpoiler } status nextAiringEpisode { episode airingAt } } }';
 
 function titleOf(m) { return (m && m.title && (m.title.english || m.title.romaji)) || 'Untitled'; }
-function formatFormat(f) {
-  if (!f) return '';
-  return f.replace(/_/g, ' ').replace(/\b\w/g, function (c) { return c.toUpperCase(); });
-}
+function formatFormat(f) { if (!f) return ''; return f.replace(/_/g, ' ').replace(/\b\w/g, function (c) { return c.toUpperCase(); }); }
 
-// ---------- Stable Episode Fetching ----------
 async function fetchProvidersEpisodes(anilistId) {
   const reqs = EP_FETCH_PROVIDERS.map(function (p) {
     const url = API_BASE + '/episodes/' + p + '/' + anilistId;
-    return fetch(url, { cache: 'no-store' })
-      .then(function (res) { return res.ok ? res.json() : null; })
-      .then(function (data) {
-        if (!data) return null;
-        const block = data[p];
-        if (!block || block.error) return null;
-        return {
-          provider: p,
-          sub: (block.episodes && block.episodes.sub) || [],
-          dub: (block.episodes && block.episodes.dub) || []
-        };
-      })
-      .catch(function () { return null; });
+    return fetch(url, { cache: 'no-store' }).then(function (res) { return res.ok ? res.json() : null; }).then(function (data) {
+      if (!data) return null;
+      const block = data[p];
+      if (!block || block.error) return null;
+      return { provider: p, sub: (block.episodes && block.episodes.sub) || [], dub: (block.episodes && block.episodes.dub) || [] };
+    }).catch(function () { return null; });
   });
   const results = (await Promise.all(reqs)).filter(Boolean);
 
@@ -102,8 +87,7 @@ async function fetchProvidersEpisodes(anilistId) {
         const res = await fetch(API_BASE + '/watch/' + r.provider + '/' + anilistId + '/' + audio + '/' + epId, { cache: 'no-store' });
         if (!res.ok) continue;
         const data = await res.json();
-        const streams = (data && data.streams) || [];
-        if (streams.length) return true;
+        if ((data && data.streams) && data.streams.length) return true;
       } catch (e) {}
     }
     return false;
@@ -123,7 +107,6 @@ function computeAiredCap(media) {
 function pickBestEpisodeList(results, audio, media) {
   let best = { provider: null, list: [] };
   if (!results.length) return best;
-
   const airedCap = computeAiredCap(media);
   const expectedCount = media && Number.isFinite(media.episodes) ? media.episodes : null;
 
@@ -168,18 +151,13 @@ function initWatchlistButton() {
   let currentScore = 0;
   try {
     const w = JSON.parse(localStorage.getItem(CH.STORAGE_WATCHLIST)) || {};
-    if (w[String(media.id)]) {
-      currentStatus = w[String(media.id)].status || 'watching';
-      currentScore = w[String(media.id)].score || 0;
-    }
+    if (w[String(media.id)]) { currentStatus = w[String(media.id)].status || 'watching'; currentScore = w[String(media.id)].score || 0; }
   } catch(e) {}
   
   btn.textContent = currentStatus === 'none' ? 'Add to List' : 'Status: ' + currentStatus.toUpperCase();
 
   let starsHtml = '';
-  for (let i = 1; i <= 10; i++) {
-    starsHtml += `<button class="ch-star ${i <= currentScore ? 'is-active' : ''}" data-val="${i}">★</button>`;
-  }
+  for (let i = 1; i <= 10; i++) starsHtml += `<button class="ch-star ${i <= currentScore ? 'is-active' : ''}" data-val="${i}">★</button>`;
 
   let starsContainer = document.getElementById('watchStars');
   if (!starsContainer) {
@@ -206,22 +184,19 @@ function initWatchlistButton() {
         localStorage.setItem(CH.STORAGE_WATCHLIST, JSON.stringify(w));
         btn.textContent = 'Add to List';
         showToast('Removed from list');
-        initWatchlistButton(); // Re-render
+        initWatchlistButton();
       } else {
         await chAuth.upsertWatchlistEntry({
-          anilistId: media.id,
-          title: titleOf(media),
-          image: media.coverImage?.extraLarge,
-          status: status,
-          progressEp: currentEp,
-          score: currentScore || null
+          anilistId: media.id, title: titleOf(media), image: media.coverImage?.extraLarge,
+          status: status, progressEp: currentEp, score: currentScore || null,
+          progressTime: playerApi?.art?.video?.currentTime || 0, duration: playerApi?.art?.video?.duration || 0
         });
         const w = JSON.parse(localStorage.getItem(CH.STORAGE_WATCHLIST)) || {};
         w[String(media.id)] = { status, title: titleOf(media), image: media.coverImage?.extraLarge, score: currentScore };
         localStorage.setItem(CH.STORAGE_WATCHLIST, JSON.stringify(w));
         btn.textContent = 'Status: ' + status.toUpperCase();
         showToast('Updated to ' + status);
-        initWatchlistButton(); // Re-render
+        initWatchlistButton();
       }
     };
   });
@@ -234,12 +209,9 @@ function initWatchlistButton() {
         s.classList.toggle('is-active', Number(s.dataset.val) <= val);
       });
       await chAuth.upsertWatchlistEntry({
-        anilistId: media.id,
-        title: titleOf(media),
-        image: media.coverImage?.extraLarge,
-        status: currentStatus === 'none' ? 'watching' : currentStatus,
-        progressEp: currentEp,
-        score: val
+        anilistId: media.id, title: titleOf(media), image: media.coverImage?.extraLarge,
+        status: currentStatus === 'none' ? 'watching' : currentStatus, progressEp: currentEp, score: val,
+        progressTime: playerApi?.art?.video?.currentTime || 0, duration: playerApi?.art?.video?.duration || 0
       });
       const w = JSON.parse(localStorage.getItem(CH.STORAGE_WATCHLIST)) || {};
       w[String(media.id)] = { status: currentStatus === 'none' ? 'watching' : currentStatus, title: titleOf(media), image: media.coverImage?.extraLarge, score: val };
@@ -275,17 +247,12 @@ function renderNextAiring() {
 
   const nowSec = Math.floor(Date.now() / 1000);
   const thirtyDays = 30 * 24 * 60 * 60;
-  if (next.airingAt - nowSec > thirtyDays || next.airingAt <= nowSec - 3600) {
-    box.hidden = true;
-    return;
-  }
+  if (next.airingAt - nowSec > thirtyDays || next.airingAt <= nowSec - 3600) { box.hidden = true; return; }
   
   box.hidden = false;
-
   const d = new Date(next.airingAt * 1000);
   const months = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
-  const dateStr = months[d.getMonth()] + ' ' + d.getDate() + ', ' + d.getFullYear() +
-    ' · ' + String(d.getHours()).padStart(2, '0') + ':' + String(d.getMinutes()).padStart(2, '0') + ':' + String(d.getSeconds()).padStart(2, '0');
+  const dateStr = months[d.getMonth()] + ' ' + d.getDate() + ', ' + d.getFullYear() + ' · ' + String(d.getHours()).padStart(2, '0') + ':' + String(d.getMinutes()).padStart(2, '0') + ':' + String(d.getSeconds()).padStart(2, '0');
   document.getElementById('watchCountdownDate').textContent = 'EP ' + next.episode + ' — ' + dateStr;
 
   if (countdownTimer) clearInterval(countdownTimer);
@@ -344,8 +311,7 @@ function renderEpisodes() {
       if (isCurrent) btn.classList.add('current');
       if (isPending) btn.classList.add('is-pending');
       btn.dataset.ep = n;
-      btn.innerHTML =
-        '<div class="watch-ep-card__thumb" style="background-image:url(\'' + chEscapeHtml(thumb).replace(/'/g, '%27') + '\')"></div>' +
+      btn.innerHTML = '<div class="watch-ep-card__thumb" style="background-image:url(\'' + chEscapeHtml(thumb).replace(/'/g, '%27') + '\')"></div>' +
         '<div class="watch-ep-card__body">' +
           '<div class="watch-ep-card__num">Episode ' + n + '</div>' +
           '<div class="watch-ep-card__title">' + chEscapeHtml(title) + '</div>' +
@@ -390,17 +356,21 @@ function goToEpisode(n) {
 function syncWatchData(force = false) {
   if (!window.chAuth || !chAuth.user) return;
   const now = Date.now();
-  if (!force && now - lastDbSync < 60000) return;
+  if (!force && now - lastDbSync < 60000) return; 
   lastDbSync = now;
 
-  const progress = chProgress.get(anilistId, currentAudio, currentEp);
-  if (progress && progress.currentTime > 5) {
+  const v = playerApi?.art?.video;
+  if (!v) return;
+  
+  if (v.currentTime > 5 && isFinite(v.duration) && v.duration > 0) {
     chAuth.upsertWatchlistEntry({
       anilistId: anilistId,
       title: titleOf(media),
       image: media.coverImage?.extraLarge,
       status: 'watching',
-      progressEp: currentEp
+      progressEp: currentEp,
+      progressTime: v.currentTime,
+      duration: v.duration
     }).then(() => chAuth.recomputeStats());
   }
 }
@@ -410,11 +380,7 @@ function saveNow() {
   const v = playerApi.art.video;
   if (!v.currentTime || v.currentTime < 5) return;
   if (!isFinite(v.duration) || v.duration <= 0) return;
-  chProgress.set(
-    anilistId, titleOf(media),
-    media && media.coverImage && (media.coverImage.extraLarge || media.coverImage.large),
-    currentEp, currentAudio, v.currentTime, v.duration
-  );
+  chProgress.set(anilistId, titleOf(media), media && media.coverImage && (media.coverImage.extraLarge || media.coverImage.large), currentEp, currentAudio, v.currentTime, v.duration);
   syncWatchData(true);
 }
 
@@ -462,14 +428,9 @@ function wireControls() {
 
 function switchAudio(next) {
   if (next === currentAudio) return;
-  if (next === 'sub' && !audioAvail.sub) {
-    if (typeof showToast === 'function') showToast('Sub is not available for this title');
-    return;
-  }
-  if (next === 'dub' && !audioAvail.dub) {
-    if (typeof showToast === 'function') showToast('Dub is not available for this title');
-    return;
-  }
+  if (next === 'sub' && !audioAvail.sub) { if (typeof showToast === 'function') showToast('Sub is not available for this title'); return; }
+  if (next === 'dub' && !audioAvail.dub) { if (typeof showToast === 'function') showToast('Dub is not available for this title'); return; }
+  
   saveNow();
   currentAudio = next;
   appSettings.audio = next;
@@ -479,10 +440,7 @@ function switchAudio(next) {
   chPlayer.setAudioPreference(next);
   refreshControls();
 
-  if (epCache[next]) {
-    episodeList = epCache[next].list.slice();
-    renderEpisodes();
-  }
+  if (epCache[next]) { episodeList = epCache[next].list.slice(); renderEpisodes(); }
   showPlayerSkeleton();
   renderServerRows();
   startPlayback();
@@ -490,10 +448,7 @@ function switchAudio(next) {
 
 async function resolveSkipIntervals(anilistId, ep, watchData) {
   const s0 = (watchData && watchData.streams && watchData.streams[0]) || {};
-  function tryNum(a, b) {
-    const s = Number(a), e = Number(b);
-    return (isFinite(s) && isFinite(e) && e > s) ? { startTime: s, endTime: e } : null;
-  }
+  function tryNum(a, b) { const s = Number(a), e = Number(b); return (isFinite(s) && isFinite(e) && e > s) ? { startTime: s, endTime: e } : null; }
   if (s0.intro || s0.outro) {
     const op = tryNum(s0.intro && (s0.intro.start != null ? s0.intro.start : s0.intro.startTime), s0.intro && (s0.intro.end != null ? s0.intro.end : s0.intro.endTime));
     const ed = tryNum(s0.outro && (s0.outro.start != null ? s0.outro.start : s0.outro.startTime), s0.outro && (s0.outro.end != null ? s0.outro.end : s0.outro.endTime));
@@ -612,26 +567,15 @@ async function renderServerRows() {
 
 function handleServerClick(audio, serverName) {
   if (audio !== currentAudio) {
-    if (audio === 'sub' && !audioAvail.sub) {
-      if (typeof showToast === 'function') showToast('Sub is not available for this title');
-      return;
-    }
-    if (audio === 'dub' && !audioAvail.dub) {
-      if (typeof showToast === 'function') showToast('Dub is not available for this title');
-      return;
-    }
+    if (audio === 'sub' && !audioAvail.sub) { if (typeof showToast === 'function') showToast('Sub is not available for this title'); return; }
+    if (audio === 'dub' && !audioAvail.dub) { if (typeof showToast === 'function') showToast('Dub is not available for this title'); return; }
     pendingServerJump = { audio: audio, serverName: serverName };
     switchAudio(audio);
     return;
   }
 
-  if (serverName === 'HD-2') {
-    saveNow();
-    chPipeline.forceFailover();
-  } else {
-    saveNow();
-    chPipeline.restart();
-  }
+  if (serverName === 'HD-2') { saveNow(); chPipeline.forceFailover(); } 
+  else { saveNow(); chPipeline.restart(); }
 }
 
 chPipeline.on('stream', async function (data) {
@@ -662,23 +606,11 @@ chPipeline.on('stream', async function (data) {
   chPlayer.setAudioPreference(currentAudio);
 
   const container = document.getElementById('watchPlayer');
-  if (container) {
-    container.querySelectorAll('.artplayer-app, iframe, .watch-unavailable').forEach(function (el) { el.remove(); });
-  }
+  if (container) { container.querySelectorAll('.artplayer-app, iframe, .watch-unavailable').forEach(function (el) { el.remove(); }); }
 
   playerApi = await chPlayer.mount({
-    container: container,
-    streamUrl: proxied,
-    isMp4: entry.isMp4,
-    watchData: entry.watchData,
-    fonts: fonts,
-    settings: appSettings,
-    subtitlesOn: appSettings.subtitlesOn,
-    resumeAt: resumeAt,
-    onSelectSubtitle: function (item) {
-      appSettings.subtitlesOn = !!item.url;
-      saveSettings(appSettings);
-    },
+    container: container, streamUrl: proxied, isMp4: entry.isMp4, watchData: entry.watchData, fonts: fonts, settings: appSettings, subtitlesOn: appSettings.subtitlesOn, resumeAt: resumeAt,
+    onSelectSubtitle: function (item) { appSettings.subtitlesOn = !!item.url; saveSettings(appSettings); },
     callbacks: {
       onReady: function () { hidePlayerSkeleton(); },
       onPlaying: function () { hidePlayerSkeleton(); },
@@ -691,11 +623,7 @@ chPipeline.on('stream', async function (data) {
         chProgress.set(anilistId, titleOf(media), media && media.coverImage && (media.coverImage.extraLarge || media.coverImage.large), currentEp, currentAudio, t, d);
         syncWatchData();
       },
-      onToggleAutoNext: function() {
-        appSettings.autoNext = !appSettings.autoNext;
-        saveSettings(appSettings);
-        refreshControls();
-      },
+      onToggleAutoNext: function() { appSettings.autoNext = !appSettings.autoNext; saveSettings(appSettings); refreshControls(); },
       onEnded: function () {
         if (!appSettings.autoNext || autoNextFired) return;
         autoNextFired = true;
@@ -721,9 +649,7 @@ chPipeline.on('stream', async function (data) {
   if (pendingServerJump && pendingServerJump.audio === currentAudio) {
     const target = pendingServerJump;
     pendingServerJump = null;
-    if (target.serverName === 'HD-2') {
-      setTimeout(function () { chPipeline.forceFailover(); }, 300);
-    }
+    if (target.serverName === 'HD-2') { setTimeout(function () { chPipeline.forceFailover(); }, 300); }
   }
 });
 
@@ -743,9 +669,7 @@ chPipeline.on('exhausted', function () {
 // ============================================================
 const SIMILAR_RECS_QUERY = 'query ($id: Int) { Media(id: $id, type: ANIME) { recommendations(perPage: 10, sort: RATING_DESC) { nodes { mediaRecommendation { id title { romaji english } coverImage { large extraLarge } format averageScore seasonYear } } } } }';
 
-function withTimeout(promise, ms) {
-  return Promise.race([promise, new Promise(function (_, reject) { setTimeout(function () { reject(new Error('timeout')); }, ms); })]);
-}
+function withTimeout(promise, ms) { return Promise.race([promise, new Promise(function (_, reject) { setTimeout(function () { reject(new Error('timeout')); }, ms); })]); }
 
 async function renderSimilar(mediaArg) {
   const wrap = document.getElementById('watchSimilarList');
@@ -759,10 +683,7 @@ async function renderSimilar(mediaArg) {
   } catch (e) {}
 
   items = items.slice(0, 8);
-  if (!items.length) {
-    wrap.innerHTML = '<div class="watch-similar-loading">No recommendations.</div>';
-    return;
-  }
+  if (!items.length) { wrap.innerHTML = '<div class="watch-similar-loading">No recommendations.</div>'; return; }
 
   wrap.innerHTML = '';
   for (const m of items) {
