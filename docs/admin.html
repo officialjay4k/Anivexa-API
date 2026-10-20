@@ -1,0 +1,132 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Admin — Cloud Hub</title>
+  <link rel="icon" type="image/png" href="/favicon.png">
+  <link rel="stylesheet" href="/shared.css">
+  <link rel="stylesheet" href="/admin.css">
+</head>
+<body>
+
+  <div id="ch-header-mount"></div>
+
+  <main class="admin-main">
+    <div class="ch-container admin-layout">
+
+      <!-- Sidebar -->
+      <aside class="admin-sidebar">
+        <h2 class="admin-logo">Admin Panel</h2>
+        <nav class="admin-nav">
+          <button class="admin-nav-item is-active" data-tab="broadcast">
+            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 15s1-1 4-1 5 2 8 2 4-1 4-1V3s-1 1-4 1-5-2-8-2-4 1-4 1z"/><line x1="4" y1="22" x2="4" y2="15"/></svg>
+            Broadcast
+          </button>
+          <button class="admin-nav-item" data-tab="reports">
+            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M10.29 3.86 1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"/><line x1="12" y1="9" x2="12" y2="13"/><line x1="12" y1="17" x2="12.01" y2="17"/></svg>
+            Reports
+          </button>
+          <button class="admin-nav-item" data-tab="users">
+            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/></svg>
+            Users
+          </button>
+        </nav>
+      </aside>
+
+      <!-- Main Content -->
+      <div class="admin-content">
+        
+        <!-- Broadcast Tab -->
+        <section class="admin-panel is-active" id="panel-broadcast">
+          <header class="admin-panel__head">
+            <h1 class="admin-title">Broadcast Notification</h1>
+            <p class="admin-sub">Send an announcement to every registered user.</p>
+          </header>
+          
+          <div class="admin-form">
+            <label class="admin-field">
+              <span>Title</span>
+              <input type="text" id="notifTitle" placeholder="e.g. Site Update or New Feature!">
+            </label>
+            <label class="admin-field">
+              <span>Link (Optional)</span>
+              <input type="text" id="notifLink" placeholder="e.g. /preview?id=1234">
+            </label>
+            <label class="admin-field">
+              <span>Image URL (Optional)</span>
+              <input type="text" id="notifImage" placeholder="https://example.com/banner.jpg">
+            </label>
+            <label class="admin-field">
+              <span>Message (Supports HTML)</span>
+              <textarea id="notifMessage" rows="6" placeholder="Write your announcement here. You can use <b>bold</b> and <i>italics</i>."></textarea>
+            </label>
+            
+            <button type="button" class="ch-btn ch-btn--primary ch-btn--lg" id="sendBroadcastBtn">
+              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="22" y1="2" x2="11" y2="13"/><polygon points="22 2 15 22 11 13 2 9 22 2"/></svg>
+              Send to All Users
+            </button>
+          </div>
+        </section>
+
+        <!-- Reports Tab -->
+        <section class="admin-panel" id="panel-reports">
+          <header class="admin-panel__head">
+            <h1 class="admin-title">User Reports</h1>
+            <p class="admin-sub">Manage bugs, missing episodes, and account issues.</p>
+          </header>
+          <div class="admin-table-wrap">
+            <table class="admin-table" id="reportsTable">
+              <thead>
+                <tr>
+                  <th>Status</th>
+                  <th>Category</th>
+                  <th>User</th>
+                  <th>Message</th>
+                  <th>Context</th>
+                  <th>Actions</th>
+                </tr>
+              </thead>
+              <tbody>
+                <tr><td colspan="6" style="text-align:center;">Loading reports...</td></tr>
+              </tbody>
+            </table>
+          </div>
+        </section>
+
+        <!-- Users Tab -->
+        <section class="admin-panel" id="panel-users">
+          <header class="admin-panel__head">
+            <h1 class="admin-title">Registered Users</h1>
+            <p class="admin-sub">View and manage all accounts.</p>
+          </header>
+          <div class="admin-table-wrap">
+            <table class="admin-table" id="usersTable">
+              <thead>
+                <tr>
+                  <th>User</th>
+                  <th>Username</th>
+                  <th>Role</th>
+                  <th>Joined</th>
+                </tr>
+              </thead>
+              <tbody>
+                <tr><td colspan="4" style="text-align:center;">Loading users...</td></tr>
+              </tbody>
+            </table>
+          </div>
+        </section>
+
+      </div>
+    </div>
+  </main>
+
+  <div id="ch-footer-mount"></div>
+
+  <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.45.0/dist/umd/supabase.min.js"></script>
+  <script src="/supabase-config.js"></script>
+  <script src="/shared.js"></script>
+  <script src="/auth.js"></script>
+  <script src="/admin.js"></script>
+</body>
+</html>
