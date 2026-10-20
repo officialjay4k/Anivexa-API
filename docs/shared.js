@@ -152,9 +152,12 @@ async function mountHeader() {
           <div class="ch-notif-list" id="chNotifList">
             ${notifications.length ? notifications.map(n => `
               <a href="${n.link || '#'}" class="ch-notif-item ${n.read ? '' : 'is-unread'}" data-id="${n.id}">
-                <div class="ch-notif-item__title">${chEscapeHtml(n.title)}</div>
-                <div class="ch-notif-item__msg">${chEscapeHtml(n.message)}</div>
-                <div class="ch-notif-item__time">${chFormatTimeAgo(new Date(n.created_at).getTime() / 1000)}</div>
+                ${n.image ? `<img src="${chEscapeHtml(n.image)}" class="ch-notif-item__img" alt="">` : ''}
+                <div class="ch-notif-item__content">
+                  <div class="ch-notif-item__title">${chEscapeHtml(n.title)}</div>
+                  <div class="ch-notif-item__msg">${n.message}</div> <!-- Intentionally rendering HTML for Admins -->
+                  <div class="ch-notif-item__time">${chFormatTimeAgo(new Date(n.created_at).getTime() / 1000)}</div>
+                </div>
               </a>
             `).join('') : '<div class="ch-notif-empty">No notifications yet.</div>'}
           </div>
@@ -174,6 +177,12 @@ async function mountHeader() {
             <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09a1.65 1.65 0 0 0-1.08-1.51 1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09a1.65 1.65 0 0 0 1.51-1.08 1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1.08z"/></svg>
             Settings
           </a>
+          ${profile?.is_admin ? `
+            <a href="/admin" class="ch-pfp-menu__item">
+              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/></svg>
+              Admin Panel
+            </a>
+          ` : ''}
           <a href="/user/dashboard" class="ch-pfp-menu__item">
             <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="7" height="7"/><rect x="14" y="3" width="7" height="7"/><rect x="14" y="14" width="7" height="7"/><rect x="3" y="14" width="7" height="7"/></svg>
             Dashboard
@@ -250,7 +259,6 @@ async function mountHeader() {
     });
   }
 
-  // Notification Logic
   const notifBtn = document.getElementById('chNotifBtn');
   const notifMenu = document.getElementById('chNotifMenu');
   if (notifBtn && notifMenu) {
@@ -289,7 +297,6 @@ async function mountHeader() {
     });
   }
 
-  // PFP Logic
   const pfpBtn = document.getElementById('chPfpBtn');
   const pfpMenu = document.getElementById('chPfpMenu');
   if (pfpBtn && pfpMenu) {
