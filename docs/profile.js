@@ -116,7 +116,37 @@ async function initProfile() {
   // Fetch Watchlist
   const watchlist = await chAuth.fetchWatchlist(profile.id);
   const wlContainer = $('profileWatchlist');
-  
+  const continueContainer = $('profileContinueSection');
+  const continueRow = $('profileContinueRow');
+
+  // Render Continue Watching (Using DB progress)
+  const recent = watchlist
+    .filter(w => w.status === 'watching' && w.progress_time > 0 && w.progress_ep > 0)
+    .sort((a, b) => new Date(b.updated_at) - new Date(a.updated_at))
+    .slice(0, 10);
+
+  if (recent.length > 0) {
+    continueContainer.hidden = false;
+    continueRow.innerHTML = recent.map(item => {
+      const pct = item.duration > 0 ? Math.min(100, (item.progress_time / item.duration) * 100) : 0;
+      return `
+        <a href="/watch?id=${item.anilist_id}&ep=${item.progress_ep}&lang=dub" class="profile-continue-card">
+          <div class="profile-continue-card__thumb">
+            ${item.image ? `<img src="${chEscapeHtml(item.image)}" alt="" loading="lazy">` : ''}
+            <div class="profile-continue-card__progress">
+              <div class="profile-continue-card__progress-fill" style="width: ${pct.toFixed(1)}%"></div>
+            </div>
+          </div>
+          <div class="profile-continue-card__title">${chEscapeHtml(item.title)}</div>
+          <div class="profile-continue-card__meta">EP ${item.progress_ep} · ${chFormatTime(item.progress_time)} / ${chFormatTime(item.duration)}</div>
+        </a>
+      `;
+    }).join('');
+  } else {
+    continueContainer.hidden = true;
+  }
+
+  // Render Watchlist
   if (!watchlist || watchlist.length === 0) {
     wlContainer.innerHTML = `<div class="profile-wl-empty">This user's watchlist is empty.</div>`;
   } else {
