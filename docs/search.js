@@ -5,9 +5,7 @@
 (() => {
   'use strict';
 
-  const ANILIST_GRAPHQL =
-    window.CH?.ANILIST_GRAPHQL || 'https://graphql.anilist.co';
-
+  const ANILIST_GRAPHQL = window.CH?.ANILIST_GRAPHQL || 'https://graphql.anilist.co';
   const $ = (id) => document.getElementById(id);
 
   const PER_PAGE = 30;
@@ -23,14 +21,8 @@
 
   const MEDIA_FIELDS = `
     id
-    title {
-      romaji
-      english
-    }
-    coverImage {
-      extraLarge
-      large
-    }
+    title { romaji english }
+    coverImage { extraLarge large }
     format
     status
     averageScore
@@ -42,16 +34,14 @@
       $page: Int!
       $search: String!
       $sort: [MediaSort]!
+      $isAdult: Boolean
       __FILTER_VARIABLES__
     ) {
       Page(page: $page, perPage: ${PER_PAGE}) {
-        pageInfo {
-          currentPage
-          hasNextPage
-        }
+        pageInfo { currentPage hasNextPage }
         media(
           type: ANIME
-          isAdult: false
+          isAdult: $isAdult
           search: $search
           sort: $sort
           status_in: [FINISHED, RELEASING, HIATUS]
@@ -67,16 +57,14 @@
     query BrowseAnime(
       $page: Int!
       $sort: [MediaSort]!
+      $isAdult: Boolean
       __FILTER_VARIABLES__
     ) {
       Page(page: $page, perPage: ${PER_PAGE}) {
-        pageInfo {
-          currentPage
-          hasNextPage
-        }
+        pageInfo { currentPage hasNextPage }
         media(
           type: ANIME
-          isAdult: false
+          isAdult: $isAdult
           sort: $sort
           status_in: [FINISHED, RELEASING, HIATUS]
           __FILTER_ARGUMENTS__
@@ -96,7 +84,8 @@
     genre: '',
     year: '',
     format: '',
-    sort: 'POPULARITY_DESC'
+    sort: 'POPULARITY_DESC',
+    isAdult: false
   };
 
   let generation = 0;
@@ -107,51 +96,35 @@
 
   function escapeHtml(value) {
     return String(value ?? '').replace(/[&<>"']/g, (char) => ({
-      '&': '&amp;',
-      '<': '&lt;',
-      '>': '&gt;',
-      '"': '&quot;',
-      "'": '&#39;'
+      '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;'
     }[char]));
   }
 
   function titleOf(media) {
-    return media?.title?.english ||
-      media?.title?.romaji ||
-      'Untitled';
+    return media?.title?.english || media?.title?.romaji || 'Untitled';
   }
 
   function formatFormat(value) {
     if (!value) return '';
-
-    return value
-      .replace(/_/g, ' ')
-      .toLowerCase()
-      .replace(/\b\w/g, (char) => char.toUpperCase());
+    return value.replace(/_/g, ' ').toLowerCase().replace(/\b\w/g, (char) => char.toUpperCase());
   }
 
   function selectedValue(id, requestedValue, fallback = '') {
     const select = $(id);
     const requested = String(requestedValue ?? '');
-
-    const exists = Array.from(select.options).some(
-      (option) => option.value === requested
-    );
-
+    const exists = Array.from(select.options).some((option) => option.value === requested);
     select.value = exists ? requested : fallback;
     return select.value;
   }
 
   function readControls() {
     currentQuery = $('searchInput').value.trim();
-
     currentFilters = {
       genre: $('filterGenre').value,
       year: $('filterYear').value,
       format: $('filterFormat').value,
-      sort: VALID_SORTS.has($('filterSort').value)
-        ? $('filterSort').value
-        : 'POPULARITY_DESC'
+      sort: VALID_SORTS.has($('filterSort').value) ? $('filterSort').value : 'POPULARITY_DESC',
+      isAdult: $('filterAdult').classList.contains('is-active')
     };
   }
 
@@ -160,12 +133,7 @@
       $('searchTitle').textContent = `Results for "${currentQuery}"`;
       return;
     }
-
-    const hasFilters =
-      currentFilters.genre ||
-      currentFilters.year ||
-      currentFilters.format;
-
+    const hasFilters = currentFilters.genre || currentFilters.year || currentFilters.format;
     if (hasFilters) {
       $('searchTitle').textContent = 'Browse Anime';
     } else if (currentFilters.sort === 'TRENDING_DESC') {
@@ -175,30 +143,22 @@
     } else if (currentFilters.sort === 'START_DATE_DESC') {
       $('searchTitle').textContent = 'Newest Anime';
     } else {
-      $('searchTitle').textContent = 'Popular Anime';
+      $('searchTitle').textContent = currentFilters.isAdult ? '18+ Popular Anime' : 'Popular Anime';
     }
   }
 
   function updateUrl() {
     const params = new URLSearchParams();
-
     if (currentQuery) params.set('q', currentQuery);
     if (currentFilters.genre) params.set('genre', currentFilters.genre);
     if (currentFilters.year) params.set('year', currentFilters.year);
     if (currentFilters.format) params.set('format', currentFilters.format);
-
-    if (currentFilters.sort !== 'POPULARITY_DESC') {
-      params.set('sort', currentFilters.sort);
-    }
+    if (currentFilters.sort !== 'POPULARITY_DESC') params.set('sort', currentFilters.sort);
+    if (currentFilters.isAdult) params.set('adult', 'true');
 
     const queryString = params.toString();
-    const nextUrl =
-      location.pathname +
-      (queryString ? `?${queryString}` : '') +
-      location.hash;
-
-    const existingUrl =
-      location.pathname + location.search + location.hash;
+    const nextUrl = location.pathname + (queryString ? `?${queryString}` : '') + location.hash;
+    const existingUrl = location.pathname + location.search + location.hash;
 
     if (existingUrl !== nextUrl) {
       history.replaceState(null, '', nextUrl);
@@ -208,27 +168,20 @@
   function buildRequest(pageNumber) {
     const declarations = [];
     const argumentsList = [];
-
     let sort;
 
     if (currentQuery) {
-      sort = (
-        currentFilters.sort === 'POPULARITY_DESC' ||
-        currentFilters.sort === 'SEARCH_MATCH'
-      )
+      sort = (currentFilters.sort === 'POPULARITY_DESC' || currentFilters.sort === 'SEARCH_MATCH')
         ? ['SEARCH_MATCH', 'POPULARITY_DESC']
         : [currentFilters.sort, 'SEARCH_MATCH'];
     } else {
-      sort = [
-        currentFilters.sort === 'SEARCH_MATCH'
-          ? 'POPULARITY_DESC'
-          : currentFilters.sort
-      ];
+      sort = [currentFilters.sort === 'SEARCH_MATCH' ? 'POPULARITY_DESC' : currentFilters.sort];
     }
 
     const variables = {
       page: pageNumber,
-      sort
+      sort: sort,
+      isAdult: currentFilters.isAdult
     };
 
     if (currentQuery) {
@@ -254,7 +207,6 @@
     }
 
     const template = currentQuery ? SEARCH_QUERY : POPULAR_QUERY;
-
     const query = template
       .replace('__FILTER_VARIABLES__', declarations.join('\n'))
       .replace('__FILTER_ARGUMENTS__', argumentsList.join('\n'));
@@ -265,50 +217,27 @@
   async function anilistQuery(query, variables, signal) {
     const response = await fetch(ANILIST_GRAPHQL, {
       method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        Accept: 'application/json'
-      },
+      headers: { 'Content-Type': 'application/json', Accept: 'application/json' },
       body: JSON.stringify({ query, variables }),
       signal
     });
 
     const text = await response.text();
-
     let json = null;
 
-    try {
-      json = JSON.parse(text);
-    } catch {
-      if (response.ok) {
-        throw new Error('The anime API returned an invalid JSON response.');
-      }
+    try { json = JSON.parse(text); } catch {
+      if (response.ok) throw new Error('The anime API returned an invalid JSON response.');
     }
 
     if (!response.ok) {
-      const message = json?.errors
-        ?.map((error) => error.message)
-        .filter(Boolean)
-        .join('; ');
-
-      const error = new Error(
-        message || `Anime API request failed (HTTP ${response.status}).`
-      );
-
+      const message = json?.errors?.map((e) => e.message).filter(Boolean).join('; ');
+      const error = new Error(message || `Anime API request failed (HTTP ${response.status}).`);
       error.status = response.status;
-      error.retryAfter = response.headers.get('Retry-After');
       throw error;
     }
 
-    if (json?.errors?.length) {
-      throw new Error(
-        json.errors.map((error) => error.message).join('; ')
-      );
-    }
-
-    if (!json?.data?.Page || !Array.isArray(json.data.Page.media)) {
-      throw new Error('The anime API returned an unexpected response.');
-    }
+    if (json?.errors?.length) throw new Error(json.errors.map((e) => e.message).join('; '));
+    if (!json?.data?.Page || !Array.isArray(json.data.Page.media)) throw new Error('Unexpected response.');
 
     return json.data;
   }
@@ -318,23 +247,12 @@
   }
 
   function showSkeleton() {
-    $('searchResults').innerHTML = Array.from(
-      { length: 12 },
-      () => `
-        <div class="home-card" aria-hidden="true">
-          <div
-            class="home-card__thumb"
-            style="background:var(--ch-bg-2);animation:home-shimmer 1.6s infinite;"
-          ></div>
-          <div class="home-card__title-wrap">
-            <div
-              class="ch-skel ch-skel-line"
-              style="width:80%;margin-top:8px;"
-            ></div>
-          </div>
-        </div>
-      `
-    ).join('');
+    $('searchResults').innerHTML = Array.from({ length: 12 }, () => `
+      <div class="home-card" aria-hidden="true">
+        <div class="home-card__thumb" style="background:var(--ch-bg-2);animation:home-shimmer 1.6s infinite;"></div>
+        <div class="home-card__title-wrap"><div class="ch-skel ch-skel-line" style="width:80%;margin-top:8px;"></div></div>
+      </div>
+    `).join('');
   }
 
   function renderCards(mediaList) {
@@ -342,7 +260,6 @@
 
     for (const media of mediaList) {
       if (!media || renderedIds.has(media.id)) continue;
-
       renderedIds.add(media.id);
 
       const title = titleOf(media);
@@ -352,16 +269,9 @@
       card.className = 'home-card';
       card.href = `/preview?id=${encodeURIComponent(media.id)}`;
 
-      const scoreBadge = media.averageScore != null
-        ? `<div class="home-card__chip home-card__chip--score"><span class="star">★</span>${escapeHtml(media.averageScore)}</div>`
-        : '';
+      const scoreBadge = media.averageScore != null ? `<div class="home-card__chip home-card__chip--score"><span class="star">★</span>${escapeHtml(media.averageScore)}</div>` : '';
+      const metadata = [formatFormat(media.format), media.seasonYear].filter(Boolean).join(' · ');
 
-      const metadata = [
-        formatFormat(media.format),
-        media.seasonYear
-      ].filter(Boolean).join(' · ');
-
-      // Render text initially
       card.innerHTML = `
         <div class="home-card__thumb">
           ${cover ? `<img src="${escapeHtml(cover)}" alt="${escapeHtml(title)}" loading="lazy" decoding="async">` : ''}
@@ -372,17 +282,15 @@
           <div class="home-card__chiprow" style="pointer-events:none;">${scoreBadge}</div>
         </div>
         <div class="home-card__title-wrap">
-          <div class="home-card__title-text" style="opacity:1;">${escapeHtml(title)}</div>
+          <div class="home-card__title-text" style="opacity:1;-webkit-line-clamp:2;font-weight:700;">${escapeHtml(title)}</div>
         </div>
         <div class="home-card__meta">${escapeHtml(metadata)}</div>
       `;
 
-      const image = card.querySelector('img[alt]');
-      if (image) {
-        image.addEventListener('error', () => { image.hidden = true; }, { once: true });
-      }
+      const image = card.querySelector('img');
+      if (image) image.addEventListener('error', () => { image.hidden = true; }, { once: true });
 
-      // Async fetch TMDB logo and swap if found
+      // TMDB Async Logo Fetch
       if (typeof window.tmdbLookup === 'function') {
         window.tmdbLookup(title, media.seasonYear)
           .then(tmdb => {
@@ -393,9 +301,7 @@
                   <img class="home-card__title-logo" src="${escapeHtml(tmdb.logoUrl)}" alt="${escapeHtml(title)}" loading="lazy">
                   <div class="home-card__title-text">${escapeHtml(title)}</div>
                 `;
-                if (typeof window.detectTitleOverflow === 'function') {
-                  window.detectTitleOverflow(card);
-                }
+                if (typeof window.detectTitleOverflow === 'function') window.detectTitleOverflow(card);
               }
             }
           })
@@ -406,7 +312,6 @@
     }
 
     $('searchResults').appendChild(fragment);
-
     if (typeof window.detectTitleOverflow === 'function') {
       try { window.detectTitleOverflow($('searchResults')); } catch (e) {}
     }
@@ -414,7 +319,6 @@
 
   function showLoadMore() {
     disconnectObserver();
-
     const sentinel = $('searchLoadMore');
     sentinel.hidden = !hasNextPage;
     sentinel.replaceChildren();
@@ -426,36 +330,23 @@
     button.className = 'ch-btn';
     button.textContent = 'Load more';
     button.addEventListener('click', () => fetchResults(false));
-
     sentinel.appendChild(button);
 
     if (!('IntersectionObserver' in window)) return;
 
     if (!observer) {
       observer = new IntersectionObserver((entries) => {
-        if (
-          entries.some((entry) => entry.isIntersecting) &&
-          hasNextPage &&
-          !isLoading
-        ) {
+        if (entries.some((entry) => entry.isIntersecting) && hasNextPage && !isLoading) {
           fetchResults(false);
         }
       }, { rootMargin: '200px' });
     }
-
     observer.observe(sentinel);
   }
 
   function showError(error, reset) {
-    const message = error.status === 429
-      ? 'The anime API is rate-limiting requests. Wait a moment, then retry.'
-      : error.name === 'TimeoutError'
-        ? 'The anime API took too long to respond. Try again.'
-        : 'Could not load anime. Try again.';
-
-    const container = reset
-      ? $('searchResults')
-      : $('searchLoadMore');
+    const message = error.status === 429 ? 'Rate-limited. Wait a moment, then retry.' : error.name === 'TimeoutError' ? 'Took too long to respond.' : 'Could not load anime. Try again.';
+    const container = reset ? $('searchResults') : $('searchLoadMore');
 
     container.replaceChildren();
     container.hidden = false;
@@ -479,15 +370,12 @@
 
   function invalidateRequest() {
     generation++;
-
     if (requestController) {
       requestController.abort();
       requestController = null;
     }
-
     isLoading = false;
     hasNextPage = false;
-
     disconnectObserver();
     $('searchLoadMore').hidden = true;
     $('searchResults').setAttribute('aria-busy', 'false');
@@ -519,37 +407,21 @@
     }
 
     let timedOut = false;
-
-    const timeout = setTimeout(() => {
-      timedOut = true;
-      controller.abort();
-    }, REQUEST_TIMEOUT_MS);
-
+    const timeout = setTimeout(() => { timedOut = true; controller.abort(); }, REQUEST_TIMEOUT_MS);
     let succeeded = false;
 
     try {
       const { query, variables } = buildRequest(requestedPage);
-
-      const data = await anilistQuery(
-        query,
-        variables,
-        controller.signal
-      );
-
+      const data = await anilistQuery(query, variables, controller.signal);
       if (myGeneration !== generation) return;
 
       const page = data.Page;
-
-      if (reset) {
-        $('searchResults').replaceChildren();
-      }
+      if (reset) $('searchResults').replaceChildren();
 
       renderCards(page.media);
 
       currentPage = requestedPage;
-      hasNextPage =
-        Boolean(page.pageInfo?.hasNextPage) &&
-        page.media.length > 0;
+      hasNextPage = Boolean(page.pageInfo?.hasNextPage) && page.media.length > 0;
 
       if (!renderedIds.size) {
         const empty = document.createElement('div');
@@ -562,25 +434,16 @@
     } catch (error) {
       if (myGeneration !== generation) return;
       if (controller.signal.aborted && !timedOut) return;
-
-      if (timedOut) {
-        error = new Error('Request timed out.');
-        error.name = 'TimeoutError';
-      }
-
+      if (timedOut) { error = new Error('Request timed out.'); error.name = 'TimeoutError'; }
       console.error('[Search] Request failed:', error);
       showError(error, reset);
     } finally {
       clearTimeout(timeout);
-
       if (myGeneration === generation) {
         isLoading = false;
         requestController = null;
         $('searchResults').setAttribute('aria-busy', 'false');
-
-        if (succeeded) {
-          showLoadMore();
-        }
+        if (succeeded) showLoadMore();
       }
     }
   }
@@ -595,42 +458,26 @@
 
   function restoreFromUrl() {
     const params = new URLSearchParams(location.search);
-
     $('searchInput').value = (params.get('q') || '').trim();
-
     selectedValue('filterGenre', params.get('genre'));
     selectedValue('filterYear', params.get('year'));
     selectedValue('filterFormat', params.get('format'));
-    selectedValue(
-      'filterSort',
-      params.get('sort') || 'POPULARITY_DESC',
-      'POPULARITY_DESC'
-    );
+    selectedValue('filterSort', params.get('sort') || 'POPULARITY_DESC', 'POPULARITY_DESC');
+    
+    const isAdult = params.get('adult') === 'true';
+    $('filterAdult').classList.toggle('is-active', isAdult);
 
     readControls();
     updateTitle();
   }
 
   function init() {
-    const requiredIds = [
-      'searchInput',
-      'searchBtn',
-      'searchTitle',
-      'searchResults',
-      'searchLoadMore',
-      'filterGenre',
-      'filterYear',
-      'filterFormat',
-      'filterSort'
-    ];
-
+    const requiredIds = ['searchInput', 'searchBtn', 'searchTitle', 'searchResults', 'searchLoadMore', 'filterGenre', 'filterYear', 'filterFormat', 'filterSort', 'filterAdult'];
     const missing = requiredIds.filter((id) => !$(id));
 
     if (missing.length) {
       console.error('[Search] Missing page elements:', missing);
-      if (typeof window.chPageReady === 'function') {
-        window.chPageReady();
-      }
+      if (typeof window.chPageReady === 'function') window.chPageReady();
       return;
     }
 
@@ -638,33 +485,21 @@
 
     $('searchInput').addEventListener('input', () => {
       clearTimeout(debounceTimer);
-
-      // Invalidate immediately, before the debounce delay.
       invalidateRequest();
       showSkeleton();
-
       debounceTimer = setTimeout(runSearch, 400);
     });
 
-    $('searchBtn').addEventListener('click', (event) => {
-      event.preventDefault();
-      runSearch();
-    });
+    $('searchBtn').addEventListener('click', (event) => { event.preventDefault(); runSearch(); });
+    $('searchInput').addEventListener('keydown', (event) => { if (event.key === 'Enter') { event.preventDefault(); runSearch(); } });
 
-    $('searchInput').addEventListener('keydown', (event) => {
-      if (event.key === 'Enter') {
-        event.preventDefault();
-        runSearch();
-      }
-    });
-
-    [
-      'filterGenre',
-      'filterYear',
-      'filterFormat',
-      'filterSort'
-    ].forEach((id) => {
+    ['filterGenre', 'filterYear', 'filterFormat', 'filterSort'].forEach((id) => {
       $(id).addEventListener('change', runSearch);
+    });
+
+    $('filterAdult').addEventListener('click', function() {
+      this.classList.toggle('is-active');
+      runSearch();
     });
 
     window.addEventListener('popstate', () => {
@@ -675,14 +510,9 @@
 
     fetchResults(true);
 
-    if (typeof window.chPageReady === 'function') {
-      window.chPageReady();
-    }
+    if (typeof window.chPageReady === 'function') window.chPageReady();
   }
 
-  if (document.readyState === 'loading') {
-    document.addEventListener('DOMContentLoaded', init, { once: true });
-  } else {
-    init();
-  }
+  if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', init, { once: true });
+  else init();
 })();
