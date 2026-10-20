@@ -19,6 +19,34 @@
     'TRENDING_DESC'
   ]);
 
+  // Standard vs Adult Genres
+  const STANDARD_GENRES = `
+    <option value="">All Genres</option>
+    <option value="Action">Action</option>
+    <option value="Adventure">Adventure</option>
+    <option value="Comedy">Comedy</option>
+    <option value="Drama">Drama</option>
+    <option value="Fantasy">Fantasy</option>
+    <option value="Horror">Horror</option>
+    <option value="Mecha">Mecha</option>
+    <option value="Music">Music</option>
+    <option value="Mystery">Mystery</option>
+    <option value="Psychological">Psychological</option>
+    <option value="Romance">Romance</option>
+    <option value="Sci-Fi">Sci-Fi</option>
+    <option value="Slice of Life">Slice of Life</option>
+    <option value="Sports">Sports</option>
+    <option value="Supernatural">Supernatural</option>
+    <option value="Thriller">Thriller</option>
+  `;
+
+  const ADULT_GENRES = `
+    <option value="">All 18+ Genres</option>
+    <option value="Hentai">Hentai</option>
+    <option value="Ecchi">Ecchi</option>
+    <option value="Uncensored">Uncensored</option>
+  `;
+
   const MEDIA_FIELDS = `
     id
     title { romaji english }
@@ -79,6 +107,8 @@
   let hasNextPage = false;
   let isLoading = false;
   let currentQuery = '';
+  
+  let ageVerified = false; // Session flag
 
   let currentFilters = {
     genre: '',
@@ -290,7 +320,6 @@
       const image = card.querySelector('img');
       if (image) image.addEventListener('error', () => { image.hidden = true; }, { once: true });
 
-      // TMDB Async Logo Fetch
       if (typeof window.tmdbLookup === 'function') {
         window.tmdbLookup(title, media.seasonYear)
           .then(tmdb => {
@@ -459,13 +488,16 @@
   function restoreFromUrl() {
     const params = new URLSearchParams(location.search);
     $('searchInput').value = (params.get('q') || '').trim();
+    
+    // Restore Age Toggle
+    const isAdult = params.get('adult') === 'true';
+    $('filterAdult').classList.toggle('is-active', isAdult);
+    $('filterGenre').innerHTML = isAdult ? ADULT_GENRES : STANDARD_GENRES;
+
     selectedValue('filterGenre', params.get('genre'));
     selectedValue('filterYear', params.get('year'));
     selectedValue('filterFormat', params.get('format'));
     selectedValue('filterSort', params.get('sort') || 'POPULARITY_DESC', 'POPULARITY_DESC');
-    
-    const isAdult = params.get('adult') === 'true';
-    $('filterAdult').classList.toggle('is-active', isAdult);
 
     readControls();
     updateTitle();
@@ -497,8 +529,42 @@
       $(id).addEventListener('change', runSearch);
     });
 
-    $('filterAdult').addEventListener('click', function() {
-      this.classList.toggle('is-active');
+    // 18+ Toggle Logic with Age Gate
+    const ageGate = $('ageGateModal');
+    const filterBtn = $('filterAdult');
+
+    filterBtn.addEventListener('click', () => {
+      const isCurrentlyActive = filterBtn.classList.contains('is-active');
+      
+      if (isCurrentlyActive) {
+        // Turning OFF
+        filterBtn.classList.remove('is-active');
+        $('filterGenre').innerHTML = STANDARD_GENRES;
+        runSearch();
+        return;
+      }
+
+      if (ageVerified) {
+        // Already verified this session
+        filterBtn.classList.add('is-active');
+        $('filterGenre').innerHTML = ADULT_GENRES;
+        runSearch();
+        return;
+      }
+
+      // Show Age Gate
+      ageGate.classList.add('is-open');
+    });
+
+    $('ageGateNo').addEventListener('click', () => {
+      ageGate.classList.remove('is-open');
+    });
+
+    $('ageGateYes').addEventListener('click', () => {
+      ageVerified = true;
+      ageGate.classList.remove('is-open');
+      filterBtn.classList.add('is-active');
+      $('filterGenre').innerHTML = ADULT_GENRES;
       runSearch();
     });
 
