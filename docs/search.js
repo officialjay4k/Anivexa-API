@@ -41,7 +41,7 @@
   `;
 
   const ADULT_GENRES = `
-    <option value="">All 18+ Genres</option>
+    <option value="">All 18+ Content</option>
     <option value="Hentai">Hentai</option>
     <option value="Ecchi">Ecchi</option>
     <option value="Uncensored">Uncensored</option>
@@ -60,10 +60,13 @@
   const SEARCH_QUERY = `
     query SearchAnime(
       $page: Int!
-      $search: String!
+      $search: String
+      $genre: String
+      $tag: String
+      $year: Int
+      $format: MediaFormat
       $sort: [MediaSort]!
       $isAdult: Boolean
-      __FILTER_VARIABLES__
     ) {
       Page(page: $page, perPage: ${PER_PAGE}) {
         pageInfo { currentPage hasNextPage }
@@ -72,8 +75,11 @@
           isAdult: $isAdult
           search: $search
           sort: $sort
+          genre: $genre
+          tag: $tag
+          seasonYear: $year
+          format: $format
           status_in: [FINISHED, RELEASING, HIATUS]
-          __FILTER_ARGUMENTS__
         ) {
           ${MEDIA_FIELDS}
         }
@@ -84,9 +90,12 @@
   const POPULAR_QUERY = `
     query BrowseAnime(
       $page: Int!
+      $genre: String
+      $tag: String
+      $year: Int
+      $format: MediaFormat
       $sort: [MediaSort]!
       $isAdult: Boolean
-      __FILTER_VARIABLES__
     ) {
       Page(page: $page, perPage: ${PER_PAGE}) {
         pageInfo { currentPage hasNextPage }
@@ -94,8 +103,11 @@
           type: ANIME
           isAdult: $isAdult
           sort: $sort
+          genre: $genre
+          tag: $tag
+          seasonYear: $year
+          format: $format
           status_in: [FINISHED, RELEASING, HIATUS]
-          __FILTER_ARGUMENTS__
         ) {
           ${MEDIA_FIELDS}
         }
@@ -196,52 +208,32 @@
   }
 
   function buildRequest(pageNumber) {
-    const declarations = [];
-    const argumentsList = [];
-    let sort;
-
-    if (currentQuery) {
-      sort = (currentFilters.sort === 'POPULARITY_DESC' || currentFilters.sort === 'SEARCH_MATCH')
-        ? ['SEARCH_MATCH', 'POPULARITY_DESC']
-        : [currentFilters.sort, 'SEARCH_MATCH'];
-    } else {
-      sort = [currentFilters.sort === 'SEARCH_MATCH' ? 'POPULARITY_DESC' : currentFilters.sort];
-    }
-
     const variables = {
       page: pageNumber,
-      sort: sort,
+      sort: [currentFilters.sort === 'SEARCH_MATCH' && !currentQuery ? 'POPULARITY_DESC' : currentFilters.sort],
       isAdult: currentFilters.isAdult
     };
 
     if (currentQuery) {
       variables.search = currentQuery;
+      if (currentFilters.sort === 'POPULARITY_DESC' || currentFilters.sort === 'SEARCH_MATCH') {
+        variables.sort = ['SEARCH_MATCH', 'POPULARITY_DESC'];
+      }
     }
 
     if (currentFilters.genre) {
-      declarations.push('$genre: String!');
-      argumentsList.push('genre: $genre');
-      variables.genre = currentFilters.genre;
+      if (currentFilters.genre === 'Uncensored') {
+        variables.tag = 'Uncensored';
+      } else {
+        variables.genre = currentFilters.genre;
+      }
     }
 
-    if (currentFilters.year) {
-      declarations.push('$year: Int!');
-      argumentsList.push('seasonYear: $year');
-      variables.year = Number(currentFilters.year);
-    }
-
-    if (currentFilters.format) {
-      declarations.push('$format: MediaFormat!');
-      argumentsList.push('format: $format');
-      variables.format = currentFilters.format;
-    }
+    if (currentFilters.year) variables.year = Number(currentFilters.year);
+    if (currentFilters.format) variables.format = currentFilters.format;
 
     const template = currentQuery ? SEARCH_QUERY : POPULAR_QUERY;
-    const query = template
-      .replace('__FILTER_VARIABLES__', declarations.join('\n'))
-      .replace('__FILTER_ARGUMENTS__', argumentsList.join('\n'));
-
-    return { query, variables };
+    return { query: template, variables };
   }
 
   async function anilistQuery(query, variables, signal) {
