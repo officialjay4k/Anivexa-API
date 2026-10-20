@@ -117,6 +117,8 @@
   font-size: 12px; font-weight: 600; color: var(--ch-fg-muted);
 }
 
+.profile-actions { margin-top: var(--s-4); }
+
 /* ---------- Right Column (Content) ---------- */
 .profile-content { display: flex; flex-direction: column; gap: var(--s-6); }
 
@@ -142,6 +144,61 @@
   content: ''; width: 3px; height: 18px;
   background: var(--ch-red-bright); border-radius: 2px;
   box-shadow: 0 0 10px var(--ch-red-glow);
+}
+
+/* ---------- Continue Watching ---------- */
+.profile-continue-row {
+  display: grid;
+  grid-auto-flow: column;
+  grid-auto-columns: 160px;
+  gap: var(--s-3);
+  overflow-x: auto;
+  overflow-y: hidden;
+  padding-bottom: var(--s-3);
+  scroll-snap-type: x mandatory;
+  scrollbar-width: thin;
+}
+.profile-continue-row > * { scroll-snap-align: start; }
+
+.profile-continue-card {
+  display: flex;
+  flex-direction: column;
+  gap: var(--s-2);
+  text-decoration: none;
+  color: inherit;
+  transition: transform 200ms var(--ease);
+}
+.profile-continue-card:hover { transform: translateY(-3px); }
+
+.profile-continue-card__thumb {
+  position: relative;
+  aspect-ratio: 16 / 9;
+  border-radius: var(--r-sm);
+  overflow: hidden;
+  background: var(--ch-bg-2);
+  border: 1px solid var(--ch-border-soft);
+}
+.profile-continue-card__thumb img {
+  width: 100%; height: 100%; object-fit: cover;
+}
+.profile-continue-card:hover .profile-continue-card__thumb {
+  border-color: var(--ch-red-bright);
+  box-shadow: 0 0 16px var(--ch-red-glow);
+}
+.profile-continue-card__progress {
+  position: absolute; bottom: 0; left: 0; right: 0; height: 3px;
+  background: rgba(5, 2, 3, 0.7); z-index: 2;
+}
+.profile-continue-card__progress-fill {
+  height: 100%; background: var(--ch-red-bright); box-shadow: 0 0 8px var(--ch-red-glow);
+}
+.profile-continue-card__title {
+  font-size: 12px; font-weight: 700; color: var(--ch-white);
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+}
+.profile-continue-card__meta {
+  font-size: 10px; color: var(--ch-fg-muted); font-weight: 600;
+  text-transform: uppercase; letter-spacing: 0.05em;
 }
 
 /* ---------- Stats Grid ---------- */
