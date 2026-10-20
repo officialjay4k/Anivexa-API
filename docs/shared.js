@@ -106,6 +106,47 @@ function chPageReady() {
   else document.addEventListener('DOMContentLoaded', create);
 })();
 
+// ---------- notification modal ----------
+function openNotificationModal(notif) {
+  let modal = document.getElementById('chNotifViewModal');
+  if (modal) modal.remove();
+
+  modal = document.createElement('div');
+  modal.id = 'chNotifViewModal';
+  modal.className = 'ch-notif-view-modal';
+  
+  const timeStr = chFormatTimeAgo(new Date(notif.created_at).getTime() / 1000);
+
+  modal.innerHTML = `
+    <div class="ch-notif-view-inner">
+      <button class="ch-notif-view-close" id="chNotifViewClose">&times;</button>
+      ${notif.image ? `<img src="${chEscapeHtml(notif.image)}" class="ch-notif-view-img" alt="">` : ''}
+      <h2 class="ch-notif-view-title">${chEscapeHtml(notif.title)}</h2>
+      <div class="ch-notif-view-time">${timeStr}</div>
+      <div class="ch-notif-view-msg">${notif.message}</div>
+      <div class="ch-notif-view-actions">
+        ${notif.link ? `<a href="${chEscapeHtml(notif.link)}" class="ch-btn ch-btn--primary" style="width:100%">Open Link</a>` : ''}
+        <button class="ch-btn ch-btn--quiet" id="chNotifViewDismiss" style="width:100%">Close</button>
+      </div>
+    </div>
+  `;
+  document.body.appendChild(modal);
+
+  // Slight delay for animation
+  requestAnimationFrame(() => modal.classList.add('is-open'));
+
+  const closeModal = () => {
+    modal.classList.remove('is-open');
+    setTimeout(() => modal.remove(), 200);
+  };
+
+  document.getElementById('chNotifViewClose').addEventListener('click', closeModal);
+  document.getElementById('chNotifViewDismiss').addEventListener('click', closeModal);
+  modal.addEventListener('click', (e) => {
+    if (e.target === modal) closeModal();
+  });
+}
+
 // ---------- header ----------
 async function mountHeader() {
   const mount = document.getElementById('ch-header-mount');
@@ -151,11 +192,11 @@ async function mountHeader() {
           </div>
           <div class="ch-notif-list" id="chNotifList">
             ${notifications.length ? notifications.map(n => `
-              <a href="${n.link || '#'}" class="ch-notif-item ${n.read ? '' : 'is-unread'}" data-id="${n.id}">
+              <a href="#" class="ch-notif-item ${n.read ? '' : 'is-unread'}" data-id="${n.id}" data-json="${chEscapeHtml(JSON.stringify(n))}">
                 ${n.image ? `<img src="${chEscapeHtml(n.image)}" class="ch-notif-item__img" alt="">` : ''}
                 <div class="ch-notif-item__content">
                   <div class="ch-notif-item__title">${chEscapeHtml(n.title)}</div>
-                  <div class="ch-notif-item__msg">${n.message}</div> <!-- Intentionally rendering HTML for Admins -->
+                  <div class="ch-notif-item__msg" style="display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden;">${n.message}</div>
                   <div class="ch-notif-item__time">${chFormatTimeAgo(new Date(n.created_at).getTime() / 1000)}</div>
                 </div>
               </a>
@@ -283,15 +324,23 @@ async function mountHeader() {
       });
     }
 
-    notifMenu.querySelectorAll('.ch-notif-item.is-unread').forEach(item => {
-      item.addEventListener('click', async () => {
-        await chAuth.markNotificationRead(item.dataset.id);
-        item.classList.remove('is-unread');
-        const badge = notifBtn.querySelector('.ch-notif-badge');
-        if (badge) {
-          let count = parseInt(badge.textContent, 10) - 1;
-          if (count <= 0) badge.remove();
-          else badge.textContent = count;
+    // Attach click events to open modal
+    notifMenu.querySelectorAll('.ch-notif-item').forEach(item => {
+      item.addEventListener('click', async (e) => {
+        e.preventDefault();
+        
+        const notifData = JSON.parse(item.getAttribute('data-json'));
+        openNotificationModal(notifData);
+
+        if (item.classList.contains('is-unread')) {
+          await chAuth.markNotificationRead(item.dataset.id);
+          item.classList.remove('is-unread');
+          const badge = notifBtn.querySelector('.ch-notif-badge');
+          if (badge) {
+            let count = parseInt(badge.textContent, 10) - 1;
+            if (count <= 0) badge.remove();
+            else badge.textContent = count;
+          }
         }
       });
     });
