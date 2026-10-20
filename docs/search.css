@@ -73,6 +73,14 @@
   border-color: var(--ch-red-bright);
 }
 
+/* 18+ Toggle Active State */
+#filterAdult.is-active {
+  background: rgba(179, 19, 31, 0.2);
+  color: var(--ch-red-bright);
+  border-color: var(--ch-red-bright);
+  box-shadow: 0 0 20px var(--ch-red-glow);
+}
+
 .search-results {
   display: grid;
   grid-template-columns: repeat(auto-fill, minmax(160px, 1fr));
@@ -85,10 +93,6 @@
   padding: var(--s-6);
   color: var(--ch-fg-muted);
   font-size: 15px;
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  gap: var(--s-4);
 }
 
 .search-load-more {
