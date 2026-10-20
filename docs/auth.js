@@ -36,6 +36,7 @@ const chAuth = (() => {
   let cachedUser = null;
   let cachedProfile = null;
   let listeners = [];
+  let heartbeatInterval = null;
 
   function emit() {
     listeners.forEach(function (fn) {
@@ -53,10 +54,32 @@ const chAuth = (() => {
     return data;
   }
 
+  function startHeartbeat() {
+    if (heartbeatInterval) clearInterval(heartbeatInterval);
+    if (!cachedUser) return;
+
+    // Send heartbeat immediately
+    sb.from('profiles').update({ last_seen: new Date().toISOString() }).eq('id', cachedUser.id).then(() => {});
+
+    // Ping every 60 seconds
+    heartbeatInterval = setInterval(() => {
+      if (cachedUser) {
+        sb.from('profiles').update({ last_seen: new Date().toISOString() }).eq('id', cachedUser.id).then(() => {});
+      }
+    }, 60000);
+  }
+
   async function refresh() {
     const { data: { session } } = await sb.auth.getSession();
     cachedUser = session?.user || null;
     cachedProfile = cachedUser ? await fetchProfile(cachedUser.id) : null;
+    
+    if (cachedUser) {
+      startHeartbeat();
+    } else {
+      if (heartbeatInterval) clearInterval(heartbeatInterval);
+    }
+
     emit();
     return { user: cachedUser, profile: cachedProfile };
   }
@@ -123,9 +146,13 @@ const chAuth = (() => {
   }
 
   async function signOut() {
+    if (cachedUser) {
+      await sb.from('profiles').update({ last_seen: new Date(0).toISOString() }).eq('id', cachedUser.id);
+    }
     await sb.auth.signOut();
     cachedUser = null;
     cachedProfile = null;
+    if (heartbeatInterval) clearInterval(heartbeatInterval);
     emit();
   }
 
@@ -185,6 +212,7 @@ const chAuth = (() => {
     }
     cachedUser = session.user;
     cachedProfile = await fetchProfile(cachedUser.id);
+    if (cachedUser) startHeartbeat();
     emit();
     return { user: cachedUser, profile: cachedProfile };
   }
@@ -220,7 +248,6 @@ const chAuth = (() => {
 
   async function createNotification(title, message, link) {
     if (!cachedUser) return;
-    // Check if we already sent this exact notification in the last 24h to prevent spam
     const oneDayAgo = new Date(Date.now() - 86400000).toISOString();
     const { data: existing } = await sb.from('notifications')
       .select('id')
@@ -232,11 +259,7 @@ const chAuth = (() => {
     if (existing && existing.length > 0) return;
 
     await sb.from('notifications').insert({
-      user_id: cachedUser.id,
-      title: title,
-      message: message,
-      link: link,
-      read: false
+      user_id: cachedUser.id, title: title, message: message, link: link, read: false
     });
   }
 
@@ -248,7 +271,6 @@ const chAuth = (() => {
       if (!watching.length) return;
 
       const ids = watching.map(w => w.anilist_id);
-      
       const query = `
         query ($ids: [Int]) {
           Page(page: 1, perPage: 50) {
@@ -271,19 +293,12 @@ const chAuth = (() => {
 
       for (const m of media) {
         if (m.nextAiringEpisode && m.nextAiringEpisode.airingAt < now && m.nextAiringEpisode.airingAt > now - 86400 * 3) {
-           // Episode aired in the last 3 days
            const title = m.title.english || m.title.romaji;
            const ep = m.nextAiringEpisode.episode - 1;
-           await createNotification(
-             `New Episode: ${title}`,
-             `Episode ${ep} is now available to watch!`,
-             `/watch?id=${m.id}&ep=${ep}&lang=dub`
-           );
+           await createNotification(`New Episode: ${title}`, `Episode ${ep} is now available to watch!`, `/watch?id=${m.id}&ep=${ep}&lang=dub`);
         }
       }
-    } catch(e) {
-      console.warn('Announcement check failed:', e);
-    }
+    } catch(e) {}
   }
 
   function tierFromScore(score) {
