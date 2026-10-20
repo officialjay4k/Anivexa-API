@@ -121,14 +121,14 @@ async function initProfile() {
 
   // Render Continue Watching (Using DB progress)
   const recent = watchlist
-    .filter(w => w.status === 'watching' && w.progress_time > 0 && w.progress_ep > 0)
+    .filter(w => w.status === 'watching' && Number(w.progress_time) > 0 && Number(w.progress_ep) > 0)
     .sort((a, b) => new Date(b.updated_at) - new Date(a.updated_at))
     .slice(0, 10);
 
   if (recent.length > 0) {
     continueContainer.hidden = false;
     continueRow.innerHTML = recent.map(item => {
-      const pct = item.duration > 0 ? Math.min(100, (item.progress_time / item.duration) * 100) : 0;
+      const pct = Number(item.duration) > 0 ? Math.min(100, (Number(item.progress_time) / Number(item.duration)) * 100) : 0;
       return `
         <a href="/watch?id=${item.anilist_id}&ep=${item.progress_ep}&lang=dub" class="profile-continue-card">
           <div class="profile-continue-card__thumb">
