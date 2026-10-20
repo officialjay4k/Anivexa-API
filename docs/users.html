@@ -1,0 +1,44 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Users — Cloud Hub</title>
+  <link rel="icon" type="image/png" href="/favicon.png">
+  <link rel="apple-touch-icon" href="/apple-touch-icon.png">
+  <link rel="stylesheet" href="/shared.css">
+  <link rel="stylesheet" href="/users.css">
+</head>
+<body>
+
+  <div id="ch-header-mount"></div>
+
+  <main class="users-main">
+    <div class="ch-container">
+      
+      <header class="users-hero">
+        <h1 class="users-title">Community</h1>
+        <p class="users-sub">Discover and connect with other anime fans on Cloud Hub.</p>
+        
+        <div class="users-search-bar">
+          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="11" r="7"></circle><line x1="21" y1="21" x2="16.65" y2="16.65"></line></svg>
+          <input type="text" id="userSearchInput" placeholder="Search by username..." autocomplete="off">
+        </div>
+      </header>
+
+      <div class="users-grid" id="usersGrid">
+        <div class="users-loading">Loading users…</div>
+      </div>
+
+    </div>
+  </main>
+
+  <div id="ch-footer-mount"></div>
+
+  <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.45.0/dist/umd/supabase.min.js"></script>
+  <script src="/supabase-config.js"></script>
+  <script src="/shared.js"></script>
+  <script src="/auth.js"></script>
+  <script src="/users.js"></script>
+</body>
+</html>
