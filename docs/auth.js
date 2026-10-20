@@ -58,10 +58,8 @@ const chAuth = (() => {
     if (heartbeatInterval) clearInterval(heartbeatInterval);
     if (!cachedUser) return;
 
-    // Send heartbeat immediately
     sb.from('profiles').update({ last_seen: new Date().toISOString() }).eq('id', cachedUser.id).then(() => {});
 
-    // Ping every 60 seconds
     heartbeatInterval = setInterval(() => {
       if (cachedUser) {
         sb.from('profiles').update({ last_seen: new Date().toISOString() }).eq('id', cachedUser.id).then(() => {});
@@ -74,11 +72,8 @@ const chAuth = (() => {
     cachedUser = session?.user || null;
     cachedProfile = cachedUser ? await fetchProfile(cachedUser.id) : null;
     
-    if (cachedUser) {
-      startHeartbeat();
-    } else {
-      if (heartbeatInterval) clearInterval(heartbeatInterval);
-    }
+    if (cachedUser) startHeartbeat();
+    else if (heartbeatInterval) clearInterval(heartbeatInterval);
 
     emit();
     return { user: cachedUser, profile: cachedProfile };
@@ -91,25 +86,21 @@ const chAuth = (() => {
 
   async function signUp(email, password, username) {
     const clean = String(username || '').trim();
-    if (!USERNAME_RE.test(clean)) {
-      return { ok: false, error: 'Username must be 3–20 chars: letters, numbers, dots, underscores.' };
-    }
+    if (!USERNAME_RE.test(clean)) return { ok: false, error: 'Username must be 3–20 chars: letters, numbers, dots, underscores.' };
+    
     const { data: taken, error: tErr } = await sb.rpc('username_taken', { name: clean });
     if (tErr) return { ok: false, error: 'Could not check username: ' + tErr.message };
     if (taken) return { ok: false, error: 'That username is already taken.' };
 
     const { data, error } = await sb.auth.signUp({
-      email,
-      password,
+      email, password,
       options: { data: { username: clean, display_name: clean } }
     });
     if (error) return { ok: false, error: error.message };
     const user = data.user;
     if (!user) return { ok: false, error: 'Signup succeeded but no user returned.' };
 
-    if (!data.session) {
-      return { ok: true, needsEmailConfirm: true, user: user, profile: null, message: 'Check your email.' };
-    }
+    if (!data.session) return { ok: true, needsEmailConfirm: true, user, profile: null, message: 'Check your email.' };
 
     let upErr = null;
     for (let i = 0; i < 2; i++) {
@@ -127,9 +118,7 @@ const chAuth = (() => {
   async function signIn(email, password) {
     const { error } = await sb.auth.signInWithPassword({ email, password });
     if (error) {
-      if (/email not confirmed/i.test(error.message)) {
-        return { ok: false, error: 'Please confirm your email first.', code: 'EMAIL_NOT_CONFIRMED' };
-      }
+      if (/email not confirmed/i.test(error.message)) return { ok: false, error: 'Please confirm your email first.', code: 'EMAIL_NOT_CONFIRMED' };
       return { ok: false, error: error.message };
     }
     await refresh();
@@ -146,9 +135,7 @@ const chAuth = (() => {
   }
 
   async function signOut() {
-    if (cachedUser) {
-      await sb.from('profiles').update({ last_seen: new Date(0).toISOString() }).eq('id', cachedUser.id);
-    }
+    if (cachedUser) await sb.from('profiles').update({ last_seen: new Date(0).toISOString() }).eq('id', cachedUser.id);
     await sb.auth.signOut();
     cachedUser = null;
     cachedProfile = null;
@@ -249,18 +236,10 @@ const chAuth = (() => {
   async function createNotification(title, message, link) {
     if (!cachedUser) return;
     const oneDayAgo = new Date(Date.now() - 86400000).toISOString();
-    const { data: existing } = await sb.from('notifications')
-      .select('id')
-      .eq('user_id', cachedUser.id)
-      .eq('title', title)
-      .gte('created_at', oneDayAgo)
-      .limit(1);
-      
+    const { data: existing } = await sb.from('notifications').select('id').eq('user_id', cachedUser.id).eq('title', title).gte('created_at', oneDayAgo).limit(1);
     if (existing && existing.length > 0) return;
 
-    await sb.from('notifications').insert({
-      user_id: cachedUser.id, title: title, message: message, link: link, read: false
-    });
+    await sb.from('notifications').insert({ user_id: cachedUser.id, title, message, link, read: false });
   }
 
   async function checkWatchlistAnnouncements() {
@@ -271,22 +250,8 @@ const chAuth = (() => {
       if (!watching.length) return;
 
       const ids = watching.map(w => w.anilist_id);
-      const query = `
-        query ($ids: [Int]) {
-          Page(page: 1, perPage: 50) {
-            media(id_in: $ids, type: ANIME) {
-              id title { english romaji }
-              nextAiringEpisode { episode airingAt }
-            }
-          }
-        }
-      `;
-      
-      const res = await fetch('https://graphql.anilist.co', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ query, variables: { ids } })
-      });
+      const query = `query ($ids: [Int]) { Page(page: 1, perPage: 50) { media(id_in: $ids, type: ANIME) { id title { english romaji } nextAiringEpisode { episode airingAt } } } }`;
+      const res = await fetch('https://graphql.anilist.co', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ query, variables: { ids } }) });
       const json = await res.json();
       const media = json.data?.Page?.media || [];
       const now = Math.floor(Date.now() / 1000);
@@ -330,12 +295,7 @@ const chAuth = (() => {
     } catch (e) {}
     const score = Math.round(finished * 10 + rated * 3 + watchHours * 2);
     const tier = tierFromScore(score);
-    const { error } = await sb.from('stats').upsert({
-      user_id: cachedUser.id,
-      finished, watching, watch_later, dropped, rated,
-      watch_hours: watchHours, score: score, tier: tier
-    });
-    if (error) console.warn('[stats] upsert failed:', error.message);
+    await sb.from('stats').upsert({ user_id: cachedUser.id, finished, watching, watch_later, dropped, rated, watch_hours: watchHours, score, tier });
     return { finished, watching, watch_later, dropped, rated, watch_hours: watchHours, score, tier };
   }
 
@@ -348,7 +308,9 @@ const chAuth = (() => {
       image: entry.image || null,
       status: entry.status || 'watching',
       progress_ep: entry.progressEp || 0,
-      score: entry.score || null
+      score: entry.score || null,
+      progress_time: entry.progressTime || 0,
+      duration: entry.duration || 0
     };
     const { error } = await sb.from('watchlist').upsert(row, { onConflict: 'user_id,anilist_id' });
     if (error) return { ok: false, error: error.message };
