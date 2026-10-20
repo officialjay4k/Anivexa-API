@@ -221,6 +221,7 @@ async function mountHeader() {
         </form>
         <nav class="ch-header__nav">
           <a href="/home" class="ch-header__link${active('/home')}">Home</a>
+          <a href="/users" class="ch-header__link${active('/users')}">Community</a>
           ${dashLink}
           ${navRight}
         </nav>
