@@ -330,6 +330,8 @@
     }
 
     $('searchResults').appendChild(fragment);
+    
+    // THE FIX: Calling the global function
     if (typeof window.detectTitleOverflow === 'function') {
       try { window.detectTitleOverflow($('searchResults')); } catch (e) {}
     }
