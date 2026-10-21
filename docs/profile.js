@@ -17,44 +17,6 @@ function formatDate(isoString) {
   return `Joined ${months[d.getMonth()]} ${d.getFullYear()}`;
 }
 
-// Calculate Rank Progress
-function updateRankProgress(score) {
-  const tiers = [
-    { name: 'Chunin', min: 0 },
-    { name: 'Jonin', min: 75 },
-    { name: 'Elite', min: 250 },
-    { name: 'Anbu Black Ops', min: 750 },
-    { name: 'Hokage', min: 2000 },
-    { name: 'Akatsuki', min: 5000 }
-  ];
-
-  let currentTier = tiers[0];
-  let nextTier = tiers[1];
-
-  for (let i = 0; i < tiers.length; i++) {
-    if (score >= tiers[i].min) {
-      currentTier = tiers[i];
-      nextTier = tiers[i + 1] || null;
-    }
-  }
-
-  const fill = $('rankFill');
-  const text = $('rankText');
-
-  if (!nextTier) {
-    // Max rank
-    fill.style.width = '100%';
-    text.textContent = 'MAX RANK';
-  } else {
-    const range = nextTier.min - currentTier.min;
-    const progress = score - currentTier.min;
-    const pct = Math.min(100, Math.max(0, (progress / range) * 100));
-    
-    fill.style.width = `${pct}%`;
-    text.textContent = `${score} / ${nextTier.min} Score`;
-  }
-}
-
 async function initProfile() {
   const username = getUsernameFromUrl();
 
@@ -95,7 +57,10 @@ async function initProfile() {
     avatarEl.textContent = initial;
   }
 
-  if (profile.avatar_url) {
+  // Banner Logic: Use banner_url first, then avatar_url
+  if (profile.banner_url) {
+    $('profileBg').style.backgroundImage = `url('${profile.banner_url}')`;
+  } else if (profile.avatar_url) {
     $('profileBg').style.backgroundImage = `url('${profile.avatar_url}')`;
   }
 
@@ -123,11 +88,10 @@ async function initProfile() {
   
   stats = statsData;
 
-  // Tier & Rank Bar
+  // Tier
   const score = stats ? stats.score : 0;
   const tier = chAuth.tierFromScore(score);
   $('profileTier').innerHTML = `<span class="profile-tier__badge">${chEscapeHtml(tier)}</span>`;
-  updateRankProgress(score);
 
   // Render Stats Grid
   const statsGrid = $('profileStatsGrid');
@@ -158,7 +122,7 @@ async function initProfile() {
   const continueContainer = $('profileContinueSection');
   const continueRow = $('profileContinueRow');
 
-  // Render Continue Watching (Using DB progress)
+  // Render Continue Watching
   const recent = watchlist
     .filter(w => w.status === 'watching' && Number(w.progress_time) > 0 && Number(w.progress_ep) > 0)
     .sort((a, b) => new Date(b.updated_at) - new Date(a.updated_at))
@@ -217,7 +181,6 @@ async function initProfile() {
       if (items.length === 0) {
         html += `<div class="profile-wl-empty" style="margin-bottom: var(--s-4);">This user's ${group.label.toLowerCase()} list is empty.</div>`;
       } else {
-        // Show first 6 items
         const visibleItems = items.slice(0, 6);
         html += `<div class="profile-wl-grid">`;
         visibleItems.forEach(item => {
@@ -234,7 +197,6 @@ async function initProfile() {
         });
         html += `</div>`;
         
-        // Add "Show More" if there are more than 6
         if (items.length > 6) {
           html += `
             <div style="text-align:center; margin-top: 12px; margin-bottom: 24px;">
