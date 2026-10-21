@@ -34,6 +34,15 @@ function renderAvatar(profile) {
   }
 }
 
+function renderBanner(profile) {
+  const el = $('bannerPreview');
+  if (profile?.banner_url) {
+    el.style.backgroundImage = 'url(' + profile.banner_url + ')';
+  } else {
+    el.style.backgroundImage = '';
+  }
+}
+
 function renderAccount(profile, user) {
   $('accountUserId').textContent = profile?.user_id ? '#' + chAuth.formatUserId(profile.user_id) : '—';
   $('accountEmail').textContent = user?.email || '—';
@@ -45,6 +54,7 @@ function renderAccount(profile, user) {
 function renderProfileFields(profile) {
   currentProfile = profile;
   renderAvatar(profile);
+  renderBanner(profile);
   $('usernameInput').value = profile?.username || '';
   $('displayNameInput').value = profile?.display_name || '';
   $('bioInput').value = profile?.bio || '';
@@ -136,6 +146,36 @@ $('resetProfileBtn').addEventListener('click', () => {
   renderProfileFields(currentProfile);
 });
 
+// --- Banner Upload Logic ---
+$('bannerPreview').addEventListener('click', () => {
+  $('bannerFileInput').click();
+});
+
+$('bannerFileInput').addEventListener('change', async () => {
+  const file = $('bannerFileInput').files[0];
+  if (!file) return;
+
+  const preview = $('bannerPreview');
+  const oldBg = preview.style.backgroundImage;
+  preview.style.opacity = '0.5';
+  
+  const result = await chAuth.uploadBanner(file);
+  
+  preview.style.opacity = '1';
+  $('bannerFileInput').value = '';
+
+  if (!result.ok) {
+    preview.style.backgroundImage = oldBg;
+    alert('Failed to upload banner: ' + result.error);
+    return;
+  }
+
+  currentProfile.banner_url = result.url;
+  renderBanner(currentProfile);
+  if (typeof showToast === 'function') showToast('Banner updated!');
+});
+
+// --- Avatar Upload Logic ---
 let usernameCheckTimer = null;
 function setUsernameStatus(state, text) {
   const el = $('usernameStatus');
