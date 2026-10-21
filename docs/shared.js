@@ -69,6 +69,34 @@ function chResumeInfo(anilistId) {
   return { label: 'Resume Watching', href, isResume: true, isRewatch: false };
 }
 
+// ---------- shared UI logic ----------
+function detectTitleOverflow(root) {
+  if (!root) return;
+  requestAnimationFrame(() => {
+    root.querySelectorAll('.home-card__title-text').forEach(el => {
+      el.classList.remove('is-overflowing');
+      el.style.removeProperty('--overflow-px');
+      el.style.removeProperty('--overflow-duration');
+      const saved = { ws: el.style.whiteSpace, disp: el.style.display, lc: el.style.webkitLineClamp, bo: el.style.webkitBoxOrient, pos: el.style.position, w: el.style.width, right: el.style.right };
+      el.style.whiteSpace = 'nowrap'; el.style.display = 'block';
+      el.style.webkitLineClamp = 'unset'; el.style.webkitBoxOrient = 'unset';
+      el.style.position = 'static'; el.style.width = '100%'; el.style.right = 'auto';
+      const fullWidth = el.scrollWidth;
+      const visibleWidth = el.parentElement?.clientWidth || el.clientWidth;
+      el.style.whiteSpace = saved.ws; el.style.display = saved.disp;
+      el.style.webkitLineClamp = saved.lc; el.style.webkitBoxOrient = saved.bo;
+      el.style.position = saved.pos; el.style.width = saved.w; el.style.right = saved.right;
+      if (fullWidth > visibleWidth + 4) {
+        const overflow = fullWidth - visibleWidth + 12;
+        const duration = Math.max(4, overflow / 30);
+        el.classList.add('is-overflowing');
+        el.style.setProperty('--overflow-px', `-${overflow}px`);
+        el.style.setProperty('--overflow-duration', `${duration}s`);
+      }
+    });
+  });
+}
+
 // ---------- page loader ----------
 let chPageLoaderEl = null;
 let chPageReadyFired = false;
@@ -132,7 +160,6 @@ function openNotificationModal(notif) {
   `;
   document.body.appendChild(modal);
 
-  // Slight delay for animation
   requestAnimationFrame(() => modal.classList.add('is-open'));
 
   const closeModal = () => {
@@ -324,7 +351,6 @@ async function mountHeader() {
       });
     }
 
-    // Attach click events to open modal
     notifMenu.querySelectorAll('.ch-notif-item').forEach(item => {
       item.addEventListener('click', async (e) => {
         e.preventDefault();
@@ -522,6 +548,7 @@ window.chResumeInfo = chResumeInfo;
 window.mountInlineReport = mountInlineReport;
 window.openReportModal = openReportModal;
 window.chPageReady = chPageReady;
+window.detectTitleOverflow = detectTitleOverflow;
 
 document.addEventListener('DOMContentLoaded', async () => {
   if (window.chAuth) {
