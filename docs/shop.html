@@ -1,0 +1,51 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Shop — Cloud Hub</title>
+  <link rel="icon" type="image/png" href="/favicon.png">
+  <link rel="stylesheet" href="/shared.css">
+  <link rel="stylesheet" href="/shop.css">
+</head>
+<body>
+  <div id="ch-header-mount"></div>
+  <main class="shop-main">
+    <div class="ch-container">
+      <header class="shop-hero">
+        <div class="shop-hero__badge">COMING SOON</div>
+        <h1 class="shop-hero__title">Cloud Hub Shop</h1>
+        <p class="shop-hero__sub">Spend your watch points on profile frames, badges, and cosmetics.</p>
+        <div class="shop-hero__points" id="shopPoints">✨ 0 Points</div>
+      </header>
+      <div class="shop-grid">
+        <div class="shop-card">
+          <div class="shop-card__preview"><svg width="80" height="80" viewBox="0 0 100 100"><circle cx="50" cy="50" r="46" fill="none" stroke="var(--ch-red-bright)" stroke-width="3" stroke-dasharray="4 4"/></svg></div>
+          <h3 class="shop-card__name">Flame Frame</h3>
+          <div class="shop-card__price">500 pts</div>
+          <button class="ch-btn ch-btn--quiet ch-btn--sm" disabled>Locked</button>
+        </div>
+        <div class="shop-card">
+          <div class="shop-card__preview"><svg width="80" height="80" viewBox="0 0 100 100"><circle cx="50" cy="50" r="46" fill="none" stroke="var(--ch-cream)" stroke-width="4"/></svg></div>
+          <h3 class="shop-card__name">Royal Cream</h3>
+          <div class="shop-card__price">750 pts</div>
+          <button class="ch-btn ch-btn--quiet ch-btn--sm" disabled>Locked</button>
+        </div>
+        <div class="shop-card">
+          <div class="shop-card__preview"><svg width="80" height="80" viewBox="0 0 100 100"><circle cx="50" cy="50" r="46" fill="none" stroke="var(--ch-green)" stroke-width="5"/></svg></div>
+          <h3 class="shop-card__name">Emerald Ring</h3>
+          <div class="shop-card__price">1000 pts</div>
+          <button class="ch-btn ch-btn--quiet ch-btn--sm" disabled>Locked</button>
+        </div>
+      </div>
+      <p class="shop-note">Shop is being built. Keep watching to earn points!</p>
+    </div>
+  </main>
+  <div id="ch-footer-mount"></div>
+  <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.45.0/dist/umd/supabase.min.js"></script>
+  <script src="/supabase-config.js"></script>
+  <script src="/shared.js"></script>
+  <script src="/auth.js"></script>
+  <script src="/shop.js"></script>
+</body>
+</html>
