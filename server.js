@@ -24,7 +24,9 @@ const PAGE_ROUTES = {
   "/user/dashboard": "dashboard.html",
   "/search":         "search.html",
   "/users":          "users.html",
-  "/admin":          "admin.html"
+  "/admin":          "admin.html",
+  "/friends": "friends.html",
+  "/shop":    "shop.html"
 };
 
 const MIME = {
