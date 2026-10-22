@@ -692,6 +692,33 @@
   cursor: not-allowed;
 }
 
+.ch-ss-share-list {
+  margin-top: 8px;
+  background: rgba(11, 5, 8, 0.98);
+  border: 1px solid var(--ch-border-hi);
+  border-radius: var(--r-sm);
+  max-height: 120px;
+  overflow-y: auto;
+}
+
+.ch-ss-share-friend {
+  display: block;
+  width: 100%;
+  text-align: left;
+  padding: 8px 12px;
+  font-size: 12px;
+  color: #fff;
+  border-bottom: 1px solid var(--ch-glass-stroke);
+  cursor: pointer;
+  transition: background 150ms;
+  background: none;
+  border-left: none;
+  border-right: none;
+  border-top: none;
+}
+.ch-ss-share-friend:last-child { border-bottom: none; }
+.ch-ss-share-friend:hover { background: rgba(179, 19, 31, 0.25); }
+
 .ch-ss-close {
   position: absolute;
   top: -8px;
