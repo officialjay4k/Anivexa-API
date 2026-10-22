@@ -35,6 +35,10 @@ let countdownTimer = null;
 let pendingServerJump = null;
 let playbackUnavailable = false;
 
+function megaplayUrl(id, ep, audio) {
+  return 'https://megaplay.buzz/stream/ani/' + id + '/' + ep + '/' + audio;
+}
+
 function parseParams() {
   const p = new URLSearchParams(location.search);
   const langRaw = p.get('lang') || p.get('audio') || 'dub';
@@ -480,6 +484,24 @@ function hidePlayerSkeleton() {
   skel.style.display = 'none';
 }
 
+function showIframe(url) {
+  try { chPlayer.unmount(); } catch (e) {}
+  playerApi = null;
+  hidePlayerSkeleton();
+  const container = document.getElementById('watchPlayer');
+  if (!container) return;
+  container.querySelectorAll('.artplayer-app, iframe, .watch-unavailable').forEach(function (el) { el.remove(); });
+  const badge = document.getElementById('watchBadge');
+  if (badge) { badge.textContent = 'Iframe fallback'; badge.className = 'watch-player-badge iframe'; }
+
+  const iframe = document.createElement('iframe');
+  iframe.src = url;
+  iframe.setAttribute('allow', 'autoplay; encrypted-media; picture-in-picture; fullscreen');
+  iframe.setAttribute('allowfullscreen', 'true');
+  iframe.setAttribute('referrerpolicy', 'origin');
+  container.appendChild(iframe);
+}
+
 function showUnavailable(reason) {
   playbackUnavailable = true;
   hidePlayerSkeleton();
@@ -574,6 +596,7 @@ function handleServerClick(audio, serverName) {
     return;
   }
 
+  playbackUnavailable = false;
   if (serverName === 'HD-2') { saveNow(); chPipeline.forceFailover(); } 
   else { saveNow(); chPipeline.restart(); }
 }
@@ -659,8 +682,10 @@ chPipeline.on('status', function (payload) {
   console.log(lvl + ' ' + payload.message);
 });
 
-chPipeline.on('exhausted', function () {
+chPipeline.on('exhausted', function (data) {
   if (playbackUnavailable) return;
+  const url = data && data.iframeUrl;
+  if (url) { showIframe(url); return; }
   showUnavailable('No stream could be loaded for this episode.');
 });
 
@@ -747,7 +772,7 @@ async function initWatch() {
   audioAvail = { sub: fetched.hasSub, dub: fetched.hasDub };
 
   if (!audioAvail.sub && !audioAvail.dub) {
-    showUnavailable('No streams are available for this title yet.');
+    showIframe(megaplayUrl(anilistId, currentEp, currentAudio));
     document.getElementById('watchEpList').innerHTML = '<div class="watch-ep-loading">Not available.</div>';
     document.getElementById('watchEpCount').textContent = '—';
     renderSimilar(media).catch(function () {});
