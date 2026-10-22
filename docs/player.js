@@ -2,17 +2,6 @@
 // Cloud Hub — player.js
 // ============================================================
 
-// GLOBAL DOWNLOAD BLOCKER
-document.addEventListener('click', function(e) {
-  const a = e.target.closest('a');
-  if (a && (a.hasAttribute('download') || a.href.startsWith('data:image'))) {
-    e.preventDefault();
-    e.stopPropagation();
-    console.log('[Block] Download blocked.');
-    return false;
-  }
-}, true);
-
 const chPlayer = (function () {
   const FALLBACK_FONT_URL = 'https://cdn.jsdelivr.net/fontsource/fonts/roboto@latest/latin-400-normal.woff2';
   const MAX_UNIQUE_FRAGMENT_ERRORS = 3;
@@ -41,6 +30,18 @@ const chPlayer = (function () {
   const ICON_FWD = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 40 40" style="width:32px;height:32px;display:block;"><path d="M26 8 L34 16 L26 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"/><path d="M34 16 H18 A10 10 0 1 0 28 26" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round" opacity="0.55"/><text x="16" y="27" text-anchor="middle" font-size="15" font-weight="900" font-family="system-ui, sans-serif" fill="currentColor" stroke="none">5</text></svg>`;
   const ICON_CAMERA = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M23 19a2 2 0 0 1-2 2H3a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h4l2-3h6l2 3h4a2 2 0 0 1 2 2z"></path><circle cx="12" cy="13" r="4"></circle></svg>`;
 
+  function base64ToBlob(base64) {
+    const parts = base64.split(';base64,');
+    const contentType = parts[0].split(':')[1];
+    const raw = window.atob(parts[1]);
+    const rawLength = raw.length;
+    const uInt8Array = new Uint8Array(rawLength);
+    for (let i = 0; i < rawLength; ++i) {
+      uInt8Array[i] = raw.charCodeAt(i);
+    }
+    return new Blob([uInt8Array], { type: contentType });
+  }
+
   function showScreenshotUI(base64) {
     let ui = document.getElementById('ch-screenshot-ui');
     if (ui) ui.remove();
@@ -61,11 +62,12 @@ const chPlayer = (function () {
             <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M19 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11l5 5v11a2 2 0 0 1-2 2z"/><polyline points="17 21 17 13 7 13 7 21"/><polyline points="7 3 7 8 15 8"/></svg>
             Save
           </button>
-          <button type="button" class="ch-ss-btn" disabled title="Coming soon">
+          <button type="button" class="ch-ss-btn" id="ch-ss-share">
             <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="18" cy="5" r="3"/><circle cx="6" cy="12" r="3"/><circle cx="18" cy="19" r="3"/><line x1="8.59" y1="13.51" x2="15.42" y2="17.49"/><line x1="15.41" y1="6.51" x2="8.59" y2="10.49"/></svg>
             Share
           </button>
         </div>
+        <div class="ch-ss-share-list" id="ch-ss-share-list" style="display:none;"></div>
         <button class="ch-ss-close" id="ch-ss-close">&times;</button>
       </div>
     `;
@@ -88,7 +90,66 @@ const chPlayer = (function () {
     };
     
     document.getElementById('ch-ss-save').onclick = () => {
-      if (typeof showToast === 'function') showToast('Saving to CloudHub profile coming soon!');
+      const a = document.createElement('a');
+      a.href = base64;
+      a.download = `cloudhub-${Date.now()}.png`;
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+    };
+
+    const shareBtn = document.getElementById('ch-ss-share');
+    const shareList = document.getElementById('ch-ss-share-list');
+    
+    shareBtn.onclick = async () => {
+      if (shareList.style.display === 'block') {
+        shareList.style.display = 'none';
+        return;
+      }
+      
+      shareList.innerHTML = '<div style="padding:12px;text-align:center;font-size:12px;color:var(--ch-fg-muted);">Loading friends...</div>';
+      shareList.style.display = 'block';
+      
+      if (!window.chAuth || !chAuth.user) {
+        shareList.innerHTML = '<div style="padding:12px;text-align:center;font-size:12px;color:var(--ch-fg-muted);">Sign in to share.</div>';
+        return;
+      }
+      
+      const friends = await chAuth.getFriends();
+      if (!friends.length) {
+        shareList.innerHTML = '<div style="padding:12px;text-align:center;font-size:12px;color:var(--ch-fg-muted);">No friends yet.</div>';
+        return;
+      }
+      
+      shareList.innerHTML = friends.map(f => {
+        const p = f.friend;
+        if (!p) return '';
+        return `<button class="ch-ss-share-friend" data-id="${p.id}">${chEscapeHtml(p.username)}</button>`;
+      }).join('');
+
+      shareList.querySelectorAll('.ch-ss-share-friend').forEach(btn => {
+        btn.onclick = async () => {
+          btn.textContent = 'Sending...';
+          btn.disabled = true;
+          
+          try {
+            const blob = base64ToBlob(base64);
+            const path = chAuth.user.id + '/screenshot-' + Date.now() + '.png';
+            const { error } = await chAuth.client.storage.from('avatars').upload(path, blob, { upsert: true });
+            if (error) throw error;
+            
+            const { data: pub } = chAuth.client.storage.from('avatars').getPublicUrl(path);
+            await chAuth.sendMessage(btn.dataset.id, pub.publicUrl);
+            
+            if (typeof showToast === 'function') showToast('Screenshot sent!');
+            ui.remove();
+          } catch (err) {
+            console.error(err);
+            if (typeof showToast === 'function') showToast('Failed to send.');
+            btn.textContent = 'Error';
+          }
+        };
+      });
     };
 
     document.getElementById('ch-ss-close').onclick = () => {
