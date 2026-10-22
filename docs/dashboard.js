@@ -23,6 +23,9 @@ function renderProfile(profile, user) {
   $('dashUsername').textContent = profile?.username || 'User';
   $('dashDisplayName').textContent = profile?.display_name ? `Welcome back, ${profile.display_name}` : 'Welcome back';
   $('dashPublicProfileLink').href = `/user/${profile?.username || ''}`;
+  
+  const pointsEl = $('dashPoints');
+  if (pointsEl) pointsEl.textContent = '✨ ' + (profile?.points || 0) + ' Points';
 }
 
 function renderCharts(stats) {
@@ -58,7 +61,7 @@ function renderCharts(stats) {
 
   const maxVal = Math.max(1, items[0].val);
   podium.innerHTML = items.map((item, i) => {
-    const height = (item.val / maxVal) * 80 + 10; // min 10px height
+    const height = (item.val / maxVal) * 80 + 10;
     return `
       <div class="podium-bar" style="height: ${height}px; background: linear-gradient(180deg, ${item.color}, var(--ch-bg-2));">
         <div class="podium-bar__val">${item.val}</div>
@@ -231,14 +234,16 @@ async function initDashboard() {
 
   renderProfile(currentProfile, currentUser);
 
-  // Fetch Stats
-  const { data: statsData } = await chAuth.client
-    .from('stats')
-    .select('*')
-    .eq('user_id', currentUser.id)
-    .maybeSingle();
-  
+  // Fetch Stats (Using the recompute function to ensure fresh data and points)
+  const statsData = await chAuth.recomputeStats();
   renderCharts(statsData);
+
+  // Refresh profile to get updated points
+  const updatedSession = await chAuth.refresh();
+  if (updatedSession.profile) {
+    currentProfile = updatedSession.profile;
+    renderProfile(currentProfile, currentUser);
+  }
 
   // Fetch Watchlist
   watchlistData = await chAuth.fetchWatchlist(currentUser.id);
