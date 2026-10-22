@@ -1,4 +1,25 @@
-/* ============================================================
+.users-main { padding-block: var(--s-6) var(--s-8); min-height: 100vh; }
+.users-hero { text-align: center; margin-bottom: var(--s-6); }
+.users-title { font-size: 36px; font-weight: 900; color: #fff; margin-bottom: 4px; }
+.users-sub { font-size: 15px; color: var(--ch-fg-muted); margin-bottom: var(--s-5); }
+.users-search-bar { display: flex; align-items: center; max-width: 480px; margin: 0 auto; background: var(--ch-bg-2); border: 1px solid var(--ch-border-soft); border-radius: var(--r-pill); padding: 4px 16px; transition: all 150ms; }
+.users-search-bar:focus-within { border-color: var(--ch-red-bright); box-shadow: 0 0 0 3px var(--ch-red-faint); }
+.users-search-bar svg { color: var(--ch-fg-muted); flex-shrink: 0; }
+.users-search-bar input { flex: 1; background: transparent; border: none; padding: 12px 14px; color: #fff; font-size: 14px; outline: none; font-family: inherit; }
+.users-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(240px, 1fr)); gap: var(--s-4); }
+.users-loading, .users-empty { grid-column: 1 / -1; text-align: center; padding: var(--s-7); color: var(--ch-fg-muted); font-size: 15px; }
+.user-card { display: flex; align-items: center; gap: var(--s-4); padding: var(--s-4); background: var(--ch-glass); border: 1px solid var(--ch-glass-stroke); border-radius: var(--r-lg); text-decoration: none; color: inherit; backdrop-filter: blur(14px); transition: all 200ms; }
+.user-card:hover { transform: translateY(-3px); border-color: var(--ch-red-bright); box-shadow: 0 8px 24px rgba(0,0,0,0.5), 0 0 20px var(--ch-red-glow); }
+.user-card__avatar-wrap { position: relative; width: 56px; height: 56px; flex-shrink: 0; }
+.user-card__avatar { width: 100%; height: 100%; border-radius: 50%; background: var(--ch-bg-3); border: 2px solid var(--ch-border-soft); background-size: cover; background-position: center; display: flex; align-items: center; justify-content: center; font-size: 22px; font-weight: 900; color: #fff; }
+.user-card:hover .user-card__avatar { border-color: var(--ch-red-bright); }
+.user-card__status { position: absolute; bottom: 0; right: 0; width: 14px; height: 14px; border-radius: 50%; border: 2px solid var(--ch-bg); background: #6e4448; }
+.user-card__status.is-online { background: var(--ch-green); box-shadow: 0 0 10px rgba(124, 191, 63, 0.6); animation: pulse-online 2s infinite; }
+@keyframes pulse-online { 0%, 100% { opacity: 1; } 50% { opacity: 0.6; } }
+.user-card__info { min-width: 0; flex: 1; }
+.user-card__name { font-size: 16px; font-weight: 800; color: #fff; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; margin-bottom: 2px; }
+.user-card__handle { font-size: 13px; color: var(--ch-fg-muted); font-weight: 600; }
+.user-card__lastseen { font-size: 11px; color: var(--ch-fg-subtle); margin-top: 2px; }/* ============================================================
    Cloud Hub — users.css
    ============================================================ */
 
