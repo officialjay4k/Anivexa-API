@@ -13,6 +13,10 @@ const chPipeline = (function () {
     'aniwaves', 'anibd', 'reanime', 'anizone', 'kaa'
   ];
 
+  function megaplayUrl(anilistId, ep, audio) {
+    return 'https://megaplay.buzz/stream/ani/' + anilistId + '/' + ep + '/' + audio;
+  }
+
   const events = new EventTarget();
   function on(type, handler) { events.addEventListener(type, function (e) { handler(e.detail); }); }
   function emit(type, detail) { events.dispatchEvent(new CustomEvent(type, { detail: detail })); }
@@ -51,6 +55,15 @@ const chPipeline = (function () {
     if (stream.type === 'mp4') return true;
     if (stream.type === 'hls') return false;
     return /\.mp4(\?|$)/i.test(url);
+  }
+
+  function isEmbed(stream) {
+    if (!stream || !stream.url) return false;
+    if (stream.type === 'embed') return true;
+    // Catch embed-style URLs even if a provider mislabels them.
+    if (/\/embed\//i.test(stream.url)) return true;
+    if (/\/e\/[a-z0-9]+/i.test(stream.url)) return true;
+    return false;
   }
 
   function normalizeStreams(watchData) {
@@ -137,6 +150,8 @@ const chPipeline = (function () {
     const hls = [], mp4 = [];
     streams.forEach(function (s, i) {
       if (!s.url) return;
+      // Embeds are HTML pages, not video. Never push them through HLS/MP4.
+      if (isEmbed(s)) return;
       const item = { provider: provider, stream: s, watchData: watchData, isMp4: isMp4(s), streamIndex: i };
       if (item.isMp4) mp4.push(item); else hls.push(item);
     });
@@ -195,6 +210,12 @@ const chPipeline = (function () {
     }
   }
 
+  function exhaust() {
+    const url = megaplayUrl(S.anilistId, S.ep, S.audio);
+    log('All attempts exhausted — iframe fallback: ' + url, 'error');
+    emit('exhausted', { iframeUrl: url });
+  }
+
   async function tryWorkIndex(index, gen) {
     if (gen == null) gen = S.gen;
     if (gen !== S.gen) return;
@@ -216,8 +237,7 @@ const chPipeline = (function () {
 
     if (gen !== S.gen) return;
     if (index >= S.workList.length) {
-      log('All ' + S.workList.length + ' attempts exhausted', 'error');
-      emit('exhausted', {});
+      exhaust();
       return;
     }
 
@@ -301,8 +321,7 @@ const chPipeline = (function () {
 
     if (myGen !== S.gen) return;
     if (!firstOk) {
-      log('No streams from any provider', 'error');
-      emit('exhausted', {});
+      exhaust();
       return;
     }
 
@@ -321,7 +340,6 @@ const chPipeline = (function () {
     tryWorkIndex(S.workIndex + 1, gen);
   }
 
-  // NEW: restart the pipeline from scratch (same id, ep, audio)
   function restart() {
     if (!S.anilistId) return;
     start({ anilistId: S.anilistId, ep: S.ep, audio: S.audio });
