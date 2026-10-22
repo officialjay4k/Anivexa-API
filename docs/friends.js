@@ -52,11 +52,20 @@ async function loadMessages() {
   if (!currentFriend) return;
   const msgs = await chAuth.getMessages(currentFriend.id);
   const box = $('chatMessages');
+  
   box.innerHTML = msgs.map(m => {
     const isMe = m.sender_id === chAuth.user.id;
     const time = new Date(m.created_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
-    return `<div class="msg msg--${isMe ? 'me' : 'them'}">${chEscapeHtml(m.content)}<span class="msg__time">${time}</span></div>`;
+    
+    // Check if message is an image URL
+    const isImg = m.content.match(/^https?:\/\/.*\.(png|jpg|jpeg|webp)$/i);
+    const contentHtml = isImg 
+      ? `<img src="${chEscapeHtml(m.content)}" class="msg-img" alt="Shared Screenshot" loading="lazy">`
+      : chEscapeHtml(m.content);
+
+    return `<div class="msg msg--${isMe ? 'me' : 'them'}">${contentHtml}<span class="msg__time">${time}</span></div>`;
   }).join('');
+  
   box.scrollTop = box.scrollHeight;
 }
 
