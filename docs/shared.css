@@ -772,3 +772,33 @@ h1, h2, h3, h4, h5, h6 {
 .ch-notif-view-actions {
   display: flex; flex-direction: column; gap: var(--s-2);
 }
+
+/* Shop Icon */
+.ch-shop-icon {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 8px 14px;
+  background: rgba(222, 208, 179, 0.06);
+  border: 1px solid var(--ch-border-soft);
+  border-radius: var(--r-pill);
+  color: var(--ch-cream);
+  font-size: 12px;
+  font-weight: 800;
+  text-decoration: none;
+  transition: all 150ms var(--ease);
+  margin-right: 8px;
+}
+.ch-shop-icon:hover {
+  background: rgba(222, 208, 179, 0.12);
+  border-color: var(--ch-cream-soft);
+  color: #fff;
+  transform: translateY(-1px);
+}
+.ch-shop-pts {
+  color: #fff;
+  font-variant-numeric: tabular-nums;
+}
+
+/* Notification Type Colors */
+.ch-notif-item.is-warning { border-left: 2px solid #f59e0b; }
