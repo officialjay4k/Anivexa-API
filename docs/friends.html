@@ -1,0 +1,43 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Friends — Cloud Hub</title>
+  <link rel="icon" type="image/png" href="/favicon.png">
+  <link rel="stylesheet" href="/shared.css">
+  <link rel="stylesheet" href="/friends.css">
+</head>
+<body>
+  <div id="ch-header-mount"></div>
+  <main class="friends-main">
+    <div class="ch-container friends-layout">
+      <aside class="friends-sidebar">
+        <h2 class="friends-sidebar__title">Friends</h2>
+        <div id="friendRequestsSection" hidden>
+          <h3 class="friends-group-title">Friend Requests</h3>
+          <div id="friendRequestsList"></div>
+        </div>
+        <h3 class="friends-group-title">All Friends</h3>
+        <div id="friendsList"><div class="friends-empty">No friends yet.</div></div>
+      </aside>
+      <section class="friends-chat">
+        <div class="friends-chat__header" id="chatHeader">
+          <div class="friends-chat__placeholder">Select a friend to start chatting</div>
+        </div>
+        <div class="friends-chat__messages" id="chatMessages"></div>
+        <div class="friends-chat__input-wrap" id="chatInputWrap" style="display:none;">
+          <input type="text" id="chatInput" placeholder="Type a message..." autocomplete="off">
+          <button class="ch-btn ch-btn--primary" id="chatSendBtn">Send</button>
+        </div>
+      </section>
+    </div>
+  </main>
+  <div id="ch-footer-mount"></div>
+  <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.45.0/dist/umd/supabase.min.js"></script>
+  <script src="/supabase-config.js"></script>
+  <script src="/shared.js"></script>
+  <script src="/auth.js"></script>
+  <script src="/friends.js"></script>
+</body>
+</html>
