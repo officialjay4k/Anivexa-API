@@ -22,10 +22,20 @@
 .friends-chat__placeholder { font-size: 13px; color: var(--ch-fg-muted); font-style: italic; }
 .friends-chat__name { font-size: 15px; font-weight: 800; color: #fff; }
 .friends-chat__messages { flex: 1; overflow-y: auto; padding: var(--s-4); display: flex; flex-direction: column; gap: 8px; }
-.msg { max-width: 70%; padding: 8px 12px; border-radius: 14px; font-size: 14px; line-height: 1.4; word-wrap: break-word; }
+.msg { max-width: 70%; padding: 8px 12px; border-radius: 14px; font-size: 14px; line-height: 1.4; word-wrap: break-word; display: flex; flex-direction: column; }
 .msg--me { align-self: flex-end; background: var(--ch-red); color: #fff; border-bottom-right-radius: 4px; }
 .msg--them { align-self: flex-start; background: var(--ch-bg-3); color: #fff; border-bottom-left-radius: 4px; }
-.msg__time { font-size: 9px; opacity: 0.6; margin-top: 2px; display: block; }
+.msg__time { font-size: 9px; opacity: 0.6; margin-top: 4px; align-self: flex-end; }
+
+/* Shared Image Styling */
+.msg-img {
+  max-width: 100%;
+  border-radius: 8px;
+  margin-bottom: 4px;
+  display: block;
+  box-shadow: 0 4px 12px rgba(0,0,0,0.3);
+}
+
 .friends-chat__input-wrap { display: flex; gap: 8px; padding: var(--s-3); border-top: 1px solid var(--ch-glass-stroke); background: rgba(20,8,12,0.5); }
 .friends-chat__input-wrap input { flex: 1; padding: 12px 14px; background: var(--ch-bg-2); border: 1px solid var(--ch-border-soft); border-radius: var(--r-md); color: #fff; font-size: 14px; font-family: inherit; outline: none; }
 .friends-chat__input-wrap input:focus { border-color: var(--ch-red-bright); }
