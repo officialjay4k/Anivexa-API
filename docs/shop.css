@@ -1,0 +1,12 @@
+.shop-main { padding-block: var(--s-6) var(--s-8); min-height: 70vh; }
+.shop-hero { text-align: center; margin-bottom: var(--s-7); }
+.shop-hero__badge { display: inline-block; padding: 4px 14px; background: rgba(245,158,11,0.15); border: 1px solid #f59e0b; border-radius: var(--r-pill); font-size: 11px; font-weight: 900; letter-spacing: 0.15em; color: #f59e0b; margin-bottom: 16px; }
+.shop-hero__title { font-size: 40px; font-weight: 900; color: #fff; margin-bottom: 8px; }
+.shop-hero__sub { font-size: 15px; color: var(--ch-fg-muted); margin-bottom: 20px; }
+.shop-hero__points { display: inline-block; font-size: 18px; font-weight: 900; color: var(--ch-cream); padding: 8px 20px; border-radius: var(--r-pill); background: rgba(222,208,179,0.1); border: 1px solid var(--ch-cream-soft); }
+.shop-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(200px, 1fr)); gap: var(--s-4); margin-bottom: var(--s-5); }
+.shop-card { background: var(--ch-glass); border: 1px solid var(--ch-glass-stroke); border-radius: var(--r-lg); padding: var(--s-5); text-align: center; display: flex; flex-direction: column; align-items: center; gap: 12px; }
+.shop-card__preview { width: 120px; height: 120px; display: flex; align-items: center; justify-content: center; background: rgba(20,8,12,0.5); border-radius: var(--r-md); }
+.shop-card__name { font-size: 15px; font-weight: 800; color: #fff; }
+.shop-card__price { font-size: 14px; font-weight: 800; color: var(--ch-cream); }
+.shop-note { text-align: center; font-size: 12px; color: var(--ch-fg-muted); margin-top: var(--s-5); }
